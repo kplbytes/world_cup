@@ -8,9 +8,11 @@
 - 每场未赛比赛的 Elo + Poisson 预测：胜/平/负概率、双方 xG、最可能比分
 - 50,000 次蒙特卡洛模拟：12 组排名 + 8 个最佳第三名晋级概率
 - 中文球队名称、确定性中文模型解释与数据置信度（数据新鲜度、排名覆盖、历史覆盖、来源一致性）
+- 数据质量置信度与模型确定性分离展示，避免把“数据完整”误读成“结果一定准”
 - 本地 SQLite 持久化，每次完整计算形成独立 revision，支持审计回溯
 - 程序运行期间自动检查公开赛果；比赛窗口内加速至 2 分钟刷新
 - 页面"同步赛果"按钮支持手动触发刷新
+- 支持人工赛前修正：可按比赛录入伤停、轮换、战意等修正量，并即时重算预测
 - 上游不可用时保留最后一次成功数据，不清空本地看板
 - 可选 football-data.org 实时赛果适配器（需免费 API Token）
 - 可选中国体彩网 HAD 赔率解析器，仅作市场对照，不覆盖模型结果
@@ -28,7 +30,7 @@
 | HTTP 客户端 | HTTPX | 外部数据源抓取，支持超时与重定向 |
 | 定时任务 | APScheduler | 后台间隔刷新，支持动态调整间隔 |
 | 数值计算 | NumPy + SciPy | Poisson 分布矩阵与蒙特卡洛采样 |
-| 测试 | pytest | 75 个后端测试 |
+| 测试 | pytest | 78 个后端测试 |
 
 ### 前端
 
@@ -48,11 +50,11 @@
 world_cup/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes.py              # 11 个 REST 端点
+│   │   ├── api/routes.py              # 14 个 REST 端点
 │   │   ├── config.py                  # 环境变量与路径配置
 │   │   ├── db.py                      # SQLite 引擎、WAL、事务管理
 │   │   ├── main.py                    # FastAPI 生命周期、调度器、SPA 服务
-│   │   ├── models.py                  # 14 张 SQLAlchemy 表
+│   │   ├── models.py                  # 15 张 SQLAlchemy 表
 │   │   ├── schemas.py                 # Pydantic 数据契约（48 队 / 72 场校验）
 │   │   ├── domain/
 │   │   │   └── standings.py           # FIFA 积分排名 + 相互战绩 + 最佳第三名
@@ -69,6 +71,7 @@ world_cup/
 │   │   ├── simulation/
 │   │   │   └── qualification.py       # 蒙特卡洛晋级模拟（向量化采样）
 │   │   └── services/
+│   │       ├── manual_adjustments.py  # 人工修正聚合与序列化
 │   │       ├── seed.py                # 种子数据导入（幂等）
 │   │       ├── localization.py        # 中文展示名称映射
 │   │       ├── recompute.py           # 原子化全量重算 + revision 发布
@@ -139,7 +142,7 @@ world_cup/
 
 **Elo 实力评级**：初始值来自 World Football Elo Ratings 公开数据。新终场结果通过 FIFA 标准 Elo 公式更新（400 分标度 + 进球差对数乘数），保持零和。历史回放支持截止日期过滤。
 
-**Poisson 比分矩阵**：两队相对实力（含近期状态微调）映射为双方预期进球数（xG），xG 裁剪至 [0.20, 3.50] 区间。对每队生成 0–7 球精确概率 + 8+ 尾部桶，取外积得到 8×8 比分矩阵。胜/平/负概率由矩阵求和得出，归一化至 1.0。
+**Poisson 比分矩阵**：两队相对实力（含近期状态微调）映射为双方预期进球数（xG），xG 裁剪至 [0.20, 3.50] 区间。人工赛前修正会直接作用于攻防期望进球，再生成 0–7 球精确概率 + 8+ 尾部桶，取外积得到 8×8 比分矩阵。胜/平/负概率由矩阵求和得出，归一化至 1.0。
 
 **蒙特卡洛晋级模拟**：锁定已终场比分，对每场剩余比赛从比分矩阵中采样（NumPy 向量化），重复 50,000 次。每次迭代对 12 组分别排名，再对 12 个第三名排序取前 8 名晋级。最终输出每队的第一/二/三/四名频率和总晋级概率，附带蒙特卡洛标准误。
 
@@ -214,6 +217,7 @@ SIMULATION_SEED=20260613
 
 - **分组导航**：左侧 A–L 按钮切换分组，每组显示 4 队积分表和 6 场比赛
 - **比赛详情**：点击任意比赛卡片展开查看胜平负概率、xG、最可能比分和模型解释
+- **人工修正**：同一展开区域会显示已生效的人工赛前修正，包括影响球队、修正类型、攻防增减和备注
 - **球队详情**：点击积分表中的队名打开右侧抽屉，显示 Elo、近期状态、晋级概率分布和本组赛程
 - **全部比赛**：切换到"全部比赛"视图，可按 scheduled / live / final 筛选 72 场比赛
 - **同步赛果**：点击右上角"同步赛果"按钮手动触发数据刷新和全量重算
@@ -231,10 +235,31 @@ SIMULATION_SEED=20260613
 | GET | `/api/data-sources` | 数据来源状态（Provider、URL、抓取时间） |
 | GET | `/api/decision` | 决策视图数据（今日重点、最稳、最纠结、复盘） |
 | GET | `/api/model-score` | 已终场比赛的模型命中率、Brier 和 log loss |
+| GET | `/api/manual-adjustments` | 列出人工修正，可选 `?match_id=` 过滤单场 |
 | GET | `/api/sync-runs` | 同步运行历史（成功/失败/警告记录） |
 | POST | `/api/refresh` | 手动触发刷新，返回同步结果摘要 |
+| POST | `/api/manual-adjustments` | 新增人工修正并触发重算 |
+| DELETE | `/api/manual-adjustments/{id}` | 删除人工修正并触发重算 |
 
 API 文档自动生成：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+
+### 人工修正示例
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/manual-adjustments \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "match_id": "2026-A-CZE-RSA-2026-06-18",
+    "adjustment_type": "伤停",
+    "affected_team_id": "CZE",
+    "attack_delta": -0.15,
+    "defense_delta": 0.00,
+    "confidence": "medium",
+    "note": "主力前锋伤缺，进攻下调。"
+  }'
+```
+
+建议把 `attack_delta` / `defense_delta` 控制在 `-0.30` 到 `+0.30` 之间。正值表示增强，负值表示削弱。
 
 ### 数据备份
 
@@ -255,7 +280,7 @@ API 文档自动生成：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs
 ## 测试
 
 ```bash
-# 后端测试（75 个）
+# 后端测试（78 个）
 cd backend && .venv/bin/pytest -q
 
 # 前端测试（3 个）+ 类型检查 + 构建

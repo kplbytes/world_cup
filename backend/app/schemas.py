@@ -83,3 +83,27 @@ class TournamentPayload(BaseModel):
                 raise ValueError(f"away team is not in Group {match.group_code}")
         return self
 
+
+class ManualAdjustmentCreate(BaseModel):
+    match_id: str = Field(min_length=1)
+    adjustment_type: str = Field(min_length=1, max_length=32)
+    affected_team_id: str = Field(pattern=r"^[A-Z]{3}$")
+    attack_delta: float = 0.0
+    defense_delta: float = 0.0
+    confidence: Literal["low", "medium", "high"] = "medium"
+    note: str = Field(min_length=1)
+    created_by: str = Field(default="manual", min_length=1, max_length=40)
+
+
+class ManualAdjustmentResponse(BaseModel):
+    id: int
+    match_id: str
+    adjustment_type: str
+    affected_team_id: str
+    affected_team_name: str
+    attack_delta: float
+    defense_delta: float
+    confidence: str
+    note: str
+    created_by: str
+    created_at: datetime

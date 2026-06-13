@@ -42,6 +42,19 @@ const dashboard = {
       away_team: { id: `${group}2`, name: `Team ${group}2`, short_name: `Team ${group}2`, flag: "⚽" },
       home_score: null,
       away_score: null,
+      manual_adjustments: index === 0 ? [{
+        id: 1,
+        match_id: `${group}-${index}`,
+        adjustment_type: "伤停",
+        affected_team_id: `${group}1`,
+        affected_team_name: `Team ${group}1`,
+        attack_delta: -0.12,
+        defense_delta: 0,
+        confidence: "medium",
+        note: "主力前锋伤缺，进攻下调。",
+        created_by: "manual",
+        created_at: "2026-06-13T00:00:00Z",
+      }] : [],
       source: "openfootball",
       source_updated_at: "2026-06-13T00:00:00Z",
       market: null,
@@ -58,6 +71,7 @@ const decision = {
     home_team: { id: "A1", name: "Team A1", short_name: "Team A1", flag: "⚽" },
     away_team: { id: "A2", name: "Team A2", short_name: "Team A2", flag: "⚽" },
     home_score: 2, away_score: 0,
+    manual_adjustments: [],
     prediction: { home_win: .6, draw: .25, away_win: .15, confidence_label: "高", model_confidence_label: "中", home_xg: 1.5, away_xg: .8 },
     snapshot: { home_win: .6, draw: .25, away_win: .15, outcome_correct: true },
     review: { brier: .24, log_loss: .51, xg_error: .35, bias_explanation: "模型较准确地识别了主胜方向，但低估了净胜优势。" },
@@ -84,6 +98,9 @@ it("switches from Group A to Group L and shows its six matches", async () => {
 it("opens all matches and team detail", async () => {
   renderApp();
   await screen.findByRole("heading", { name: "Group A" });
+  await userEvent.click(screen.getAllByRole("button", { expanded: false })[0]);
+  expect(await screen.findByText(/人工修正/)).toBeVisible();
+  expect(screen.getByText(/主力前锋伤缺/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "全部比赛" }));
   expect(await screen.findByRole("heading", { name: "全部比赛" })).toBeVisible();
   expect(screen.getAllByTestId("match-card")).toHaveLength(72);

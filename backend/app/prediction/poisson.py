@@ -24,6 +24,10 @@ class MatchContext:
     provider_agreement: float
     recent_form_delta: float = 0.0
     host_advantage: float = 0.0
+    home_attack_adjustment: float = 0.0
+    home_defense_adjustment: float = 0.0
+    away_attack_adjustment: float = 0.0
+    away_defense_adjustment: float = 0.0
     home_name: str = "主队"
     away_name: str = "客队"
 
@@ -68,8 +72,26 @@ def predict_match(
         + context.recent_form_delta
         + context.host_advantage
     )
-    home_xg = float(np.clip(1.25 + 0.90 * strength_delta, 0.20, 3.50))
-    away_xg = float(np.clip(1.10 - 0.75 * strength_delta, 0.20, 3.50))
+    home_xg = float(
+        np.clip(
+            1.25
+            + 0.90 * strength_delta
+            + context.home_attack_adjustment
+            - context.away_defense_adjustment,
+            0.20,
+            3.50,
+        )
+    )
+    away_xg = float(
+        np.clip(
+            1.10
+            - 0.75 * strength_delta
+            + context.away_attack_adjustment
+            - context.home_defense_adjustment,
+            0.20,
+            3.50,
+        )
+    )
     home_goals = _goal_probabilities(home_xg)
     away_goals = _goal_probabilities(away_xg)
     matrix = np.outer(home_goals, away_goals)
@@ -126,4 +148,3 @@ def _goal_probabilities(expected_goals: float) -> np.ndarray:
     tail = max(0.0, 1.0 - float(exact.sum()))
     values = np.append(exact, tail)
     return values / values.sum()
-

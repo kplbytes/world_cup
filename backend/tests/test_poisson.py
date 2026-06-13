@@ -43,3 +43,18 @@ def test_prediction_rejects_non_finite_strength():
     with pytest.raises(ValueError, match="finite"):
         predict_match(math.nan, 0.5, neutral_context())
 
+
+def test_manual_adjustments_shift_expected_goals():
+    base = predict_match(0.60, 0.55, neutral_context())
+    adjusted = predict_match(
+        0.60,
+        0.55,
+        neutral_context(
+            home_attack_adjustment=-0.20,
+            away_attack_adjustment=0.10,
+            away_defense_adjustment=0.05,
+        ),
+    )
+
+    assert adjusted.home_xg < base.home_xg
+    assert adjusted.away_xg > base.away_xg

@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.services.market import compute_divergence
 from app.services.localization import localized_team_names
+from app.services.manual_adjustments import adjustments_by_match, serialize_adjustment
 from app.services.scoring import score_predictions
 
 
@@ -71,6 +72,10 @@ def build_dashboard(session: Session) -> dict:
     ratings = _latest_ratings(session)
     teams_by_id = {team.id: team for team in teams}
     display_names = localized_team_names(session, teams)
+    manual_adjustments = {
+        match_id: [serialize_adjustment(item, display_names) for item in items]
+        for match_id, items in adjustments_by_match(session).items()
+    }
     teams_by_group = defaultdict(list)
     matches_by_group = defaultdict(list)
     for team in teams:
@@ -133,6 +138,7 @@ def build_dashboard(session: Session) -> dict:
                 "away_team": _team_ref(teams_by_id[match.away_team_id], display_names),
                 "home_score": match.home_score,
                 "away_score": match.away_score,
+                "manual_adjustments": manual_adjustments.get(match.id, []),
                 "prediction": _prediction_dict(prediction) if prediction else None,
                 "market": market_data,
                 "source": match.source,
@@ -344,6 +350,10 @@ def build_decision(session: Session) -> dict:
     }
     teams_by_id = {team.id: team for team in teams}
     display_names = localized_team_names(session, teams)
+    manual_adjustments = {
+        match_id: [serialize_adjustment(item, display_names) for item in items]
+        for match_id, items in adjustments_by_match(session).items()
+    }
 
     local_now = decision_now().astimezone(SHANGHAI)
     local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -379,6 +389,7 @@ def build_decision(session: Session) -> dict:
             "status": match.status,
             "home_score": match.home_score,
             "away_score": match.away_score,
+            "manual_adjustments": manual_adjustments.get(match.id, []),
         }
         if pred:
             card["prediction"] = {

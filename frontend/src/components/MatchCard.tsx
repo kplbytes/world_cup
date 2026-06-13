@@ -7,6 +7,7 @@ const confidenceClass: Record<string, string> = { "高": "high", "中": "medium"
 export default function MatchCard({ match }: { match: Match }) {
   const [open, setOpen] = useState(false);
   const kickoff = new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(match.kickoff));
+  const manualAdjustments = match.manual_adjustments ?? [];
   return <article className={`match-card ${open ? "expanded" : ""}`} data-testid="match-card">
     <button className="match-summary" onClick={() => setOpen(!open)} aria-expanded={open}>
       <span className="match-meta">{kickoff}<small>{match.venue ?? "场地待定"}</small></span>
@@ -30,6 +31,14 @@ export default function MatchCard({ match }: { match: Match }) {
           <ProbabilityBar label="数据置信度" value={match.prediction.data_confidence} />
           <ProbabilityBar label="模型置信度" value={match.prediction.model_confidence ?? 0} tone={match.prediction.model_confidence_label === "高" ? undefined : match.prediction.model_confidence_label === "中" ? "amber" : "coral"} />
         </div>}
+        {manualAdjustments.length > 0 && <div className="adjustment-panel">
+          <h4>人工修正</h4>
+          {manualAdjustments.map((adjustment) => <div className="adjustment-row" key={adjustment.id}>
+            <strong>{adjustment.affected_team_name} · {adjustment.adjustment_type}</strong>
+            <span>进攻 {adjustment.attack_delta > 0 ? "+" : ""}{adjustment.attack_delta.toFixed(2)} / 防守 {adjustment.defense_delta > 0 ? "+" : ""}{adjustment.defense_delta.toFixed(2)}</span>
+            <p>{adjustment.note}</p>
+          </div>)}
+        </div>}
         {match.market && <div className="divergence-panel">
           <h4>模型校准参考 {match.market.divergence && <small className={`divergence-level ${match.market.divergence.level}`}>分歧：{match.market.divergence.level}</small>}</h4>
           <div className="calibration-row"><span>主胜</span><b>{(match.prediction.home_win * 100).toFixed(0)}%</b><small>vs</small><b>{(match.market.home_probability * 100).toFixed(0)}%</b>{match.market.divergence && <span className={`diff ${match.market.divergence.home_diff > 0 ? "pos" : "neg"}`}>{match.market.divergence.home_diff > 0 ? "+" : ""}{(match.market.divergence.home_diff * 100).toFixed(1)}%</span>}</div>
@@ -40,4 +49,3 @@ export default function MatchCard({ match }: { match: Match }) {
     </div></div>
   </article>;
 }
-

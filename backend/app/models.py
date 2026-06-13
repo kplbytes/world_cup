@@ -164,6 +164,21 @@ class ModelScore(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class ManualAdjustment(Base):
+    __tablename__ = "manual_adjustments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[str] = mapped_column(ForeignKey("matches.id"), index=True)
+    adjustment_type: Mapped[str] = mapped_column(String(32))
+    affected_team_id: Mapped[str] = mapped_column(ForeignKey("teams.id"), index=True)
+    attack_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    defense_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    confidence: Mapped[str] = mapped_column(String(16), default="medium")
+    note: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[str] = mapped_column(String(40), default="manual")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class QualificationPrediction(Base):
     __tablename__ = "qualification_predictions"
 
@@ -218,4 +233,3 @@ class MarketSnapshot(Base):
     away_probability: Mapped[float] = mapped_column(Float)
     raw_overround: Mapped[float] = mapped_column(Float)
     source_match_id: Mapped[str | None] = mapped_column(String(120))
-

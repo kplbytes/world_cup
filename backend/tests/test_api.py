@@ -161,3 +161,47 @@ def test_decision_today_uses_shanghai_calendar_day(tmp_path, monkeypatch):
     today = client.get("/api/decision").json()["today_matches"]
 
     assert any(row["id"] == "2026-B-QAT-SUI-2026-06-13" for row in today)
+
+
+def test_manual_adjustment_changes_match_prediction_and_can_be_removed(tmp_path):
+    client = api_client(tmp_path)
+    dashboard = client.get("/api/dashboard").json()
+    match_id = dashboard["groups"][0]["matches"][2]["id"]
+    before = client.get(f"/api/matches/{match_id}").json()
+
+    response = client.post(
+        "/api/manual-adjustments",
+        json={
+            "match_id": match_id,
+            "adjustment_type": "伤停",
+            "affected_team_id": before["home_team"]["id"],
+            "attack_delta": -0.20,
+            "defense_delta": 0.0,
+            "confidence": "medium",
+            "note": "主力前锋伤缺，主队进攻下调。",
+        },
+    )
+
+    assert response.status_code == 200
+    created = response.json()
+    assert created["adjustment"]["note"] == "主力前锋伤缺，主队进攻下调。"
+    assert created["revision_id"] > dashboard["revision"]["id"]
+
+    after = client.get(f"/api/matches/{match_id}").json()
+    assert after["manual_adjustments"][0]["adjustment_type"] == "伤停"
+    assert after["prediction"]["home_xg"] < before["prediction"]["home_xg"]
+
+    listed = client.get(f"/api/manual-adjustments?match_id={match_id}")
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+    removed = client.request(
+        "DELETE",
+        f"/api/manual-adjustments/{created['adjustment']['id']}",
+    )
+    assert removed.status_code == 200
+    assert removed.json()["revision_id"] > created["revision_id"]
+
+    restored = client.get(f"/api/matches/{match_id}").json()
+    assert restored["manual_adjustments"] == []
+    assert restored["prediction"]["home_xg"] == before["prediction"]["home_xg"]

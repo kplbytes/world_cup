@@ -8,6 +8,7 @@ from app.domain.standings import MatchResult, rank_group
 from app.models import (
     DashboardRevision,
     DataSnapshot,
+    ManualAdjustment,
     Match,
     MatchPrediction,
     QualificationPrediction,
@@ -17,6 +18,7 @@ from app.models import (
 )
 from app.prediction.poisson import MODEL_VERSION, MatchContext, predict_match
 from app.services.localization import localized_team_names
+from app.services.manual_adjustments import build_adjustment_context, serialize_adjustment
 from app.simulation.qualification import (
     SimulatedMatch,
     SimulationTournament,
@@ -87,10 +89,16 @@ def recompute_all(
 
         remaining: list[SimulatedMatch] = []
         team_names = localized_team_names(session, teams)
+        raw_adjustments = list(session.scalars(select(ManualAdjustment)))
+        adjustments_by_match = defaultdict(list)
+        for adjustment in raw_adjustments:
+            adjustments_by_match[adjustment.match_id].append(adjustment)
         freshness, ranking_cov, provider_agree = _compute_data_context(session, teams)
         for match in matches:
             if match.status == "final":
                 continue
+            match_adjustments = adjustments_by_match.get(match.id, [])
+            adjustment_context = build_adjustment_context(match, match_adjustments)
             prediction = predict_match(
                 strengths[match.home_team_id],
                 strengths[match.away_team_id],
@@ -99,6 +107,10 @@ def recompute_all(
                     ranking_coverage=ranking_cov,
                     history_coverage=0.65,
                     provider_agreement=provider_agree,
+                    home_attack_adjustment=adjustment_context.home_attack_adjustment,
+                    home_defense_adjustment=adjustment_context.home_defense_adjustment,
+                    away_attack_adjustment=adjustment_context.away_attack_adjustment,
+                    away_defense_adjustment=adjustment_context.away_defense_adjustment,
                     home_name=team_names[match.home_team_id],
                     away_name=team_names[match.away_team_id],
                 ),
@@ -131,6 +143,16 @@ def recompute_all(
                     model_inputs={
                         "home_elo": ratings[match.home_team_id],
                         "away_elo": ratings[match.away_team_id],
+                        "manual_context": {
+                            "home_attack_adjustment": adjustment_context.home_attack_adjustment,
+                            "home_defense_adjustment": adjustment_context.home_defense_adjustment,
+                            "away_attack_adjustment": adjustment_context.away_attack_adjustment,
+                            "away_defense_adjustment": adjustment_context.away_defense_adjustment,
+                        },
+                        "manual_adjustments": [
+                            serialize_adjustment(adjustment, team_names)
+                            for adjustment in match_adjustments
+                        ],
                     },
                     model_version=prediction.model_version,
                 )

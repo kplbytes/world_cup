@@ -19,12 +19,19 @@ export type TeamRef = Pick<Team, "id" | "name" | "short_name" | "flag">;
 
 export type Scoreline = { home_goals: number; away_goals: number; probability: number };
 
+export type ManualAdjustment = {
+  id: number; match_id: string; adjustment_type: string;
+  affected_team_id: string; affected_team_name: string;
+  attack_delta: number; defense_delta: number; confidence: string;
+  note: string; created_by: string; created_at: string;
+};
+
 export type Prediction = {
   home_xg: number; away_xg: number; home_win: number; draw: number; away_win: number;
   scorelines: Scoreline[]; confidence: number; confidence_label: string;
   data_confidence: number | null; data_confidence_label: string | null;
   model_confidence: number | null; model_confidence_label: string | null;
-  explanation: string; model_inputs: { home_elo: number; away_elo: number }; model_version: string;
+  explanation: string; model_inputs: Record<string, unknown>; model_version: string;
 };
 
 export type Divergence = {
@@ -40,6 +47,7 @@ export type MarketData = {
 export type Match = {
   id: string; group_code: string; kickoff: string; venue: string | null; status: string;
   home_team: TeamRef; away_team: TeamRef; home_score: number | null; away_score: number | null;
+  manual_adjustments: ManualAdjustment[];
   prediction: Prediction | null; market: MarketData | null; source: string; source_updated_at: string | null;
 };
 
@@ -71,6 +79,7 @@ export type DecisionMatch = {
   id: string; group_code: string; kickoff: string;
   home_team: TeamRef; away_team: TeamRef;
   status: string; home_score: number | null; away_score: number | null;
+  manual_adjustments: ManualAdjustment[];
   prediction?: DecisionPrediction; market?: DecisionMarket;
 };
 
