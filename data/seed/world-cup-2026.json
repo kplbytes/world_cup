@@ -1,0 +1,1412 @@
+{
+  "name": "World Cup 2026",
+  "source": {
+    "provider": "openfootball",
+    "source_url": "https://github.com/openfootball/worldcup.json/tree/master/2026",
+    "fetched_at": "2026-06-12T16:14:43.276294Z"
+  },
+  "teams": [
+    {
+      "id": "MEX",
+      "name": "Mexico",
+      "short_name": "Mexico",
+      "code": "MEX",
+      "group_code": "A",
+      "flag": "🇲🇽",
+      "aliases": [
+        "Mexico"
+      ]
+    },
+    {
+      "id": "RSA",
+      "name": "South Africa",
+      "short_name": "South Africa",
+      "code": "RSA",
+      "group_code": "A",
+      "flag": "🇿🇦",
+      "aliases": [
+        "South Africa"
+      ]
+    },
+    {
+      "id": "KOR",
+      "name": "Korea Republic",
+      "short_name": "South Korea",
+      "code": "KOR",
+      "group_code": "A",
+      "flag": "🇰🇷",
+      "aliases": [
+        "South Korea",
+        "Korea Republic"
+      ]
+    },
+    {
+      "id": "CZE",
+      "name": "Czechia",
+      "short_name": "Czech Republic",
+      "code": "CZE",
+      "group_code": "A",
+      "flag": "🇨🇿",
+      "aliases": [
+        "Czech Republic",
+        "Czechia"
+      ]
+    },
+    {
+      "id": "CAN",
+      "name": "Canada",
+      "short_name": "Canada",
+      "code": "CAN",
+      "group_code": "B",
+      "flag": "🇨🇦",
+      "aliases": [
+        "Canada"
+      ]
+    },
+    {
+      "id": "BIH",
+      "name": "Bosnia & Herzegovina",
+      "short_name": "Bosnia & Herzegovina",
+      "code": "BIH",
+      "group_code": "B",
+      "flag": "🇧🇦",
+      "aliases": [
+        "Bosnia & Herzegovina"
+      ]
+    },
+    {
+      "id": "QAT",
+      "name": "Qatar",
+      "short_name": "Qatar",
+      "code": "QAT",
+      "group_code": "B",
+      "flag": "🇶🇦",
+      "aliases": [
+        "Qatar"
+      ]
+    },
+    {
+      "id": "SUI",
+      "name": "Switzerland",
+      "short_name": "Switzerland",
+      "code": "SUI",
+      "group_code": "B",
+      "flag": "🇨🇭",
+      "aliases": [
+        "Switzerland"
+      ]
+    },
+    {
+      "id": "BRA",
+      "name": "Brazil",
+      "short_name": "Brazil",
+      "code": "BRA",
+      "group_code": "C",
+      "flag": "🇧🇷",
+      "aliases": [
+        "Brazil"
+      ]
+    },
+    {
+      "id": "MAR",
+      "name": "Morocco",
+      "short_name": "Morocco",
+      "code": "MAR",
+      "group_code": "C",
+      "flag": "🇲🇦",
+      "aliases": [
+        "Morocco"
+      ]
+    },
+    {
+      "id": "HAI",
+      "name": "Haiti",
+      "short_name": "Haiti",
+      "code": "HAI",
+      "group_code": "C",
+      "flag": "🇭🇹",
+      "aliases": [
+        "Haiti"
+      ]
+    },
+    {
+      "id": "SCO",
+      "name": "Scotland",
+      "short_name": "Scotland",
+      "code": "SCO",
+      "group_code": "C",
+      "flag": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+      "aliases": [
+        "Scotland"
+      ]
+    },
+    {
+      "id": "USA",
+      "name": "United States",
+      "short_name": "USA",
+      "code": "USA",
+      "group_code": "D",
+      "flag": "🇺🇸",
+      "aliases": [
+        "USA",
+        "United States"
+      ]
+    },
+    {
+      "id": "PAR",
+      "name": "Paraguay",
+      "short_name": "Paraguay",
+      "code": "PAR",
+      "group_code": "D",
+      "flag": "🇵🇾",
+      "aliases": [
+        "Paraguay"
+      ]
+    },
+    {
+      "id": "AUS",
+      "name": "Australia",
+      "short_name": "Australia",
+      "code": "AUS",
+      "group_code": "D",
+      "flag": "🇦🇺",
+      "aliases": [
+        "Australia"
+      ]
+    },
+    {
+      "id": "TUR",
+      "name": "Türkiye",
+      "short_name": "Turkey",
+      "code": "TUR",
+      "group_code": "D",
+      "flag": "🇹🇷",
+      "aliases": [
+        "Turkey",
+        "Türkiye"
+      ]
+    },
+    {
+      "id": "GER",
+      "name": "Germany",
+      "short_name": "Germany",
+      "code": "GER",
+      "group_code": "E",
+      "flag": "🇩🇪",
+      "aliases": [
+        "Germany"
+      ]
+    },
+    {
+      "id": "CUW",
+      "name": "Curaçao",
+      "short_name": "Curaçao",
+      "code": "CUW",
+      "group_code": "E",
+      "flag": "🇨🇼",
+      "aliases": [
+        "Curaçao"
+      ]
+    },
+    {
+      "id": "CIV",
+      "name": "Cote d'Ivoire",
+      "short_name": "Ivory Coast",
+      "code": "CIV",
+      "group_code": "E",
+      "flag": "🇨🇮",
+      "aliases": [
+        "Ivory Coast",
+        "Cote d'Ivoire"
+      ]
+    },
+    {
+      "id": "ECU",
+      "name": "Ecuador",
+      "short_name": "Ecuador",
+      "code": "ECU",
+      "group_code": "E",
+      "flag": "🇪🇨",
+      "aliases": [
+        "Ecuador"
+      ]
+    },
+    {
+      "id": "NED",
+      "name": "Netherlands",
+      "short_name": "Netherlands",
+      "code": "NED",
+      "group_code": "F",
+      "flag": "🇳🇱",
+      "aliases": [
+        "Netherlands"
+      ]
+    },
+    {
+      "id": "JPN",
+      "name": "Japan",
+      "short_name": "Japan",
+      "code": "JPN",
+      "group_code": "F",
+      "flag": "🇯🇵",
+      "aliases": [
+        "Japan"
+      ]
+    },
+    {
+      "id": "SWE",
+      "name": "Sweden",
+      "short_name": "Sweden",
+      "code": "SWE",
+      "group_code": "F",
+      "flag": "🇸🇪",
+      "aliases": [
+        "Sweden"
+      ]
+    },
+    {
+      "id": "TUN",
+      "name": "Tunisia",
+      "short_name": "Tunisia",
+      "code": "TUN",
+      "group_code": "F",
+      "flag": "🇹🇳",
+      "aliases": [
+        "Tunisia"
+      ]
+    },
+    {
+      "id": "BEL",
+      "name": "Belgium",
+      "short_name": "Belgium",
+      "code": "BEL",
+      "group_code": "G",
+      "flag": "🇧🇪",
+      "aliases": [
+        "Belgium"
+      ]
+    },
+    {
+      "id": "EGY",
+      "name": "Egypt",
+      "short_name": "Egypt",
+      "code": "EGY",
+      "group_code": "G",
+      "flag": "🇪🇬",
+      "aliases": [
+        "Egypt"
+      ]
+    },
+    {
+      "id": "IRN",
+      "name": "IR Iran",
+      "short_name": "Iran",
+      "code": "IRN",
+      "group_code": "G",
+      "flag": "🇮🇷",
+      "aliases": [
+        "Iran",
+        "IR Iran"
+      ]
+    },
+    {
+      "id": "NZL",
+      "name": "New Zealand",
+      "short_name": "New Zealand",
+      "code": "NZL",
+      "group_code": "G",
+      "flag": "🇳🇿",
+      "aliases": [
+        "New Zealand"
+      ]
+    },
+    {
+      "id": "ESP",
+      "name": "Spain",
+      "short_name": "Spain",
+      "code": "ESP",
+      "group_code": "H",
+      "flag": "🇪🇸",
+      "aliases": [
+        "Spain"
+      ]
+    },
+    {
+      "id": "CPV",
+      "name": "Cabo Verde",
+      "short_name": "Cape Verde",
+      "code": "CPV",
+      "group_code": "H",
+      "flag": "🇨🇻",
+      "aliases": [
+        "Cape Verde",
+        "Cabo Verde"
+      ]
+    },
+    {
+      "id": "KSA",
+      "name": "Saudi Arabia",
+      "short_name": "Saudi Arabia",
+      "code": "KSA",
+      "group_code": "H",
+      "flag": "🇸🇦",
+      "aliases": [
+        "Saudi Arabia"
+      ]
+    },
+    {
+      "id": "URU",
+      "name": "Uruguay",
+      "short_name": "Uruguay",
+      "code": "URU",
+      "group_code": "H",
+      "flag": "🇺🇾",
+      "aliases": [
+        "Uruguay"
+      ]
+    },
+    {
+      "id": "FRA",
+      "name": "France",
+      "short_name": "France",
+      "code": "FRA",
+      "group_code": "I",
+      "flag": "🇫🇷",
+      "aliases": [
+        "France"
+      ]
+    },
+    {
+      "id": "SEN",
+      "name": "Senegal",
+      "short_name": "Senegal",
+      "code": "SEN",
+      "group_code": "I",
+      "flag": "🇸🇳",
+      "aliases": [
+        "Senegal"
+      ]
+    },
+    {
+      "id": "IRQ",
+      "name": "Iraq",
+      "short_name": "Iraq",
+      "code": "IRQ",
+      "group_code": "I",
+      "flag": "🇮🇶",
+      "aliases": [
+        "Iraq"
+      ]
+    },
+    {
+      "id": "NOR",
+      "name": "Norway",
+      "short_name": "Norway",
+      "code": "NOR",
+      "group_code": "I",
+      "flag": "🇳🇴",
+      "aliases": [
+        "Norway"
+      ]
+    },
+    {
+      "id": "ARG",
+      "name": "Argentina",
+      "short_name": "Argentina",
+      "code": "ARG",
+      "group_code": "J",
+      "flag": "🇦🇷",
+      "aliases": [
+        "Argentina"
+      ]
+    },
+    {
+      "id": "ALG",
+      "name": "Algeria",
+      "short_name": "Algeria",
+      "code": "ALG",
+      "group_code": "J",
+      "flag": "🇩🇿",
+      "aliases": [
+        "Algeria"
+      ]
+    },
+    {
+      "id": "AUT",
+      "name": "Austria",
+      "short_name": "Austria",
+      "code": "AUT",
+      "group_code": "J",
+      "flag": "🇦🇹",
+      "aliases": [
+        "Austria"
+      ]
+    },
+    {
+      "id": "JOR",
+      "name": "Jordan",
+      "short_name": "Jordan",
+      "code": "JOR",
+      "group_code": "J",
+      "flag": "🇯🇴",
+      "aliases": [
+        "Jordan"
+      ]
+    },
+    {
+      "id": "POR",
+      "name": "Portugal",
+      "short_name": "Portugal",
+      "code": "POR",
+      "group_code": "K",
+      "flag": "🇵🇹",
+      "aliases": [
+        "Portugal"
+      ]
+    },
+    {
+      "id": "COD",
+      "name": "Congo DR",
+      "short_name": "DR Congo",
+      "code": "COD",
+      "group_code": "K",
+      "flag": "🇨🇩",
+      "aliases": [
+        "DR Congo",
+        "Congo DR"
+      ]
+    },
+    {
+      "id": "UZB",
+      "name": "Uzbekistan",
+      "short_name": "Uzbekistan",
+      "code": "UZB",
+      "group_code": "K",
+      "flag": "🇺🇿",
+      "aliases": [
+        "Uzbekistan"
+      ]
+    },
+    {
+      "id": "COL",
+      "name": "Colombia",
+      "short_name": "Colombia",
+      "code": "COL",
+      "group_code": "K",
+      "flag": "🇨🇴",
+      "aliases": [
+        "Colombia"
+      ]
+    },
+    {
+      "id": "ENG",
+      "name": "England",
+      "short_name": "England",
+      "code": "ENG",
+      "group_code": "L",
+      "flag": "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
+      "aliases": [
+        "England"
+      ]
+    },
+    {
+      "id": "CRO",
+      "name": "Croatia",
+      "short_name": "Croatia",
+      "code": "CRO",
+      "group_code": "L",
+      "flag": "🇭🇷",
+      "aliases": [
+        "Croatia"
+      ]
+    },
+    {
+      "id": "GHA",
+      "name": "Ghana",
+      "short_name": "Ghana",
+      "code": "GHA",
+      "group_code": "L",
+      "flag": "🇬🇭",
+      "aliases": [
+        "Ghana"
+      ]
+    },
+    {
+      "id": "PAN",
+      "name": "Panama",
+      "short_name": "Panama",
+      "code": "PAN",
+      "group_code": "L",
+      "flag": "🇵🇦",
+      "aliases": [
+        "Panama"
+      ]
+    }
+  ],
+  "matches": [
+    {
+      "id": "2026-A-MEX-RSA-2026-06-11",
+      "group_code": "A",
+      "home_team_id": "MEX",
+      "away_team_id": "RSA",
+      "kickoff": "2026-06-11T19:00:00Z",
+      "venue": "Mexico City",
+      "status": "final",
+      "home_score": 2,
+      "away_score": 0,
+      "source_match_id": "2026-A-MEX-RSA-2026-06-11"
+    },
+    {
+      "id": "2026-A-KOR-CZE-2026-06-11",
+      "group_code": "A",
+      "home_team_id": "KOR",
+      "away_team_id": "CZE",
+      "kickoff": "2026-06-12T02:00:00Z",
+      "venue": "Guadalajara (Zapopan)",
+      "status": "final",
+      "home_score": 2,
+      "away_score": 1,
+      "source_match_id": "2026-A-KOR-CZE-2026-06-11"
+    },
+    {
+      "id": "2026-A-CZE-RSA-2026-06-18",
+      "group_code": "A",
+      "home_team_id": "CZE",
+      "away_team_id": "RSA",
+      "kickoff": "2026-06-18T16:00:00Z",
+      "venue": "Atlanta",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-A-CZE-RSA-2026-06-18"
+    },
+    {
+      "id": "2026-A-MEX-KOR-2026-06-18",
+      "group_code": "A",
+      "home_team_id": "MEX",
+      "away_team_id": "KOR",
+      "kickoff": "2026-06-19T01:00:00Z",
+      "venue": "Guadalajara (Zapopan)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-A-MEX-KOR-2026-06-18"
+    },
+    {
+      "id": "2026-A-CZE-MEX-2026-06-24",
+      "group_code": "A",
+      "home_team_id": "CZE",
+      "away_team_id": "MEX",
+      "kickoff": "2026-06-25T01:00:00Z",
+      "venue": "Mexico City",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-A-CZE-MEX-2026-06-24"
+    },
+    {
+      "id": "2026-A-RSA-KOR-2026-06-24",
+      "group_code": "A",
+      "home_team_id": "RSA",
+      "away_team_id": "KOR",
+      "kickoff": "2026-06-25T01:00:00Z",
+      "venue": "Monterrey (Guadalupe)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-A-RSA-KOR-2026-06-24"
+    },
+    {
+      "id": "2026-B-CAN-BIH-2026-06-12",
+      "group_code": "B",
+      "home_team_id": "CAN",
+      "away_team_id": "BIH",
+      "kickoff": "2026-06-12T19:00:00Z",
+      "venue": "Toronto",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-B-CAN-BIH-2026-06-12"
+    },
+    {
+      "id": "2026-B-QAT-SUI-2026-06-13",
+      "group_code": "B",
+      "home_team_id": "QAT",
+      "away_team_id": "SUI",
+      "kickoff": "2026-06-13T19:00:00Z",
+      "venue": "San Francisco Bay Area (Santa Clara)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-B-QAT-SUI-2026-06-13"
+    },
+    {
+      "id": "2026-B-SUI-BIH-2026-06-18",
+      "group_code": "B",
+      "home_team_id": "SUI",
+      "away_team_id": "BIH",
+      "kickoff": "2026-06-18T19:00:00Z",
+      "venue": "Los Angeles (Inglewood)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-B-SUI-BIH-2026-06-18"
+    },
+    {
+      "id": "2026-B-CAN-QAT-2026-06-18",
+      "group_code": "B",
+      "home_team_id": "CAN",
+      "away_team_id": "QAT",
+      "kickoff": "2026-06-18T22:00:00Z",
+      "venue": "Vancouver",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-B-CAN-QAT-2026-06-18"
+    },
+    {
+      "id": "2026-B-SUI-CAN-2026-06-24",
+      "group_code": "B",
+      "home_team_id": "SUI",
+      "away_team_id": "CAN",
+      "kickoff": "2026-06-24T19:00:00Z",
+      "venue": "Vancouver",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-B-SUI-CAN-2026-06-24"
+    },
+    {
+      "id": "2026-B-BIH-QAT-2026-06-24",
+      "group_code": "B",
+      "home_team_id": "BIH",
+      "away_team_id": "QAT",
+      "kickoff": "2026-06-24T19:00:00Z",
+      "venue": "Seattle",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-B-BIH-QAT-2026-06-24"
+    },
+    {
+      "id": "2026-C-BRA-MAR-2026-06-13",
+      "group_code": "C",
+      "home_team_id": "BRA",
+      "away_team_id": "MAR",
+      "kickoff": "2026-06-13T22:00:00Z",
+      "venue": "New York/New Jersey (East Rutherford)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-C-BRA-MAR-2026-06-13"
+    },
+    {
+      "id": "2026-C-HAI-SCO-2026-06-13",
+      "group_code": "C",
+      "home_team_id": "HAI",
+      "away_team_id": "SCO",
+      "kickoff": "2026-06-14T01:00:00Z",
+      "venue": "Boston (Foxborough)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-C-HAI-SCO-2026-06-13"
+    },
+    {
+      "id": "2026-C-SCO-MAR-2026-06-19",
+      "group_code": "C",
+      "home_team_id": "SCO",
+      "away_team_id": "MAR",
+      "kickoff": "2026-06-19T22:00:00Z",
+      "venue": "Boston (Foxborough)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-C-SCO-MAR-2026-06-19"
+    },
+    {
+      "id": "2026-C-BRA-HAI-2026-06-19",
+      "group_code": "C",
+      "home_team_id": "BRA",
+      "away_team_id": "HAI",
+      "kickoff": "2026-06-20T00:30:00Z",
+      "venue": "Philadelphia",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-C-BRA-HAI-2026-06-19"
+    },
+    {
+      "id": "2026-C-SCO-BRA-2026-06-24",
+      "group_code": "C",
+      "home_team_id": "SCO",
+      "away_team_id": "BRA",
+      "kickoff": "2026-06-24T22:00:00Z",
+      "venue": "Miami (Miami Gardens)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-C-SCO-BRA-2026-06-24"
+    },
+    {
+      "id": "2026-C-MAR-HAI-2026-06-24",
+      "group_code": "C",
+      "home_team_id": "MAR",
+      "away_team_id": "HAI",
+      "kickoff": "2026-06-24T22:00:00Z",
+      "venue": "Atlanta",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-C-MAR-HAI-2026-06-24"
+    },
+    {
+      "id": "2026-D-USA-PAR-2026-06-12",
+      "group_code": "D",
+      "home_team_id": "USA",
+      "away_team_id": "PAR",
+      "kickoff": "2026-06-13T01:00:00Z",
+      "venue": "Los Angeles (Inglewood)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-D-USA-PAR-2026-06-12"
+    },
+    {
+      "id": "2026-D-AUS-TUR-2026-06-13",
+      "group_code": "D",
+      "home_team_id": "AUS",
+      "away_team_id": "TUR",
+      "kickoff": "2026-06-14T04:00:00Z",
+      "venue": "Vancouver",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-D-AUS-TUR-2026-06-13"
+    },
+    {
+      "id": "2026-D-USA-AUS-2026-06-19",
+      "group_code": "D",
+      "home_team_id": "USA",
+      "away_team_id": "AUS",
+      "kickoff": "2026-06-19T19:00:00Z",
+      "venue": "Seattle",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-D-USA-AUS-2026-06-19"
+    },
+    {
+      "id": "2026-D-TUR-PAR-2026-06-19",
+      "group_code": "D",
+      "home_team_id": "TUR",
+      "away_team_id": "PAR",
+      "kickoff": "2026-06-20T03:00:00Z",
+      "venue": "San Francisco Bay Area (Santa Clara)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-D-TUR-PAR-2026-06-19"
+    },
+    {
+      "id": "2026-D-TUR-USA-2026-06-25",
+      "group_code": "D",
+      "home_team_id": "TUR",
+      "away_team_id": "USA",
+      "kickoff": "2026-06-26T02:00:00Z",
+      "venue": "Los Angeles (Inglewood)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-D-TUR-USA-2026-06-25"
+    },
+    {
+      "id": "2026-D-PAR-AUS-2026-06-25",
+      "group_code": "D",
+      "home_team_id": "PAR",
+      "away_team_id": "AUS",
+      "kickoff": "2026-06-26T02:00:00Z",
+      "venue": "San Francisco Bay Area (Santa Clara)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-D-PAR-AUS-2026-06-25"
+    },
+    {
+      "id": "2026-E-GER-CUW-2026-06-14",
+      "group_code": "E",
+      "home_team_id": "GER",
+      "away_team_id": "CUW",
+      "kickoff": "2026-06-14T17:00:00Z",
+      "venue": "Houston",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-E-GER-CUW-2026-06-14"
+    },
+    {
+      "id": "2026-E-CIV-ECU-2026-06-14",
+      "group_code": "E",
+      "home_team_id": "CIV",
+      "away_team_id": "ECU",
+      "kickoff": "2026-06-14T23:00:00Z",
+      "venue": "Philadelphia",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-E-CIV-ECU-2026-06-14"
+    },
+    {
+      "id": "2026-E-GER-CIV-2026-06-20",
+      "group_code": "E",
+      "home_team_id": "GER",
+      "away_team_id": "CIV",
+      "kickoff": "2026-06-20T20:00:00Z",
+      "venue": "Toronto",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-E-GER-CIV-2026-06-20"
+    },
+    {
+      "id": "2026-E-ECU-CUW-2026-06-20",
+      "group_code": "E",
+      "home_team_id": "ECU",
+      "away_team_id": "CUW",
+      "kickoff": "2026-06-21T00:00:00Z",
+      "venue": "Kansas City",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-E-ECU-CUW-2026-06-20"
+    },
+    {
+      "id": "2026-E-CUW-CIV-2026-06-25",
+      "group_code": "E",
+      "home_team_id": "CUW",
+      "away_team_id": "CIV",
+      "kickoff": "2026-06-25T20:00:00Z",
+      "venue": "Philadelphia",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-E-CUW-CIV-2026-06-25"
+    },
+    {
+      "id": "2026-E-ECU-GER-2026-06-25",
+      "group_code": "E",
+      "home_team_id": "ECU",
+      "away_team_id": "GER",
+      "kickoff": "2026-06-25T20:00:00Z",
+      "venue": "New York/New Jersey (East Rutherford)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-E-ECU-GER-2026-06-25"
+    },
+    {
+      "id": "2026-F-NED-JPN-2026-06-14",
+      "group_code": "F",
+      "home_team_id": "NED",
+      "away_team_id": "JPN",
+      "kickoff": "2026-06-14T20:00:00Z",
+      "venue": "Dallas (Arlington)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-F-NED-JPN-2026-06-14"
+    },
+    {
+      "id": "2026-F-SWE-TUN-2026-06-14",
+      "group_code": "F",
+      "home_team_id": "SWE",
+      "away_team_id": "TUN",
+      "kickoff": "2026-06-15T02:00:00Z",
+      "venue": "Monterrey (Guadalupe)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-F-SWE-TUN-2026-06-14"
+    },
+    {
+      "id": "2026-F-NED-SWE-2026-06-20",
+      "group_code": "F",
+      "home_team_id": "NED",
+      "away_team_id": "SWE",
+      "kickoff": "2026-06-20T17:00:00Z",
+      "venue": "Houston",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-F-NED-SWE-2026-06-20"
+    },
+    {
+      "id": "2026-F-TUN-JPN-2026-06-20",
+      "group_code": "F",
+      "home_team_id": "TUN",
+      "away_team_id": "JPN",
+      "kickoff": "2026-06-21T04:00:00Z",
+      "venue": "Monterrey (Guadalupe)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-F-TUN-JPN-2026-06-20"
+    },
+    {
+      "id": "2026-F-JPN-SWE-2026-06-25",
+      "group_code": "F",
+      "home_team_id": "JPN",
+      "away_team_id": "SWE",
+      "kickoff": "2026-06-25T23:00:00Z",
+      "venue": "Dallas (Arlington)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-F-JPN-SWE-2026-06-25"
+    },
+    {
+      "id": "2026-F-TUN-NED-2026-06-25",
+      "group_code": "F",
+      "home_team_id": "TUN",
+      "away_team_id": "NED",
+      "kickoff": "2026-06-25T23:00:00Z",
+      "venue": "Kansas City",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-F-TUN-NED-2026-06-25"
+    },
+    {
+      "id": "2026-G-BEL-EGY-2026-06-15",
+      "group_code": "G",
+      "home_team_id": "BEL",
+      "away_team_id": "EGY",
+      "kickoff": "2026-06-15T19:00:00Z",
+      "venue": "Seattle",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-G-BEL-EGY-2026-06-15"
+    },
+    {
+      "id": "2026-G-IRN-NZL-2026-06-15",
+      "group_code": "G",
+      "home_team_id": "IRN",
+      "away_team_id": "NZL",
+      "kickoff": "2026-06-16T01:00:00Z",
+      "venue": "Los Angeles (Inglewood)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-G-IRN-NZL-2026-06-15"
+    },
+    {
+      "id": "2026-G-BEL-IRN-2026-06-21",
+      "group_code": "G",
+      "home_team_id": "BEL",
+      "away_team_id": "IRN",
+      "kickoff": "2026-06-21T19:00:00Z",
+      "venue": "Los Angeles (Inglewood)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-G-BEL-IRN-2026-06-21"
+    },
+    {
+      "id": "2026-G-NZL-EGY-2026-06-21",
+      "group_code": "G",
+      "home_team_id": "NZL",
+      "away_team_id": "EGY",
+      "kickoff": "2026-06-22T01:00:00Z",
+      "venue": "Vancouver",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-G-NZL-EGY-2026-06-21"
+    },
+    {
+      "id": "2026-G-EGY-IRN-2026-06-26",
+      "group_code": "G",
+      "home_team_id": "EGY",
+      "away_team_id": "IRN",
+      "kickoff": "2026-06-27T03:00:00Z",
+      "venue": "Seattle",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-G-EGY-IRN-2026-06-26"
+    },
+    {
+      "id": "2026-G-NZL-BEL-2026-06-26",
+      "group_code": "G",
+      "home_team_id": "NZL",
+      "away_team_id": "BEL",
+      "kickoff": "2026-06-27T03:00:00Z",
+      "venue": "Vancouver",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-G-NZL-BEL-2026-06-26"
+    },
+    {
+      "id": "2026-H-ESP-CPV-2026-06-15",
+      "group_code": "H",
+      "home_team_id": "ESP",
+      "away_team_id": "CPV",
+      "kickoff": "2026-06-15T16:00:00Z",
+      "venue": "Atlanta",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-H-ESP-CPV-2026-06-15"
+    },
+    {
+      "id": "2026-H-KSA-URU-2026-06-15",
+      "group_code": "H",
+      "home_team_id": "KSA",
+      "away_team_id": "URU",
+      "kickoff": "2026-06-15T22:00:00Z",
+      "venue": "Miami (Miami Gardens)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-H-KSA-URU-2026-06-15"
+    },
+    {
+      "id": "2026-H-ESP-KSA-2026-06-21",
+      "group_code": "H",
+      "home_team_id": "ESP",
+      "away_team_id": "KSA",
+      "kickoff": "2026-06-21T16:00:00Z",
+      "venue": "Atlanta",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-H-ESP-KSA-2026-06-21"
+    },
+    {
+      "id": "2026-H-URU-CPV-2026-06-21",
+      "group_code": "H",
+      "home_team_id": "URU",
+      "away_team_id": "CPV",
+      "kickoff": "2026-06-21T22:00:00Z",
+      "venue": "Miami (Miami Gardens)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-H-URU-CPV-2026-06-21"
+    },
+    {
+      "id": "2026-H-CPV-KSA-2026-06-26",
+      "group_code": "H",
+      "home_team_id": "CPV",
+      "away_team_id": "KSA",
+      "kickoff": "2026-06-27T00:00:00Z",
+      "venue": "Houston",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-H-CPV-KSA-2026-06-26"
+    },
+    {
+      "id": "2026-H-URU-ESP-2026-06-26",
+      "group_code": "H",
+      "home_team_id": "URU",
+      "away_team_id": "ESP",
+      "kickoff": "2026-06-27T00:00:00Z",
+      "venue": "Guadalajara (Zapopan)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-H-URU-ESP-2026-06-26"
+    },
+    {
+      "id": "2026-I-FRA-SEN-2026-06-16",
+      "group_code": "I",
+      "home_team_id": "FRA",
+      "away_team_id": "SEN",
+      "kickoff": "2026-06-16T19:00:00Z",
+      "venue": "New York/New Jersey (East Rutherford)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-I-FRA-SEN-2026-06-16"
+    },
+    {
+      "id": "2026-I-IRQ-NOR-2026-06-16",
+      "group_code": "I",
+      "home_team_id": "IRQ",
+      "away_team_id": "NOR",
+      "kickoff": "2026-06-16T22:00:00Z",
+      "venue": "Boston (Foxborough)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-I-IRQ-NOR-2026-06-16"
+    },
+    {
+      "id": "2026-I-FRA-IRQ-2026-06-22",
+      "group_code": "I",
+      "home_team_id": "FRA",
+      "away_team_id": "IRQ",
+      "kickoff": "2026-06-22T21:00:00Z",
+      "venue": "Philadelphia",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-I-FRA-IRQ-2026-06-22"
+    },
+    {
+      "id": "2026-I-NOR-SEN-2026-06-22",
+      "group_code": "I",
+      "home_team_id": "NOR",
+      "away_team_id": "SEN",
+      "kickoff": "2026-06-23T00:00:00Z",
+      "venue": "New York/New Jersey (East Rutherford)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-I-NOR-SEN-2026-06-22"
+    },
+    {
+      "id": "2026-I-NOR-FRA-2026-06-26",
+      "group_code": "I",
+      "home_team_id": "NOR",
+      "away_team_id": "FRA",
+      "kickoff": "2026-06-26T19:00:00Z",
+      "venue": "Boston (Foxborough)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-I-NOR-FRA-2026-06-26"
+    },
+    {
+      "id": "2026-I-SEN-IRQ-2026-06-26",
+      "group_code": "I",
+      "home_team_id": "SEN",
+      "away_team_id": "IRQ",
+      "kickoff": "2026-06-26T19:00:00Z",
+      "venue": "Toronto",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-I-SEN-IRQ-2026-06-26"
+    },
+    {
+      "id": "2026-J-ARG-ALG-2026-06-16",
+      "group_code": "J",
+      "home_team_id": "ARG",
+      "away_team_id": "ALG",
+      "kickoff": "2026-06-17T01:00:00Z",
+      "venue": "Kansas City",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-J-ARG-ALG-2026-06-16"
+    },
+    {
+      "id": "2026-J-AUT-JOR-2026-06-16",
+      "group_code": "J",
+      "home_team_id": "AUT",
+      "away_team_id": "JOR",
+      "kickoff": "2026-06-17T04:00:00Z",
+      "venue": "San Francisco Bay Area (Santa Clara)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-J-AUT-JOR-2026-06-16"
+    },
+    {
+      "id": "2026-J-ARG-AUT-2026-06-22",
+      "group_code": "J",
+      "home_team_id": "ARG",
+      "away_team_id": "AUT",
+      "kickoff": "2026-06-22T17:00:00Z",
+      "venue": "Dallas (Arlington)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-J-ARG-AUT-2026-06-22"
+    },
+    {
+      "id": "2026-J-JOR-ALG-2026-06-22",
+      "group_code": "J",
+      "home_team_id": "JOR",
+      "away_team_id": "ALG",
+      "kickoff": "2026-06-23T03:00:00Z",
+      "venue": "San Francisco Bay Area (Santa Clara)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-J-JOR-ALG-2026-06-22"
+    },
+    {
+      "id": "2026-J-ALG-AUT-2026-06-27",
+      "group_code": "J",
+      "home_team_id": "ALG",
+      "away_team_id": "AUT",
+      "kickoff": "2026-06-28T02:00:00Z",
+      "venue": "Kansas City",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-J-ALG-AUT-2026-06-27"
+    },
+    {
+      "id": "2026-J-JOR-ARG-2026-06-27",
+      "group_code": "J",
+      "home_team_id": "JOR",
+      "away_team_id": "ARG",
+      "kickoff": "2026-06-28T02:00:00Z",
+      "venue": "Dallas (Arlington)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-J-JOR-ARG-2026-06-27"
+    },
+    {
+      "id": "2026-K-POR-COD-2026-06-17",
+      "group_code": "K",
+      "home_team_id": "POR",
+      "away_team_id": "COD",
+      "kickoff": "2026-06-17T17:00:00Z",
+      "venue": "Houston",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-K-POR-COD-2026-06-17"
+    },
+    {
+      "id": "2026-K-UZB-COL-2026-06-17",
+      "group_code": "K",
+      "home_team_id": "UZB",
+      "away_team_id": "COL",
+      "kickoff": "2026-06-18T02:00:00Z",
+      "venue": "Mexico City",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-K-UZB-COL-2026-06-17"
+    },
+    {
+      "id": "2026-K-POR-UZB-2026-06-23",
+      "group_code": "K",
+      "home_team_id": "POR",
+      "away_team_id": "UZB",
+      "kickoff": "2026-06-23T17:00:00Z",
+      "venue": "Houston",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-K-POR-UZB-2026-06-23"
+    },
+    {
+      "id": "2026-K-COL-COD-2026-06-23",
+      "group_code": "K",
+      "home_team_id": "COL",
+      "away_team_id": "COD",
+      "kickoff": "2026-06-24T02:00:00Z",
+      "venue": "Guadalajara (Zapopan)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-K-COL-COD-2026-06-23"
+    },
+    {
+      "id": "2026-K-COL-POR-2026-06-27",
+      "group_code": "K",
+      "home_team_id": "COL",
+      "away_team_id": "POR",
+      "kickoff": "2026-06-27T23:30:00Z",
+      "venue": "Miami (Miami Gardens)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-K-COL-POR-2026-06-27"
+    },
+    {
+      "id": "2026-K-COD-UZB-2026-06-27",
+      "group_code": "K",
+      "home_team_id": "COD",
+      "away_team_id": "UZB",
+      "kickoff": "2026-06-27T23:30:00Z",
+      "venue": "Atlanta",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-K-COD-UZB-2026-06-27"
+    },
+    {
+      "id": "2026-L-ENG-CRO-2026-06-17",
+      "group_code": "L",
+      "home_team_id": "ENG",
+      "away_team_id": "CRO",
+      "kickoff": "2026-06-17T20:00:00Z",
+      "venue": "Dallas (Arlington)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-L-ENG-CRO-2026-06-17"
+    },
+    {
+      "id": "2026-L-GHA-PAN-2026-06-17",
+      "group_code": "L",
+      "home_team_id": "GHA",
+      "away_team_id": "PAN",
+      "kickoff": "2026-06-17T23:00:00Z",
+      "venue": "Toronto",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-L-GHA-PAN-2026-06-17"
+    },
+    {
+      "id": "2026-L-ENG-GHA-2026-06-23",
+      "group_code": "L",
+      "home_team_id": "ENG",
+      "away_team_id": "GHA",
+      "kickoff": "2026-06-23T20:00:00Z",
+      "venue": "Boston (Foxborough)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-L-ENG-GHA-2026-06-23"
+    },
+    {
+      "id": "2026-L-PAN-CRO-2026-06-23",
+      "group_code": "L",
+      "home_team_id": "PAN",
+      "away_team_id": "CRO",
+      "kickoff": "2026-06-23T23:00:00Z",
+      "venue": "Toronto",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-L-PAN-CRO-2026-06-23"
+    },
+    {
+      "id": "2026-L-PAN-ENG-2026-06-27",
+      "group_code": "L",
+      "home_team_id": "PAN",
+      "away_team_id": "ENG",
+      "kickoff": "2026-06-27T21:00:00Z",
+      "venue": "New York/New Jersey (East Rutherford)",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-L-PAN-ENG-2026-06-27"
+    },
+    {
+      "id": "2026-L-CRO-GHA-2026-06-27",
+      "group_code": "L",
+      "home_team_id": "CRO",
+      "away_team_id": "GHA",
+      "kickoff": "2026-06-27T21:00:00Z",
+      "venue": "Philadelphia",
+      "status": "scheduled",
+      "home_score": null,
+      "away_score": null,
+      "source_match_id": "2026-L-CRO-GHA-2026-06-27"
+    }
+  ]
+}

@@ -1,0 +1,247 @@
+{
+  "source": "World Football Elo Ratings",
+  "source_url": "https://www.eloratings.net/World.tsv",
+  "retrieved_at": "2026-06-12T16:22:33.874379+00:00",
+  "ratings": [
+    {
+      "team_id": "MEX",
+      "rank": 18,
+      "elo": 1881
+    },
+    {
+      "team_id": "RSA",
+      "rank": 80,
+      "elo": 1511
+    },
+    {
+      "team_id": "KOR",
+      "rank": 26,
+      "elo": 1786
+    },
+    {
+      "team_id": "CZE",
+      "rank": 42,
+      "elo": 1712
+    },
+    {
+      "team_id": "CAN",
+      "rank": 25,
+      "elo": 1788
+    },
+    {
+      "team_id": "BIH",
+      "rank": 65,
+      "elo": 1595
+    },
+    {
+      "team_id": "QAT",
+      "rank": 96,
+      "elo": 1421
+    },
+    {
+      "team_id": "SUI",
+      "rank": 17,
+      "elo": 1891
+    },
+    {
+      "team_id": "BRA",
+      "rank": 5,
+      "elo": 1991
+    },
+    {
+      "team_id": "MAR",
+      "rank": 24,
+      "elo": 1827
+    },
+    {
+      "team_id": "HAI",
+      "rank": 73,
+      "elo": 1548
+    },
+    {
+      "team_id": "SCO",
+      "rank": 27,
+      "elo": 1782
+    },
+    {
+      "team_id": "USA",
+      "rank": 38,
+      "elo": 1726
+    },
+    {
+      "team_id": "PAR",
+      "rank": 22,
+      "elo": 1834
+    },
+    {
+      "team_id": "AUS",
+      "rank": 29,
+      "elo": 1777
+    },
+    {
+      "team_id": "TUR",
+      "rank": 13,
+      "elo": 1911
+    },
+    {
+      "team_id": "GER",
+      "rank": 10,
+      "elo": 1932
+    },
+    {
+      "team_id": "CUW",
+      "rank": 91,
+      "elo": 1434
+    },
+    {
+      "team_id": "CIV",
+      "rank": 49,
+      "elo": 1695
+    },
+    {
+      "team_id": "ECU",
+      "rank": 9,
+      "elo": 1938
+    },
+    {
+      "team_id": "NED",
+      "rank": 8,
+      "elo": 1948
+    },
+    {
+      "team_id": "JPN",
+      "rank": 14,
+      "elo": 1906
+    },
+    {
+      "team_id": "SWE",
+      "rank": 42,
+      "elo": 1712
+    },
+    {
+      "team_id": "TUN",
+      "rank": 58,
+      "elo": 1628
+    },
+    {
+      "team_id": "BEL",
+      "rank": 15,
+      "elo": 1894
+    },
+    {
+      "team_id": "EGY",
+      "rank": 48,
+      "elo": 1696
+    },
+    {
+      "team_id": "IRN",
+      "rank": 30,
+      "elo": 1772
+    },
+    {
+      "team_id": "NZL",
+      "rank": 72,
+      "elo": 1562
+    },
+    {
+      "team_id": "ESP",
+      "rank": 1,
+      "elo": 2157
+    },
+    {
+      "team_id": "CPV",
+      "rank": 68,
+      "elo": 1578
+    },
+    {
+      "team_id": "KSA",
+      "rank": 69,
+      "elo": 1576
+    },
+    {
+      "team_id": "URU",
+      "rank": 16,
+      "elo": 1892
+    },
+    {
+      "team_id": "FRA",
+      "rank": 3,
+      "elo": 2063
+    },
+    {
+      "team_id": "SEN",
+      "rank": 21,
+      "elo": 1860
+    },
+    {
+      "team_id": "IRQ",
+      "rank": 63,
+      "elo": 1607
+    },
+    {
+      "team_id": "NOR",
+      "rank": 11,
+      "elo": 1914
+    },
+    {
+      "team_id": "ARG",
+      "rank": 2,
+      "elo": 2115
+    },
+    {
+      "team_id": "ALG",
+      "rank": 30,
+      "elo": 1772
+    },
+    {
+      "team_id": "AUT",
+      "rank": 23,
+      "elo": 1830
+    },
+    {
+      "team_id": "JOR",
+      "rank": 52,
+      "elo": 1680
+    },
+    {
+      "team_id": "POR",
+      "rank": 6,
+      "elo": 1989
+    },
+    {
+      "team_id": "COD",
+      "rank": 55,
+      "elo": 1652
+    },
+    {
+      "team_id": "UZB",
+      "rank": 41,
+      "elo": 1714
+    },
+    {
+      "team_id": "COL",
+      "rank": 7,
+      "elo": 1982
+    },
+    {
+      "team_id": "ENG",
+      "rank": 4,
+      "elo": 2024
+    },
+    {
+      "team_id": "CRO",
+      "rank": 12,
+      "elo": 1912
+    },
+    {
+      "team_id": "GHA",
+      "rank": 81,
+      "elo": 1510
+    },
+    {
+      "team_id": "PAN",
+      "rank": 37,
+      "elo": 1730
+    }
+  ]
+}
