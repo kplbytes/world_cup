@@ -12,7 +12,7 @@ from app.services.localization import localized_team_names
 from app.services.manual_adjustments import list_manual_adjustments, serialize_adjustment
 from app.services.recompute import recompute_all
 from app.services.refresh import refresh_tournament
-from app.services.scoring import save_model_score, score_model
+from app.services.scoring import model_score_payload, save_model_score, score_model
 
 
 router = APIRouter(prefix="/api")
@@ -126,23 +126,7 @@ def refresh():
 @router.get("/model-score")
 def model_score():
     with session_scope() as session:
-        row = session.scalar(
-            select(ModelScore).order_by(ModelScore.id.desc()).limit(1)
-        )
-        if row is None:
-            return {"matches_scored": 0, "per_match": []}
-        return {
-            "id": row.id,
-            "revision_id": row.revision_id,
-            "matches_scored": row.matches_scored,
-            "brier_score": row.brier_score,
-            "log_loss": row.log_loss,
-            "outcome_hit_rate": row.outcome_hit_rate,
-            "top_score_hit_rate": row.top_score_hit_rate,
-            "xg_mae": row.xg_mae,
-            "per_match": row.per_match,
-            "created_at": row.created_at.isoformat(),
-        }
+        return model_score_payload(session)
 
 
 @router.get("/decision")

@@ -44,6 +44,7 @@ export default function MatchCard({ match }: { match: Match }) {
           <div className="calibration-row"><span>主胜</span><b>{(match.prediction.home_win * 100).toFixed(0)}%</b><small>vs</small><b>{(match.market.home_probability * 100).toFixed(0)}%</b>{match.market.divergence && <span className={`diff ${match.market.divergence.home_diff > 0 ? "pos" : "neg"}`}>{match.market.divergence.home_diff > 0 ? "+" : ""}{(match.market.divergence.home_diff * 100).toFixed(1)}%</span>}</div>
           <div className="calibration-row"><span>平局</span><b>{(match.prediction.draw * 100).toFixed(0)}%</b><small>vs</small><b>{(match.market.draw_probability * 100).toFixed(0)}%</b>{match.market.divergence && <span className={`diff ${match.market.divergence.draw_diff > 0 ? "pos" : "neg"}`}>{match.market.divergence.draw_diff > 0 ? "+" : ""}{(match.market.divergence.draw_diff * 100).toFixed(1)}%</span>}</div>
           <div className="calibration-row"><span>客胜</span><b>{(match.prediction.away_win * 100).toFixed(0)}%</b><small>vs</small><b>{(match.market.away_probability * 100).toFixed(0)}%</b>{match.market.divergence && <span className={`diff ${match.market.divergence.away_diff > 0 ? "pos" : "neg"}`}>{match.market.divergence.away_diff > 0 ? "+" : ""}{(match.market.divergence.away_diff * 100).toFixed(1)}%</span>}</div>
+          {match.market.divergence?.level === "高" && <p className="divergence-hint">建议人工核查：伤停、轮换、战意、赛程密度和预计首发是否与市场预期存在明显偏差。</p>}
         </div>}
       </> : <p className="final-note">终场结果已锁定并计入积分与后续预测。</p>}
     </div></div>

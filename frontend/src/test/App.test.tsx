@@ -57,7 +57,13 @@ const dashboard = {
       }] : [],
       source: "openfootball",
       source_updated_at: "2026-06-13T00:00:00Z",
-      market: null,
+      market: index === 0 ? {
+        home_probability: .34,
+        draw_probability: .28,
+        away_probability: .38,
+        raw_overround: 1.04,
+        divergence: { home_diff: .11, draw_diff: .02, away_diff: -.13, max_divergence: .13, level: "高" },
+      } : null,
       prediction: { home_xg: 1.4, away_xg: 1.0, home_win: .45, draw: .3, away_win: .25, scorelines: [{ home_goals: 1, away_goals: 0, probability: .12 }], confidence: .8, confidence_label: "高", data_confidence: .85, data_confidence_label: "高", model_confidence: .22, model_confidence_label: "中", explanation: "Model explanation", model_inputs: { home_elo: 1700, away_elo: 1600 }, model_version: "elo-poisson-v1" },
     })),
   })),
@@ -78,10 +84,84 @@ const decision = {
   }],
 };
 
+const modelScore = {
+  id: 2,
+  revision_id: 2,
+  model_version: "elo-poisson-v1.1",
+  matches_scored: 1,
+  brier_score: .22,
+  log_loss: .49,
+  outcome_hit_rate: 1,
+  top_score_hit_rate: 0,
+  xg_mae: .31,
+  per_match: [],
+  created_at: "2026-06-13T01:00:00Z",
+  history: [
+    { id: 2, revision_id: 2, model_version: "elo-poisson-v1.1", matches_scored: 1, brier_score: .22, log_loss: .49, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .31, per_match: [], created_at: "2026-06-13T01:00:00Z" },
+    { id: 1, revision_id: 1, model_version: "elo-poisson-v1", matches_scored: 1, brier_score: .24, log_loss: .51, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .35, per_match: [], created_at: "2026-06-12T01:00:00Z" },
+  ],
+  model_versions: [
+    {
+      model_version: "elo-poisson-v1.1",
+      runs: 1,
+      total_matches_scored: 1,
+      average_brier_score: .22,
+      average_log_loss: .49,
+      average_outcome_hit_rate: 1,
+      average_top_score_hit_rate: 0,
+      average_xg_mae: .31,
+      latest: { id: 2, revision_id: 2, model_version: "elo-poisson-v1.1", matches_scored: 1, brier_score: .22, log_loss: .49, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .31, per_match: [], created_at: "2026-06-13T01:00:00Z" },
+    },
+    {
+      model_version: "elo-poisson-v1",
+      runs: 1,
+      total_matches_scored: 1,
+      average_brier_score: .24,
+      average_log_loss: .51,
+      average_outcome_hit_rate: 1,
+      average_top_score_hit_rate: 0,
+      average_xg_mae: .35,
+      latest: { id: 1, revision_id: 1, model_version: "elo-poisson-v1", matches_scored: 1, brier_score: .24, log_loss: .51, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .35, per_match: [], created_at: "2026-06-12T01:00:00Z" },
+    },
+  ],
+  comparison: {
+    current_version: {
+      model_version: "elo-poisson-v1.1",
+      runs: 1,
+      total_matches_scored: 1,
+      average_brier_score: .22,
+      average_log_loss: .49,
+      average_outcome_hit_rate: 1,
+      average_top_score_hit_rate: 0,
+      average_xg_mae: .31,
+      latest: { id: 2, revision_id: 2, model_version: "elo-poisson-v1.1", matches_scored: 1, brier_score: .22, log_loss: .49, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .31, per_match: [], created_at: "2026-06-13T01:00:00Z" },
+    },
+    previous_version: {
+      model_version: "elo-poisson-v1",
+      runs: 1,
+      total_matches_scored: 1,
+      average_brier_score: .24,
+      average_log_loss: .51,
+      average_outcome_hit_rate: 1,
+      average_top_score_hit_rate: 0,
+      average_xg_mae: .35,
+      latest: { id: 1, revision_id: 1, model_version: "elo-poisson-v1", matches_scored: 1, brier_score: .24, log_loss: .51, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .35, per_match: [], created_at: "2026-06-12T01:00:00Z" },
+    },
+    deltas: { brier_score: -.02, log_loss: -.02, outcome_hit_rate: 0, top_score_hit_rate: 0, xg_mae: -.04 },
+  },
+};
+
 function renderApp() {
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
     const url = String(input);
-    return { ok: true, json: async () => url.includes("/api/decision") ? decision : dashboard };
+    return {
+      ok: true,
+      json: async () => url.includes("/api/model-score")
+        ? modelScore
+        : url.includes("/api/decision")
+          ? decision
+          : dashboard,
+    };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
@@ -101,6 +181,7 @@ it("opens all matches and team detail", async () => {
   await userEvent.click(screen.getAllByRole("button", { expanded: false })[0]);
   expect(await screen.findByText(/人工修正/)).toBeVisible();
   expect(screen.getByText(/主力前锋伤缺/)).toBeVisible();
+  expect(screen.getByText(/建议人工核查/)).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "全部比赛" }));
   expect(await screen.findByRole("heading", { name: "全部比赛" })).toBeVisible();
   expect(screen.getAllByTestId("match-card")).toHaveLength(72);
@@ -119,4 +200,6 @@ it("shows the pre-match prediction in post-match review", async () => {
   expect(screen.getByText("命中")).toBeVisible();
   expect(screen.getAllByText(/Brier/).length).toBeGreaterThan(0);
   expect(screen.getByText(/低估了净胜优势/)).toBeVisible();
+  expect(screen.getByText(/模型版本迭代/)).toBeVisible();
+  expect(screen.getByText(/对比基线：elo-poisson-v1/)).toBeVisible();
 });

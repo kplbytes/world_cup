@@ -100,3 +100,28 @@ export type DecisionData = {
   upset_risk: DecisionMatch[];
   recent_review: ReviewMatch[];
 };
+
+export type ModelScoreHistoryEntry = {
+  id: number; revision_id: number; model_version: string; matches_scored: number;
+  brier_score: number; log_loss: number; outcome_hit_rate: number;
+  top_score_hit_rate: number; xg_mae: number; per_match: unknown[]; created_at: string;
+};
+
+export type ModelVersionSummary = {
+  model_version: string; runs: number; total_matches_scored: number;
+  average_brier_score: number; average_log_loss: number; average_outcome_hit_rate: number;
+  average_top_score_hit_rate: number; average_xg_mae: number; latest: ModelScoreHistoryEntry;
+};
+
+export type ModelScoreData = ModelScoreHistoryEntry & {
+  history: ModelScoreHistoryEntry[];
+  model_versions: ModelVersionSummary[];
+  comparison: {
+    current_version: ModelVersionSummary;
+    previous_version: ModelVersionSummary;
+    deltas: {
+      brier_score: number; log_loss: number; outcome_hit_rate: number;
+      top_score_hit_rate: number; xg_mae: number;
+    };
+  } | null;
+};

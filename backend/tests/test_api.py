@@ -9,7 +9,7 @@ from app.models import Match
 from app.providers.openfootball import OpenFootballProvider
 from app.services.recompute import recompute_all
 from app.services.seed import seed_ratings, seed_team_aliases, seed_tournament
-from app.services.scoring import snapshot_prediction
+from app.services.scoring import save_model_score, score_model, snapshot_prediction
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -99,6 +99,39 @@ def test_sync_runs_returns_list(tmp_path):
 
     assert response.status_code == 200
     assert isinstance(response.json(), list)
+
+
+def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monkeypatch):
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        dashboard = client.get("/api/dashboard").json()
+        match_id = dashboard["groups"][0]["matches"][2]["id"]
+        match = session.get(Match, match_id)
+        snapshot_prediction(session, match_id)
+        match.status = "final"
+        match.home_score = 1
+        match.away_score = 0
+        first_revision = dashboard["revision"]["id"]
+        first_report = score_model(session)
+        save_model_score(session, first_report, first_revision)
+
+        monkeypatch.setattr("app.services.recompute.MODEL_VERSION", "elo-poisson-v1.1")
+        monkeypatch.setattr("app.prediction.poisson.MODEL_VERSION", "elo-poisson-v1.1")
+        second_revision = recompute_all(session, iterations=100, seed=11)
+        second_report = score_model(session)
+        save_model_score(session, second_report, second_revision.id)
+
+    payload = client.get("/api/model-score").json()
+
+    assert payload["model_version"] == "elo-poisson-v1.1"
+    assert len(payload["history"]) == 2
+    assert payload["history"][0]["model_version"] == "elo-poisson-v1.1"
+    assert {item["model_version"] for item in payload["model_versions"]} == {
+        "elo-poisson-v1",
+        "elo-poisson-v1.1",
+    }
+    assert payload["comparison"]["current_version"]["model_version"] == "elo-poisson-v1.1"
+    assert payload["comparison"]["previous_version"]["model_version"] == "elo-poisson-v1"
 
 
 def test_decision_review_contains_the_pre_match_prediction(tmp_path, monkeypatch):

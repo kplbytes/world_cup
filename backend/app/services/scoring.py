@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Match, ModelScore, PredictionSnapshot
+from app.models import DashboardRevision, Match, ModelScore, PredictionSnapshot
 
 _CLIP = 1e-6
 
@@ -41,6 +41,114 @@ class ModelScoreReport:
     top_score_hit_rate: float
     xg_mae: float
     per_match: list[MatchScoreDetail] = field(default_factory=list)
+
+
+def _serialize_model_score_row(row: ModelScore, model_version: str) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "revision_id": row.revision_id,
+        "model_version": model_version,
+        "matches_scored": row.matches_scored,
+        "brier_score": row.brier_score,
+        "log_loss": row.log_loss,
+        "outcome_hit_rate": row.outcome_hit_rate,
+        "top_score_hit_rate": row.top_score_hit_rate,
+        "xg_mae": row.xg_mae,
+        "per_match": row.per_match,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+def model_score_payload(session: Session, history_limit: int = 12) -> dict[str, Any]:
+    rows = session.execute(
+        select(ModelScore, DashboardRevision.model_version)
+        .join(DashboardRevision, ModelScore.revision_id == DashboardRevision.id)
+        .order_by(ModelScore.id.desc())
+    ).all()
+    if not rows:
+        return {
+            "matches_scored": 0,
+            "per_match": [],
+            "history": [],
+            "model_versions": [],
+            "comparison": None,
+        }
+
+    history = [
+        _serialize_model_score_row(score, model_version)
+        for score, model_version in rows[:history_limit]
+    ]
+
+    aggregates: dict[str, dict[str, Any]] = {}
+    for score, model_version in rows:
+        state = aggregates.setdefault(
+            model_version,
+            {
+                "model_version": model_version,
+                "runs": 0,
+                "total_matches_scored": 0,
+                "weighted_brier": 0.0,
+                "weighted_log_loss": 0.0,
+                "weighted_outcome_hit_rate": 0.0,
+                "weighted_top_score_hit_rate": 0.0,
+                "weighted_xg_mae": 0.0,
+                "latest": None,
+            },
+        )
+        state["runs"] += 1
+        state["total_matches_scored"] += score.matches_scored
+        state["weighted_brier"] += score.brier_score * score.matches_scored
+        state["weighted_log_loss"] += score.log_loss * score.matches_scored
+        state["weighted_outcome_hit_rate"] += score.outcome_hit_rate * score.matches_scored
+        state["weighted_top_score_hit_rate"] += score.top_score_hit_rate * score.matches_scored
+        state["weighted_xg_mae"] += score.xg_mae * score.matches_scored
+        if state["latest"] is None:
+            state["latest"] = _serialize_model_score_row(score, model_version)
+
+    model_versions = []
+    for state in aggregates.values():
+        total_matches = max(state["total_matches_scored"], 1)
+        latest = state["latest"]
+        model_versions.append(
+            {
+                "model_version": state["model_version"],
+                "runs": state["runs"],
+                "total_matches_scored": state["total_matches_scored"],
+                "average_brier_score": state["weighted_brier"] / total_matches,
+                "average_log_loss": state["weighted_log_loss"] / total_matches,
+                "average_outcome_hit_rate": state["weighted_outcome_hit_rate"] / total_matches,
+                "average_top_score_hit_rate": state["weighted_top_score_hit_rate"] / total_matches,
+                "average_xg_mae": state["weighted_xg_mae"] / total_matches,
+                "latest": latest,
+            }
+        )
+    model_versions.sort(
+        key=lambda item: item["latest"]["created_at"],
+        reverse=True,
+    )
+
+    comparison = None
+    if len(model_versions) >= 2:
+        current = model_versions[0]
+        previous = model_versions[1]
+        comparison = {
+            "current_version": current,
+            "previous_version": previous,
+            "deltas": {
+                "brier_score": current["latest"]["brier_score"] - previous["latest"]["brier_score"],
+                "log_loss": current["latest"]["log_loss"] - previous["latest"]["log_loss"],
+                "outcome_hit_rate": current["latest"]["outcome_hit_rate"] - previous["latest"]["outcome_hit_rate"],
+                "top_score_hit_rate": current["latest"]["top_score_hit_rate"] - previous["latest"]["top_score_hit_rate"],
+                "xg_mae": current["latest"]["xg_mae"] - previous["latest"]["xg_mae"],
+            },
+        }
+
+    latest_score, latest_version = rows[0]
+    payload = _serialize_model_score_row(latest_score, latest_version)
+    payload["history"] = history
+    payload["model_versions"] = model_versions
+    payload["comparison"] = comparison
+    return payload
 
 
 def score_predictions(

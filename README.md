@@ -13,6 +13,7 @@
 - 程序运行期间自动检查公开赛果；比赛窗口内加速至 2 分钟刷新
 - 页面"同步赛果"按钮支持手动触发刷新
 - 支持人工赛前修正：可按比赛录入伤停、轮换、战意等修正量，并即时重算预测
+- 模型评分接口支持按 `model_version` 聚合历史评分，便于对比不同版本的 Brier、LogLoss 和命中率
 - 上游不可用时保留最后一次成功数据，不清空本地看板
 - 可选 football-data.org 实时赛果适配器（需免费 API Token）
 - 可选中国体彩网 HAD 赔率解析器，仅作市场对照，不覆盖模型结果
@@ -234,7 +235,7 @@ SIMULATION_SEED=20260613
 | GET | `/api/teams/{id}` | 单支球队详情及本组赛程 |
 | GET | `/api/data-sources` | 数据来源状态（Provider、URL、抓取时间） |
 | GET | `/api/decision` | 决策视图数据（今日重点、最稳、最纠结、复盘） |
-| GET | `/api/model-score` | 已终场比赛的模型命中率、Brier 和 log loss |
+| GET | `/api/model-score` | 最新评分 + 评分历史 + 按 `model_version` 的版本对比 |
 | GET | `/api/manual-adjustments` | 列出人工修正，可选 `?match_id=` 过滤单场 |
 | GET | `/api/sync-runs` | 同步运行历史（成功/失败/警告记录） |
 | POST | `/api/refresh` | 手动触发刷新，返回同步结果摘要 |
