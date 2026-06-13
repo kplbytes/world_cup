@@ -141,3 +141,32 @@ def seed_ratings(session: Session, path: str | Path) -> int:
         )
     session.flush()
     return count
+
+
+def seed_team_aliases(session: Session, path: str | Path) -> int:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    inserted = 0
+    for team_id, aliases in payload["aliases"].items():
+        if session.get(Team, team_id) is None:
+            raise ValueError(f"alias references unknown team {team_id}")
+        existing = set(
+            session.scalars(
+                select(TeamAlias.alias).where(
+                    TeamAlias.team_id == team_id,
+                    TeamAlias.provider == payload["provider"],
+                )
+            )
+        )
+        for alias in aliases:
+            if alias not in existing:
+                session.add(
+                    TeamAlias(
+                        team_id=team_id,
+                        provider=payload["provider"],
+                        alias=alias,
+                    )
+                )
+                existing.add(alias)
+                inserted += 1
+    session.flush()
+    return inserted

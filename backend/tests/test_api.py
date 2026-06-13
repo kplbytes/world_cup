@@ -1,12 +1,15 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.db import create_database, session_scope
 from app.main import create_app
+from app.models import Match
 from app.providers.openfootball import OpenFootballProvider
 from app.services.recompute import recompute_all
 from app.services.seed import seed_ratings, seed_tournament
+from app.services.scoring import snapshot_prediction
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,3 +78,39 @@ def test_sync_runs_returns_list(tmp_path):
     assert response.status_code == 200
     assert isinstance(response.json(), list)
 
+
+def test_decision_review_contains_the_pre_match_prediction(tmp_path, monkeypatch):
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        dashboard = client.get("/api/dashboard").json()
+        match_id = dashboard["groups"][0]["matches"][2]["id"]
+        match = session.get(Match, match_id)
+        snapshot_prediction(session, match_id)
+        match.status = "final"
+        match.home_score = 1
+        match.away_score = 0
+        match.kickoff = datetime(2026, 6, 12, 12, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        "app.services.dashboard.decision_now",
+        lambda: datetime(2026, 6, 13, 8, tzinfo=timezone.utc),
+    )
+    review = client.get("/api/decision").json()["recent_review"]
+
+    item = next(row for row in review if row["id"] == match_id)
+    assert item["prediction"]["home_win"] == item["snapshot"]["home_win"]
+
+
+def test_decision_today_uses_shanghai_calendar_day(tmp_path, monkeypatch):
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        match = session.get(Match, "2026-B-QAT-SUI-2026-06-13")
+        match.kickoff = datetime(2026, 6, 13, 16, 30, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        "app.services.dashboard.decision_now",
+        lambda: datetime(2026, 6, 13, 8, tzinfo=timezone.utc),
+    )
+    today = client.get("/api/decision").json()["today_matches"]
+
+    assert any(row["id"] == "2026-B-QAT-SUI-2026-06-13" for row in today)

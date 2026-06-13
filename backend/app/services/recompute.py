@@ -193,11 +193,13 @@ def _compute_data_context(
     # Data freshness: based on most recent successful DataSnapshot
     latest_fetch = session.scalar(
         select(DataSnapshot.fetched_at)
-        .where(DataSnapshot.status == "ok")
+        .where(DataSnapshot.status == "available")
         .order_by(DataSnapshot.fetched_at.desc())
         .limit(1)
     )
     if latest_fetch is not None:
+        if latest_fetch.tzinfo is None:
+            latest_fetch = latest_fetch.replace(tzinfo=timezone.utc)
         age_hours = (now - latest_fetch).total_seconds() / 3600.0
         # Decay: fresh (<1h) = 1.0, stale (>168h / 7 days) = 0.0
         freshness = max(0.0, min(1.0, 1.0 - age_hours / 168.0))
@@ -206,12 +208,6 @@ def _compute_data_context(
 
     # Ranking coverage: proportion of teams that have ratings
     team_ids = {team.id for team in teams}
-    rated_count = session.scalar(
-        select(TeamRating.team_id)
-        .where(TeamRating.team_id.in_(team_ids))
-        .distinct()
-    )
-    # Count distinct teams with ratings
     from sqlalchemy import func
     distinct_rated = session.scalar(
         select(func.count(TeamRating.team_id.distinct()))
@@ -222,10 +218,9 @@ def _compute_data_context(
     # Provider agreement: how many distinct providers have recent ok snapshots
     provider_count = session.scalar(
         select(func.count(DataSnapshot.provider.distinct()))
-        .where(DataSnapshot.status == "ok")
+        .where(DataSnapshot.status == "available")
     ) or 0
     # Single provider = 1.0, multiple = slight boost but capped
     provider_agree = min(1.0, 0.8 + 0.1 * provider_count) if provider_count > 0 else 0.5
 
     return freshness, ranking_coverage, provider_agree
-

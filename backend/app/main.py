@@ -16,16 +16,20 @@ from app.models import DashboardRevision, Match, Team
 from app.schemas import TournamentPayload
 from app.services.recompute import recompute_all
 from app.services.refresh import refresh_tournament
-from app.services.seed import seed_ratings, seed_tournament
+from app.services.seed import seed_ratings, seed_team_aliases, seed_tournament
 
 
-def _is_live_window(session: Session) -> bool:
+def _is_live_window(session: Session, now: datetime | None = None) -> bool:
     """Check whether any match is currently live or kicked off within the last 3 hours."""
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
     window_start = now - timedelta(hours=3)
     recent_match = session.scalar(
         select(Match.id)
-        .where(Match.kickoff >= window_start)
+        .where(
+            Match.status != "final",
+            Match.kickoff >= window_start,
+            Match.kickoff <= now,
+        )
         .limit(1)
     )
     return recent_match is not None
@@ -40,6 +44,9 @@ def initialize_database() -> None:
             payload = TournamentPayload.model_validate_json(seed_path.read_text(encoding="utf-8"))
             seed_tournament(session, payload)
         seed_ratings(session, PROJECT_ROOT / "data" / "seed" / "elo-ratings-2026.json")
+        seed_team_aliases(
+            session, PROJECT_ROOT / "data" / "seed" / "sporttery-team-aliases.json"
+        )
         active = session.scalar(
             select(DashboardRevision.id).where(DashboardRevision.active.is_(True)).limit(1)
         )

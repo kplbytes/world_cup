@@ -7,9 +7,10 @@ from app.models import (
     MatchPrediction,
     QualificationPrediction,
     StandingSnapshot,
+    Team,
 )
 from app.providers.openfootball import OpenFootballProvider
-from app.services.recompute import recompute_all
+from app.services.recompute import _compute_data_context, recompute_all
 from app.services.seed import seed_ratings, seed_tournament
 
 
@@ -66,3 +67,15 @@ def test_failed_recompute_keeps_previous_revision_active(db_session, monkeypatch
         select(DashboardRevision.id).where(DashboardRevision.active.is_(True))
     ) == first.id
 
+
+def test_data_context_uses_available_snapshots(db_session):
+    seed_database(db_session)
+    teams = list(db_session.scalars(select(Team)))
+
+    freshness, ranking_coverage, provider_agreement = _compute_data_context(
+        db_session, teams
+    )
+
+    assert freshness > 0.5
+    assert ranking_coverage == 1.0
+    assert provider_agreement > 0.5

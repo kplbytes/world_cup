@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.models import MarketSnapshot
@@ -6,6 +8,8 @@ from app.services.market import (
     compute_divergence,
     divergence_level,
     _fuzzy_match,
+    _name_matches,
+    _sporttery_match_date,
 )
 
 
@@ -84,3 +88,11 @@ class TestFuzzyMatch:
 
     def test_no_match(self):
         assert _fuzzy_match("brazil", "germany") is False
+
+    def test_provider_alias_can_match_localized_name(self):
+        assert _name_matches({"korea republic", "south korea", "韩国"}, "韩国") is True
+
+    def test_sporttery_match_date_uses_shanghai_timezone(self):
+        kickoff = datetime(2026, 6, 13, 16, 30, tzinfo=timezone.utc)
+
+        assert _sporttery_match_date(kickoff) == "2026-06-14"

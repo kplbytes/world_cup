@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import httpx
 
-from app.models import MarketSnapshot, Match, Team
+from app.models import MarketSnapshot, Match, Team, TeamAlias
 from app.providers.sporttery import (
     MarketProbability,
     SportteryUnavailable,
@@ -21,6 +23,7 @@ _BROWSER_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
 _TIMEOUT = 15.0
+_SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 @dataclass(frozen=True)
@@ -143,21 +146,27 @@ def fetch_and_store_market_data(
     provider = SportteryRemoteProvider()
     raw_matches = provider.fetch_odds()
 
-    # Build canonical match lookup: (date_prefix, home_lower, away_lower) → match_id
+    # Build canonical match lookup and all known provider aliases per team.
     matches = list(session.scalars(sa_select(Match).where(Match.status != "final")))
     teams = {t.id: t for t in session.scalars(sa_select(Team))}
+    names_by_team = {
+        team.id: {team.name.lower(), team.short_name.lower(), team.code.lower()}
+        for team in teams.values()
+    }
+    for alias in session.scalars(sa_select(TeamAlias)):
+        names_by_team.setdefault(alias.team_id, set()).add(alias.alias.lower())
+    for alias, team_id in (team_aliases or {}).items():
+        names_by_team.setdefault(team_id, set()).add(alias.lower())
 
-    match_lookup: dict[tuple[str, str, str], Match] = {}
+    match_lookup: list[tuple[str, set[str], set[str], Match]] = []
     for m in matches:
         home = teams.get(m.home_team_id)
         away = teams.get(m.away_team_id)
         if home and away:
-            date_prefix = m.kickoff.strftime("%Y-%m-%d") if m.kickoff else ""
-            key = (date_prefix, home.name.lower(), away.name.lower())
-            match_lookup[key] = m
-
-    # Also build alias lookup
-    aliases = team_aliases or {}
+            date_prefix = _sporttery_match_date(m.kickoff) if m.kickoff else ""
+            match_lookup.append(
+                (date_prefix, names_by_team[home.id], names_by_team[away.id], m)
+            )
 
     stored = 0
     for raw in raw_matches:
@@ -169,11 +178,10 @@ def fetch_and_store_market_data(
         away_name = raw["away_team"].lower()
 
         matched = None
-        for (d, h, a), m in match_lookup.items():
+        for d, home_names, away_names, m in match_lookup:
             if d != date_str:
                 continue
-            # Fuzzy match: check if either canonical name contains the sporttery name or vice versa
-            if _fuzzy_match(h, home_name) and _fuzzy_match(a, away_name):
+            if _name_matches(home_names, home_name) and _name_matches(away_names, away_name):
                 matched = m
                 break
 
@@ -217,3 +225,14 @@ def _fuzzy_match(canonical: str, sporttery: str) -> bool:
         return True
     # Check common abbreviations / aliases
     return False
+
+
+def _name_matches(candidates: set[str], provider_name: str) -> bool:
+    normalized = provider_name.strip().lower()
+    return any(_fuzzy_match(candidate, normalized) for candidate in candidates)
+
+
+def _sporttery_match_date(kickoff: datetime) -> str:
+    if kickoff.tzinfo is None:
+        kickoff = kickoff.replace(tzinfo=timezone.utc)
+    return kickoff.astimezone(_SHANGHAI).strftime("%Y-%m-%d")

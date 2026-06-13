@@ -4,9 +4,9 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from app.models import Match, Team
+from app.models import Match, Team, TeamAlias
 from app.providers.openfootball import OpenFootballProvider
-from app.services.seed import seed_tournament
+from app.services.seed import seed_team_aliases, seed_tournament
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -40,6 +40,25 @@ def test_seed_is_idempotent(db_session):
     assert db_session.scalar(select(func.count(Match.id))) == 72
 
 
+def test_sporttery_alias_seed_adds_localized_team_names(db_session):
+    seed_tournament(db_session, load_payload())
+    path = Path(__file__).resolve().parents[2] / "data/seed/sporttery-team-aliases.json"
+
+    count = seed_team_aliases(db_session, path)
+    second_count = seed_team_aliases(db_session, path)
+
+    korea_aliases = set(
+        db_session.scalars(
+            select(TeamAlias.alias).where(
+                TeamAlias.team_id == "KOR", TeamAlias.provider == "sporttery"
+            )
+        )
+    )
+    assert count >= 48
+    assert second_count == 0
+    assert "韩国" in korea_aliases
+
+
 def test_provider_rejects_a_team_assigned_to_the_wrong_group(tmp_path):
     teams = (FIXTURES / "openfootball-worldcup-teams-2026.json").read_text()
     bad_teams = tmp_path / "teams.json"
@@ -52,4 +71,3 @@ def test_provider_rejects_a_team_assigned_to_the_wrong_group(tmp_path):
 
     with pytest.raises(ValidationError):
         provider.load()
-

@@ -1,4 +1,6 @@
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +18,13 @@ from app.models import (
     TeamRating,
 )
 from app.services.market import compute_divergence
+
+
+SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+
+def decision_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def build_dashboard(session: Session) -> dict:
@@ -252,8 +261,6 @@ def _team_ref(team: Team) -> dict:
 
 def build_decision(session: Session) -> dict:
     """Build decision view data for the frontend."""
-    from datetime import datetime, timedelta, timezone
-
     revision = session.scalar(
         select(DashboardRevision)
         .where(DashboardRevision.active.is_(True))
@@ -282,16 +289,28 @@ def build_decision(session: Session) -> dict:
     }
     teams_by_id = {team.id: team for team in teams}
 
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    tomorrow_end = today_start + timedelta(days=2)
-    yesterday_start = today_start - timedelta(days=1)
+    local_now = decision_now().astimezone(SHANGHAI)
+    local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = local_today.astimezone(timezone.utc)
+    tomorrow_end = (local_today + timedelta(days=2)).astimezone(timezone.utc)
+    yesterday_start = (local_today - timedelta(days=1)).astimezone(timezone.utc)
 
     def _ensure_aware(dt):
         """Ensure datetime is timezone-aware (default to UTC)."""
         if dt.tzinfo is None:
             return dt.replace(tzinfo=timezone.utc)
         return dt
+
+    def _snapshot_prediction(snap):
+        return {
+            "home_win": snap.home_win,
+            "draw": snap.draw,
+            "away_win": snap.away_win,
+            "confidence_label": snap.confidence_label,
+            "model_confidence_label": None,
+            "home_xg": snap.home_xg,
+            "away_xg": snap.away_xg,
+        }
 
     def _match_card(match, pred=None, market_snap=None):
         """Build a compact match card for decision view."""
@@ -409,6 +428,7 @@ def build_decision(session: Session) -> dict:
                     "home_win": snap.home_win, "draw": snap.draw, "away_win": snap.away_win,
                     "outcome_correct": predicted_outcome == actual_outcome,
                 }
+                card["prediction"] = _snapshot_prediction(snap)
             recent.append(card)
 
     return {
@@ -419,4 +439,3 @@ def build_decision(session: Session) -> dict:
         "upset_risk": upset_risk,
         "recent_review": recent,
     }
-

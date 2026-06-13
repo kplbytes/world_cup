@@ -50,8 +50,23 @@ const dashboard = {
   })),
 };
 
+const decision = {
+  today_matches: [], most_confident: [], most_uncertain: [], biggest_divergence: [], upset_risk: [],
+  recent_review: [{
+    id: "A-final", group_code: "A", kickoff: "2026-06-12T10:00:00Z", status: "final",
+    home_team: { id: "A1", name: "Team A1", short_name: "Team A1", flag: "⚽" },
+    away_team: { id: "A2", name: "Team A2", short_name: "Team A2", flag: "⚽" },
+    home_score: 2, away_score: 0,
+    prediction: { home_win: .6, draw: .25, away_win: .15, confidence_label: "高", model_confidence_label: "中", home_xg: 1.5, away_xg: .8 },
+    snapshot: { home_win: .6, draw: .25, away_win: .15, outcome_correct: true },
+  }],
+};
+
 function renderApp() {
-  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => dashboard }));
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    return { ok: true, json: async () => url.includes("/api/decision") ? decision : dashboard };
+  }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
 }
@@ -74,4 +89,13 @@ it("opens all matches and team detail", async () => {
   await userEvent.click(screen.getByRole("button", { name: "查看 Team A1" }));
   expect(await screen.findByLabelText("Team A1 球队详情")).toBeVisible();
   expect(screen.getByText(/球员名单与实时身价/)).toBeVisible();
+});
+
+it("shows the pre-match prediction in post-match review", async () => {
+  renderApp();
+  await screen.findByRole("heading", { name: "Group A" });
+  await userEvent.click(screen.getByRole("button", { name: "决策视图" }));
+
+  expect(await screen.findByText(/预测：主胜/)).toBeVisible();
+  expect(screen.getByText("命中")).toBeVisible();
 });
