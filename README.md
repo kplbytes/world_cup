@@ -7,7 +7,7 @@
 - A–L 组完整赛程与实时积分榜（FIFA 官方排名规则，含相互战绩 tie-break）
 - 每场未赛比赛的 Elo + Poisson 预测：胜/平/负概率、双方 xG、最可能比分
 - 50,000 次蒙特卡洛模拟：12 组排名 + 8 个最佳第三名晋级概率
-- 确定性中文模型解释，标注置信度（数据新鲜度、排名覆盖、历史覆盖、来源一致性）
+- 中文球队名称、确定性中文模型解释与数据置信度（数据新鲜度、排名覆盖、历史覆盖、来源一致性）
 - 本地 SQLite 持久化，每次完整计算形成独立 revision，支持审计回溯
 - 程序运行期间自动检查公开赛果；比赛窗口内加速至 2 分钟刷新
 - 页面"同步赛果"按钮支持手动触发刷新
@@ -28,7 +28,7 @@
 | HTTP 客户端 | HTTPX | 外部数据源抓取，支持超时与重定向 |
 | 定时任务 | APScheduler | 后台间隔刷新，支持动态调整间隔 |
 | 数值计算 | NumPy + SciPy | Poisson 分布矩阵与蒙特卡洛采样 |
-| 测试 | pytest | 32 个后端测试 |
+| 测试 | pytest | 75 个后端测试 |
 
 ### 前端
 
@@ -38,8 +38,8 @@
 | 语言 | TypeScript 5.8 | 严格模式 |
 | 构建 | Vite 6 | 开发热更新 + 生产构建 |
 | 数据获取 | TanStack Query v5 | API 状态管理，1 分钟 staleTime |
-| 图表 | Recharts | 概率可视化（声明式依赖） |
-| 测试 | Vitest + Testing Library | 2 个集成测试 |
+| 图表 | 手写概率条 + 卡片式信息设计 | 无额外图表依赖 |
+| 测试 | Vitest + Testing Library | 3 个集成测试 |
 | 样式 | 手写 CSS + CSS Variables | 暗色主题，oklch 色彩空间，响应式 |
 
 ## 项目架构
@@ -48,11 +48,11 @@
 world_cup/
 ├── backend/
 │   ├── app/
-│   │   ├── api/routes.py              # 9 个 REST 端点
+│   │   ├── api/routes.py              # 11 个 REST 端点
 │   │   ├── config.py                  # 环境变量与路径配置
 │   │   ├── db.py                      # SQLite 引擎、WAL、事务管理
 │   │   ├── main.py                    # FastAPI 生命周期、调度器、SPA 服务
-│   │   ├── models.py                  # 12 张 SQLAlchemy 表
+│   │   ├── models.py                  # 14 张 SQLAlchemy 表
 │   │   ├── schemas.py                 # Pydantic 数据契约（48 队 / 72 场校验）
 │   │   ├── domain/
 │   │   │   └── standings.py           # FIFA 积分排名 + 相互战绩 + 最佳第三名
@@ -70,13 +70,14 @@ world_cup/
 │   │   │   └── qualification.py       # 蒙特卡洛晋级模拟（向量化采样）
 │   │   └── services/
 │   │       ├── seed.py                # 种子数据导入（幂等）
+│   │       ├── localization.py        # 中文展示名称映射
 │   │       ├── recompute.py           # 原子化全量重算 + revision 发布
 │   │       ├── refresh.py             # 增量刷新 + 终场冲突检测
 │   │       └── dashboard.py           # revision 一致的看板数据组装
-│   └── tests/                         # 32 个测试，覆盖全部模块
+│   └── tests/                         # 75 个测试，覆盖全部模块
 ├── frontend/
 │   ├── src/
-│   │   ├── App.tsx                    # 根组件（分组/全部比赛切换）
+│   │   ├── App.tsx                    # 根组件（分组/全部比赛/决策视图切换）
 │   │   ├── api.ts                     # fetch 封装
 │   │   ├── types.ts                   # 完整类型定义
 │   │   ├── styles.css                 # 暗色主题 + 响应式布局
@@ -228,6 +229,8 @@ SIMULATION_SEED=20260613
 | GET | `/api/matches/{id}` | 单场比赛详情 |
 | GET | `/api/teams/{id}` | 单支球队详情及本组赛程 |
 | GET | `/api/data-sources` | 数据来源状态（Provider、URL、抓取时间） |
+| GET | `/api/decision` | 决策视图数据（今日重点、最稳、最纠结、复盘） |
+| GET | `/api/model-score` | 已终场比赛的模型命中率、Brier 和 log loss |
 | GET | `/api/sync-runs` | 同步运行历史（成功/失败/警告记录） |
 | POST | `/api/refresh` | 手动触发刷新，返回同步结果摘要 |
 
@@ -252,10 +255,10 @@ API 文档自动生成：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs
 ## 测试
 
 ```bash
-# 后端测试（32 个）
+# 后端测试（75 个）
 cd backend && .venv/bin/pytest -q
 
-# 前端测试（2 个）+ 类型检查 + 构建
+# 前端测试（3 个）+ 类型检查 + 构建
 cd frontend && npm test -- --run && npm run typecheck && npm run build
 ```
 
