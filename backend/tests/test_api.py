@@ -8,7 +8,7 @@ from app.main import create_app
 from app.models import Match
 from app.providers.openfootball import OpenFootballProvider
 from app.services.recompute import recompute_all
-from app.services.seed import seed_ratings, seed_tournament
+from app.services.seed import seed_ratings, seed_team_aliases, seed_tournament
 from app.services.scoring import snapshot_prediction
 
 
@@ -27,6 +27,7 @@ def api_client(tmp_path):
             ).load(),
         )
         seed_ratings(session, ROOT / "data/seed/elo-ratings-2026.json")
+        seed_team_aliases(session, ROOT / "data/seed/sporttery-team-aliases.json")
         recompute_all(session, iterations=100, seed=7)
     return TestClient(create_app(start_background=False))
 
@@ -43,6 +44,27 @@ def test_dashboard_returns_one_complete_revision(tmp_path):
     assert sum(len(group["matches"]) for group in payload["groups"]) == 72
     assert {group["code"] for group in payload["groups"]} == set("ABCDEFGHIJKL")
     assert payload["revision"]["id"] > 0
+
+
+def test_dashboard_uses_chinese_team_names_everywhere(tmp_path):
+    client = api_client(tmp_path)
+
+    group = client.get("/api/groups/A").json()
+    mexico = next(team for team in group["teams"] if team["id"] == "MEX")
+    mexico_match = next(
+        match
+        for match in group["matches"]
+        if match["status"] != "final"
+        and "MEX" in (match["home_team"]["id"], match["away_team"]["id"])
+    )
+
+    assert mexico["name"] == "墨西哥"
+    assert mexico["short_name"] == "墨西哥"
+    assert "墨西哥" in {
+        mexico_match["home_team"]["short_name"],
+        mexico_match["away_team"]["short_name"],
+    }
+    assert "墨西哥" in mexico_match["prediction"]["explanation"]
 
 
 def test_group_match_team_and_source_endpoints(tmp_path):

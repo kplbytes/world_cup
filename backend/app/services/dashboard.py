@@ -18,6 +18,7 @@ from app.models import (
     TeamRating,
 )
 from app.services.market import compute_divergence
+from app.services.localization import localized_team_names
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -67,6 +68,7 @@ def build_dashboard(session: Session) -> dict:
     }
     ratings = _latest_ratings(session)
     teams_by_id = {team.id: team for team in teams}
+    display_names = localized_team_names(session, teams)
     teams_by_group = defaultdict(list)
     matches_by_group = defaultdict(list)
     for team in teams:
@@ -76,8 +78,8 @@ def build_dashboard(session: Session) -> dict:
         teams_by_group[team.group_code].append(
             {
                 "id": team.id,
-                "name": team.name,
-                "short_name": team.short_name,
+                "name": display_names[team.id],
+                "short_name": display_names[team.id],
                 "code": team.code,
                 "flag": team.flag_url,
                 "elo": round(rating.elo),
@@ -125,8 +127,8 @@ def build_dashboard(session: Session) -> dict:
                 "kickoff": match.kickoff.isoformat(),
                 "venue": match.venue,
                 "status": match.status,
-                "home_team": _team_ref(teams_by_id[match.home_team_id]),
-                "away_team": _team_ref(teams_by_id[match.away_team_id]),
+                "home_team": _team_ref(teams_by_id[match.home_team_id], display_names),
+                "away_team": _team_ref(teams_by_id[match.away_team_id], display_names),
                 "home_score": match.home_score,
                 "away_score": match.away_score,
                 "prediction": _prediction_dict(prediction) if prediction else None,
@@ -255,8 +257,9 @@ def _prediction_dict(row: MatchPrediction) -> dict:
     }
 
 
-def _team_ref(team: Team) -> dict:
-    return {"id": team.id, "name": team.name, "short_name": team.short_name, "flag": team.flag_url}
+def _team_ref(team: Team, display_names: dict[str, str]) -> dict:
+    name = display_names[team.id]
+    return {"id": team.id, "name": name, "short_name": name, "flag": team.flag_url}
 
 
 def build_decision(session: Session) -> dict:
@@ -288,6 +291,7 @@ def build_decision(session: Session) -> dict:
         )
     }
     teams_by_id = {team.id: team for team in teams}
+    display_names = localized_team_names(session, teams)
 
     local_now = decision_now().astimezone(SHANGHAI)
     local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -318,8 +322,8 @@ def build_decision(session: Session) -> dict:
             "id": match.id,
             "group_code": match.group_code,
             "kickoff": match.kickoff.isoformat(),
-            "home_team": _team_ref(teams_by_id[match.home_team_id]),
-            "away_team": _team_ref(teams_by_id[match.away_team_id]),
+            "home_team": _team_ref(teams_by_id[match.home_team_id], display_names),
+            "away_team": _team_ref(teams_by_id[match.away_team_id], display_names),
             "status": match.status,
             "home_score": match.home_score,
             "away_score": match.away_score,

@@ -16,6 +16,7 @@ from app.models import (
     TeamRating,
 )
 from app.prediction.poisson import MODEL_VERSION, MatchContext, predict_match
+from app.services.localization import localized_team_names
 from app.simulation.qualification import (
     SimulatedMatch,
     SimulationTournament,
@@ -85,7 +86,7 @@ def recompute_all(
                 )
 
         remaining: list[SimulatedMatch] = []
-        team_names = {team.id: team.short_name for team in teams}
+        team_names = localized_team_names(session, teams)
         freshness, ranking_cov, provider_agree = _compute_data_context(session, teams)
         for match in matches:
             if match.status == "final":
