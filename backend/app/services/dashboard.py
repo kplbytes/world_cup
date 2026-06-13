@@ -11,6 +11,7 @@ from app.models import (
     MarketSnapshot,
     Match,
     MatchPrediction,
+    PredictionSnapshot,
     QualificationPrediction,
     StandingSnapshot,
     SyncRun,
@@ -19,6 +20,7 @@ from app.models import (
 )
 from app.services.market import compute_divergence
 from app.services.localization import localized_team_names
+from app.services.scoring import score_predictions
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
@@ -262,6 +264,55 @@ def _team_ref(team: Team, display_names: dict[str, str]) -> dict:
     return {"id": team.id, "name": name, "short_name": name, "flag": team.flag_url}
 
 
+def _empty_review_summary() -> dict:
+    return {
+        "matches_scored": 0,
+        "brier_score": 0.0,
+        "log_loss": 0.0,
+        "outcome_hit_rate": 0.0,
+        "top_score_hit_rate": 0.0,
+        "xg_mae": 0.0,
+    }
+
+
+def _outcome_label(outcome: str) -> str:
+    return {"home": "主胜", "draw": "平局", "away": "客胜"}[outcome]
+
+
+def _bias_explanation(snapshot: PredictionSnapshot, match: Match, outcome_correct: bool) -> str:
+    predicted_outcome = max(
+        [("home", snapshot.home_win), ("draw", snapshot.draw), ("away", snapshot.away_win)],
+        key=lambda item: item[1],
+    )[0]
+    if match.home_score is None or match.away_score is None:
+        return "比赛尚未形成可复盘结果。"
+
+    if match.home_score > match.away_score:
+        actual_outcome = "home"
+    elif match.home_score == match.away_score:
+        actual_outcome = "draw"
+    else:
+        actual_outcome = "away"
+
+    if outcome_correct:
+        if actual_outcome == "draw":
+            return "模型较准确地识别了平局方向，比赛胶着程度与预期接近。"
+        predicted_margin = snapshot.home_xg - snapshot.away_xg
+        actual_margin = match.home_score - match.away_score
+        margin_gap = actual_margin - predicted_margin
+        if margin_gap > 0.75:
+            return f"模型较准确地识别了{_outcome_label(actual_outcome)}方向，但低估了净胜优势。"
+        if margin_gap < -0.75:
+            return f"模型较准确地识别了{_outcome_label(actual_outcome)}方向，但高估了净胜优势。"
+        return f"模型较准确地识别了{_outcome_label(actual_outcome)}方向，比赛强弱差基本符合预期。"
+
+    if actual_outcome == "draw":
+        return f"模型更看好{_outcome_label(predicted_outcome)}，但实际打成平局，说明对胶着程度判断不足。"
+    if predicted_outcome == "draw":
+        return f"模型过度强调了平局可能，低估了{_outcome_label(actual_outcome)}兑现的概率。"
+    return f"模型更看好{_outcome_label(predicted_outcome)}，但比赛最终走向{_outcome_label(actual_outcome)}，方向判断出现偏差。"
+
+
 def build_decision(session: Session) -> dict:
     """Build decision view data for the frontend."""
     revision = session.scalar(
@@ -274,6 +325,7 @@ def build_decision(session: Session) -> dict:
         return {
             "today_matches": [], "most_confident": [], "most_uncertain": [],
             "biggest_divergence": [], "upset_risk": [], "recent_review": [],
+            "review_summary": _empty_review_summary(),
         }
 
     teams = list(session.scalars(select(Team).order_by(Team.group_code, Team.id)))
@@ -402,11 +454,20 @@ def build_decision(session: Session) -> dict:
     upset_risk = [_match_card(m, p, market_snaps.get(m.id)) for m, p in upset if p.home_win > 0.45 or p.away_win > 0.45]
 
     # Recent review: yesterday's finalized matches
-    from app.models import PredictionSnapshot
     snapshots = {
-        row.match_id: row
-        for row in session.scalars(select(PredictionSnapshot))
+        row.match_id: row for row in session.scalars(select(PredictionSnapshot))
     }
+    review_pairs = []
+    for m in matches:
+        snap = snapshots.get(m.id)
+        if not snap or m.status != "final" or m.home_score is None:
+            continue
+        kickoff_aware = _ensure_aware(m.kickoff)
+        if yesterday_start <= kickoff_aware < today_start:
+            review_pairs.append((snap, m))
+
+    review_report = score_predictions(review_pairs, display_names)
+    review_details = {detail.match_id: detail for detail in review_report.per_match}
     recent = []
     for m in matches:
         if m.status != "final" or m.home_score is None:
@@ -415,24 +476,25 @@ def build_decision(session: Session) -> dict:
         if yesterday_start <= kickoff_aware < today_start:
             snap = snapshots.get(m.id)
             card = _match_card(m)
-            if snap:
-                o_home, o_draw, o_away = 0.0, 0.0, 0.0
-                if m.home_score > m.away_score:
-                    o_home = 1.0
-                elif m.home_score == m.away_score:
-                    o_draw = 1.0
-                else:
-                    o_away = 1.0
-                predicted_outcome = max(
-                    [("home", snap.home_win), ("draw", snap.draw), ("away", snap.away_win)],
-                    key=lambda x: x[1],
-                )[0]
-                actual_outcome = "home" if o_home == 1.0 else "draw" if o_draw == 1.0 else "away"
+            detail = review_details.get(m.id)
+            if snap and detail:
                 card["snapshot"] = {
-                    "home_win": snap.home_win, "draw": snap.draw, "away_win": snap.away_win,
-                    "outcome_correct": predicted_outcome == actual_outcome,
+                    "home_win": snap.home_win,
+                    "draw": snap.draw,
+                    "away_win": snap.away_win,
+                    "outcome_correct": detail.outcome_correct,
                 }
                 card["prediction"] = _snapshot_prediction(snap)
+                card["review"] = {
+                    "brier": detail.brier,
+                    "log_loss": detail.log_loss,
+                    "xg_error": detail.xg_error,
+                    "bias_explanation": _bias_explanation(
+                        snap,
+                        m,
+                        detail.outcome_correct,
+                    ),
+                }
             recent.append(card)
 
     return {
@@ -442,4 +504,12 @@ def build_decision(session: Session) -> dict:
         "biggest_divergence": biggest_divergence,
         "upset_risk": upset_risk,
         "recent_review": recent,
+        "review_summary": {
+            "matches_scored": review_report.matches_scored,
+            "brier_score": review_report.brier_score,
+            "log_loss": review_report.log_loss,
+            "outcome_hit_rate": review_report.outcome_hit_rate,
+            "top_score_hit_rate": review_report.top_score_hit_rate,
+            "xg_mae": review_report.xg_mae,
+        },
     }

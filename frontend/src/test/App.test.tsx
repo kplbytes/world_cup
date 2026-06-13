@@ -51,6 +51,7 @@ const dashboard = {
 };
 
 const decision = {
+  review_summary: { matches_scored: 1, brier_score: .24, log_loss: .51, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .35 },
   today_matches: [], most_confident: [], most_uncertain: [], biggest_divergence: [], upset_risk: [],
   recent_review: [{
     id: "A-final", group_code: "A", kickoff: "2026-06-12T10:00:00Z", status: "final",
@@ -59,6 +60,7 @@ const decision = {
     home_score: 2, away_score: 0,
     prediction: { home_win: .6, draw: .25, away_win: .15, confidence_label: "高", model_confidence_label: "中", home_xg: 1.5, away_xg: .8 },
     snapshot: { home_win: .6, draw: .25, away_win: .15, outcome_correct: true },
+    review: { brier: .24, log_loss: .51, xg_error: .35, bias_explanation: "模型较准确地识别了主胜方向，但低估了净胜优势。" },
   }],
 };
 
@@ -98,4 +100,6 @@ it("shows the pre-match prediction in post-match review", async () => {
 
   expect(await screen.findByText(/预测：主胜/)).toBeVisible();
   expect(screen.getByText("命中")).toBeVisible();
+  expect(screen.getAllByText(/Brier/).length).toBeGreaterThan(0);
+  expect(screen.getByText(/低估了净胜优势/)).toBeVisible();
 });

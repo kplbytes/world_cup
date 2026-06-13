@@ -32,6 +32,7 @@ function DecisionCard({ match, showMarket }: { match: DecisionMatch; showMarket?
 
 function ReviewCard({ match }: { match: ReviewMatch }) {
   const pred = match.prediction;
+  const review = match.review;
   return <div className={`review-card ${match.snapshot?.outcome_correct ? "correct" : "incorrect"}`}>
     <div className="decision-teams">
       <span className="decision-team">{match.home_team.flag} {match.home_team.short_name}</span>
@@ -42,6 +43,12 @@ function ReviewCard({ match }: { match: ReviewMatch }) {
       <span>预测：{pred.home_win > pred.draw && pred.home_win > pred.away_win ? "主胜" : pred.away_win > pred.draw ? "客胜" : "平局"} ({(Math.max(pred.home_win, pred.draw, pred.away_win) * 100).toFixed(0)}%)</span>
       <span className={match.snapshot.outcome_correct ? "hit" : "miss"}>{match.snapshot.outcome_correct ? "命中" : "偏差"}</span>
     </div>}
+    {review && <div className="review-metrics">
+      <span>Brier {review.brier.toFixed(3)}</span>
+      <span>LogLoss {review.log_loss.toFixed(3)}</span>
+      <span>xG误差 {review.xg_error.toFixed(2)}</span>
+    </div>}
+    {review && <p className="review-bias">{review.bias_explanation}</p>}
   </div>;
 }
 
@@ -57,6 +64,14 @@ export default function DecisionView() {
   if (query.isLoading) return <div className="state-screen"><span>正在加载决策数据</span></div>;
   if (query.isError || !query.data) return <div className="state-screen error"><span>决策数据加载失败</span></div>;
   const d = query.data;
+  const reviewSummary = d.review_summary ?? {
+    matches_scored: 0,
+    brier_score: 0,
+    log_loss: 0,
+    outcome_hit_rate: 0,
+    top_score_hit_rate: 0,
+    xg_mae: 0,
+  };
   return <div className="decision-view">
     <Section title="今日重点比赛">
       {d.today_matches.length === 0
@@ -84,6 +99,14 @@ export default function DecisionView() {
         : <div className="decision-grid">{d.upset_risk.map((m) => <DecisionCard key={m.id} match={m} />)}</div>}
     </Section>
     <Section title="赛后复盘">
+      {reviewSummary.matches_scored > 0 && <div className="review-summary">
+        <span>样本 {reviewSummary.matches_scored}</span>
+        <span>Brier {reviewSummary.brier_score.toFixed(3)}</span>
+        <span>LogLoss {reviewSummary.log_loss.toFixed(3)}</span>
+        <span>胜平负命中率 {(reviewSummary.outcome_hit_rate * 100).toFixed(0)}%</span>
+        <span>比分命中率 {(reviewSummary.top_score_hit_rate * 100).toFixed(0)}%</span>
+        <span>xG误差 {reviewSummary.xg_mae.toFixed(2)}</span>
+      </div>}
       {d.recent_review.length === 0
         ? <p className="decision-empty">昨日暂无终场比赛</p>
         : <div className="decision-grid">{d.recent_review.map((m) => <ReviewCard key={m.id} match={m} />)}</div>}

@@ -76,9 +76,14 @@ export type DecisionMatch = {
 
 export type ReviewMatch = DecisionMatch & {
   snapshot?: { home_win: number; draw: number; away_win: number; outcome_correct: boolean };
+  review?: { brier: number; log_loss: number; xg_error: number; bias_explanation: string };
 };
 
 export type DecisionData = {
+  review_summary: {
+    matches_scored: number; brier_score: number; log_loss: number;
+    outcome_hit_rate: number; top_score_hit_rate: number; xg_mae: number;
+  };
   today_matches: DecisionMatch[];
   most_confident: DecisionMatch[];
   most_uncertain: DecisionMatch[];
@@ -86,4 +91,3 @@ export type DecisionData = {
   upset_risk: DecisionMatch[];
   recent_review: ReviewMatch[];
 };
-

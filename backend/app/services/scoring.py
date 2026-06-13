@@ -26,6 +26,7 @@ class MatchScoreDetail:
     predicted: dict[str, float]
     actual: dict[str, int]
     brier: float
+    log_loss: float
     outcome_correct: bool
     top_score_correct: bool
     xg_error: float
@@ -126,6 +127,7 @@ def score_predictions(
                 predicted={"home_win": p_home, "draw": p_draw, "away_win": p_away},
                 actual={"home_score": actual_home, "away_score": actual_away},
                 brier=brier,
+                log_loss=ll,
                 outcome_correct=outcome_correct,
                 top_score_correct=top_score_correct,
                 xg_error=xg_error,
@@ -188,6 +190,7 @@ def save_model_score(session: Session, report: ModelScoreReport, revision_id: in
                 "predicted": d.predicted,
                 "actual": d.actual,
                 "brier": d.brier,
+                "log_loss": d.log_loss,
                 "outcome_correct": d.outcome_correct,
                 "top_score_correct": d.top_score_correct,
                 "xg_error": d.xg_error,

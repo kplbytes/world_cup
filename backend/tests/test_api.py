@@ -121,6 +121,31 @@ def test_decision_review_contains_the_pre_match_prediction(tmp_path, monkeypatch
 
     item = next(row for row in review if row["id"] == match_id)
     assert item["prediction"]["home_win"] == item["snapshot"]["home_win"]
+    assert item["review"]["bias_explanation"]
+
+
+def test_decision_exposes_review_summary_metrics(tmp_path, monkeypatch):
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        dashboard = client.get("/api/dashboard").json()
+        match_id = dashboard["groups"][0]["matches"][2]["id"]
+        match = session.get(Match, match_id)
+        snapshot_prediction(session, match_id)
+        match.status = "final"
+        match.home_score = 1
+        match.away_score = 0
+        match.kickoff = datetime(2026, 6, 12, 12, tzinfo=timezone.utc)
+
+    monkeypatch.setattr(
+        "app.services.dashboard.decision_now",
+        lambda: datetime(2026, 6, 13, 8, tzinfo=timezone.utc),
+    )
+    payload = client.get("/api/decision").json()
+
+    assert payload["review_summary"]["matches_scored"] == 1
+    assert payload["review_summary"]["brier_score"] > 0
+    assert payload["review_summary"]["log_loss"] > 0
+    assert payload["review_summary"]["outcome_hit_rate"] in (0, 1)
 
 
 def test_decision_today_uses_shanghai_calendar_day(tmp_path, monkeypatch):
