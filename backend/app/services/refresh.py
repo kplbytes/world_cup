@@ -11,6 +11,10 @@ from app.providers.sporttery import SportteryUnavailable
 from app.services.market import fetch_and_store_market_data
 from app.services.recompute import recompute_all
 from app.services.scoring import save_model_score, score_model, snapshot_prediction
+from app.services.snapshots import lock_due_predictions
+from app.intelligence.pipeline import run_intelligence_pipeline
+
+_SCORE_ONLY_PROVIDERS = {"worldcup26"}
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ def refresh_tournament(
     providers: list,
     iterations: int = 50_000,
     seed: int = 20260613,
+    recompute_predictions: bool = True,
 ) -> RefreshOutcome:
     sync_run = SyncRun(status="running")
     session.add(sync_run)
@@ -42,6 +47,7 @@ def refresh_tournament(
             errors.append(str(exc))
 
     if not successful_payloads:
+        lock_due_predictions(session)
         sync_run.status = "failed"
         sync_run.finished_at = datetime.now(timezone.utc)
         sync_run.errors = errors
@@ -73,6 +79,21 @@ def refresh_tournament(
         for incoming in payload.matches:
             stored = session.get(Match, incoming.id)
             if stored is None:
+                candidates = session.scalars(
+                    select(Match).where(
+                        Match.home_team_id == incoming.home_team_id,
+                        Match.away_team_id == incoming.away_team_id,
+                    )
+                )
+                stored = next(
+                    (
+                        candidate
+                        for candidate in candidates
+                        if _same_instant(candidate.kickoff, incoming.kickoff)
+                    ),
+                    None,
+                )
+            if stored is None:
                 warnings.append(f"unknown canonical match ignored: {incoming.id}")
                 continue
             if stored.status == "final":
@@ -92,9 +113,17 @@ def refresh_tournament(
                 _update_final_ratings(session, stored)
                 finalized += 1
                 updated += 1
-            elif not _same_instant(incoming.kickoff, stored.kickoff) or incoming.venue != stored.venue:
-                stored.kickoff = incoming.kickoff
-                stored.venue = incoming.venue
+            else:
+                if payload.source.provider in _SCORE_ONLY_PROVIDERS:
+                    continue
+                kickoff_changed = not _same_instant(incoming.kickoff, stored.kickoff)
+                venue_changed = incoming.venue is not None and incoming.venue != stored.venue
+                if not kickoff_changed and not venue_changed:
+                    continue
+                if kickoff_changed:
+                    stored.kickoff = incoming.kickoff
+                if incoming.venue is not None:
+                    stored.venue = incoming.venue
                 stored.source_updated_at = payload.source.fetched_at
                 updated += 1
 
@@ -108,12 +137,23 @@ def refresh_tournament(
     except Exception as exc:
         warnings.append(f"sporttery error: {exc}")
 
+    new_intel = False
+    try:
+        new_intel = run_intelligence_pipeline(session)
+    except Exception as exc:
+        warnings.append(f"Intelligence pipeline error: {exc}")
+
     revision_id = None
-    if updated:
-        revision = recompute_all(session, iterations=iterations, seed=seed)
-        revision_id = revision.id
-        report = score_model(session)
-        save_model_score(session, report, revision.id)
+    if recompute_predictions and (updated > 0 or new_intel):
+        try:
+            revision = recompute_all(session, iterations=iterations, seed=seed)
+            revision_id = revision.id
+            report = score_model(session)
+            save_model_score(session, report, revision.id)
+        except Exception as exc:
+            warnings.append(f"Recompute error: {exc}")
+
+    lock_due_predictions(session)
 
     sync_run.status = "success"
     sync_run.finished_at = datetime.now(timezone.utc)

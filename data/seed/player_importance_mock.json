@@ -1,0 +1,42 @@
+[
+  {
+    "team_id": "FRA",
+    "player_name": "Kylian Mbappé",
+    "position": "FWD",
+    "importance_score": 0.95,
+    "is_key_player": true,
+    "source": "manual_mock"
+  },
+  {
+    "team_id": "ARG",
+    "player_name": "Lionel Messi",
+    "position": "FWD",
+    "importance_score": 0.98,
+    "is_key_player": true,
+    "source": "manual_mock"
+  },
+  {
+    "team_id": "CZE",
+    "player_name": "Fake Player",
+    "position": "MID",
+    "importance_score": 0.80,
+    "is_key_player": false,
+    "source": "manual_mock"
+  },
+  {
+    "team_id": "CZE",
+    "player_name": "Star Defender",
+    "position": "DEF",
+    "importance_score": 0.90,
+    "is_key_player": true,
+    "source": "manual_mock"
+  },
+  {
+    "team_id": "CZE",
+    "player_name": "Star Goalie",
+    "position": "GK",
+    "importance_score": 0.85,
+    "is_key_player": true,
+    "source": "manual_mock"
+  }
+]

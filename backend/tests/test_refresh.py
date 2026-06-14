@@ -1,10 +1,11 @@
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
-from app.models import DashboardRevision, Match, TeamRating
+from app.models import DashboardRevision, Match, PredictionSnapshot, TeamRating
 from app.providers.openfootball import OpenFootballProvider
 from app.services.recompute import recompute_all
 from app.services.refresh import refresh_tournament
@@ -75,6 +76,75 @@ def test_new_final_score_updates_result_ratings_and_revision(db_session):
     assert after_rating != before_rating
 
 
+def test_refresh_matches_provider_result_by_teams_and_kickoff_when_id_differs(db_session, monkeypatch):
+    payload = seeded_session(db_session)
+    monkeypatch.setattr("app.services.refresh.fetch_and_store_market_data", lambda session: 0)
+    monkeypatch.setattr("app.services.refresh.run_intelligence_pipeline", lambda session: False)
+    updated = payload.model_copy(deep=True)
+    target = next(match for match in updated.matches if match.status == "scheduled")
+    canonical_id = target.id
+    target.id = f"provider-{target.id}"
+    target.status = "final"
+    target.home_score = 2
+    target.away_score = 0
+
+    outcome = refresh_tournament(
+        db_session,
+        providers=[StaticProvider(updated)],
+        iterations=100,
+        seed=8,
+    )
+
+    refreshed = db_session.get(Match, canonical_id)
+    assert outcome.finalized_matches == 1
+    assert (refreshed.status, refreshed.home_score, refreshed.away_score) == ("final", 2, 0)
+
+
+def test_refresh_does_not_replace_known_venue_with_missing_provider_value(db_session, monkeypatch):
+    payload = seeded_session(db_session)
+    monkeypatch.setattr("app.services.refresh.fetch_and_store_market_data", lambda session: 0)
+    monkeypatch.setattr("app.services.refresh.run_intelligence_pipeline", lambda session: False)
+    updated = payload.model_copy(deep=True)
+    target = next(match for match in updated.matches if match.status == "scheduled")
+    original_venue = target.venue
+    target.venue = None
+
+    outcome = refresh_tournament(
+        db_session,
+        providers=[StaticProvider(updated)],
+        iterations=100,
+        seed=8,
+    )
+
+    refreshed = db_session.get(Match, target.id)
+    assert outcome.updated_matches == 0
+    assert refreshed.venue == original_venue
+
+
+def test_score_only_provider_does_not_replace_kickoff_or_venue(db_session, monkeypatch):
+    payload = seeded_session(db_session)
+    monkeypatch.setattr("app.services.refresh.fetch_and_store_market_data", lambda session: 0)
+    monkeypatch.setattr("app.services.refresh.run_intelligence_pipeline", lambda session: False)
+    updated = payload.model_copy(deep=True)
+    updated.source.provider = "worldcup26"
+    target = next(match for match in updated.matches if match.status == "scheduled")
+    original = db_session.get(Match, target.id)
+    target.kickoff = target.kickoff + timedelta(hours=5)
+    target.venue = "Different Venue"
+
+    outcome = refresh_tournament(
+        db_session,
+        providers=[StaticProvider(updated)],
+        iterations=100,
+        seed=8,
+    )
+
+    refreshed = db_session.get(Match, target.id)
+    assert outcome.updated_matches == 0
+    assert refreshed.kickoff == original.kickoff
+    assert refreshed.venue == original.venue
+
+
 def test_conflicting_final_score_is_rejected(db_session):
     payload = seeded_session(db_session)
     updated = payload.model_copy(deep=True)
@@ -99,6 +169,18 @@ def test_provider_failure_keeps_active_revision(db_session):
     before_revision = db_session.scalar(
         select(DashboardRevision.id).where(DashboardRevision.active.is_(True))
     )
+    target = db_session.scalar(
+        select(Match).where(Match.status != "final").order_by(Match.kickoff).limit(1)
+    )
+    target.kickoff = datetime.now(timezone.utc) + timedelta(minutes=15)
+    snapshot = db_session.scalar(
+        select(PredictionSnapshot)
+        .where(PredictionSnapshot.match_id == target.id)
+        .order_by(PredictionSnapshot.snapshotted_at.desc())
+        .limit(1)
+    )
+    assert snapshot is not None
+    assert snapshot.is_pre_match_locked is False
 
     class FailedProvider:
         def load(self):
@@ -111,13 +193,18 @@ def test_provider_failure_keeps_active_revision(db_session):
     )
     assert outcome.status == "failed"
     assert after_revision == before_revision
+    assert snapshot.is_pre_match_locked is True
 
 
-def test_unchanged_payload_does_not_publish_a_new_revision(db_session):
+def test_unchanged_payload_does_not_publish_a_new_revision(db_session, monkeypatch):
     payload = seeded_session(db_session)
     before_revision = db_session.scalar(
         select(DashboardRevision.id).where(DashboardRevision.active.is_(True))
     )
+
+    # Mock intelligence pipeline to avoid flaky network-dependent behavior
+    monkeypatch.setattr("app.services.refresh.run_intelligence_pipeline", lambda s: False)
+    monkeypatch.setattr("app.services.refresh.fetch_and_store_market_data", lambda s: 0)
 
     outcome = refresh_tournament(
         db_session,

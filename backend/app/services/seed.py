@@ -59,12 +59,14 @@ def seed_tournament(session: Session, payload: TournamentPayload) -> SeedResult:
         match.away_team_id = incoming.away_team_id
         match.kickoff = incoming.kickoff
         match.venue = incoming.venue
-        match.status = incoming.status
-        match.home_score = incoming.home_score
-        match.away_score = incoming.away_score
         match.source = payload.source.provider
         match.source_match_id = incoming.source_match_id
         match.source_updated_at = payload.source.fetched_at
+        # Protect: don't overwrite status/scores of finalized matches
+        if match.status != "final":
+            match.status = incoming.status
+            match.home_score = incoming.home_score
+            match.away_score = incoming.away_score
 
     checksum = sha256(payload.model_dump_json().encode()).hexdigest()
     existing_snapshot = session.scalar(

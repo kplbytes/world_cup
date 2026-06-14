@@ -1,0 +1,78 @@
+# Model configuration parameters for the World Cup prediction system.
+# Each model_version maps to a named config set.
+# Parameters are consumed by poisson.py predict_match_with_config().
+
+elo_poisson_base:
+  elo_scale: 400            # Controls how Elo differences translate to strength gaps
+  base_goal_mean_home: 1.25 # Base expected goals for home team
+  base_goal_mean_away: 1.10 # Base expected goals for away team
+  strength_coeff_home: 0.90 # How much strength delta affects home xG
+  strength_coeff_away: 0.75 # How much strength delta affects away xG (negative direction)
+  home_advantage: 0.0       # Neutral venue = 0
+  draw_boost: 1.00          # Multiplier on draw probability after Poisson (1.00 = no boost)
+  favorite_dampening: 0.00  # Reduce max prob by this factor * (max_prob - 0.33)
+  underdog_boost: 0.00      # Add to min(home_win, away_win) probability before renorm
+  recent_form_weight: 0.0   # Weight for recent form delta
+  market_blend_weight: 0.00 # Blend with market odds (0 = pure model, 1 = pure market)
+  numerical_adjustment_weight: 1.00  # Scale factor for numerical adjustments
+  max_xg_delta: 3.50        # Maximum xG after adjustments
+  min_xg: 0.20              # Minimum xG
+  poisson_dispersion: 1.00  # Dispersion multiplier for Poisson (>1 = more variance)
+  upset_factor: 0.00        # Add to underdog tail probability
+
+# Named model version configs
+model_versions:
+  elo-poisson-v1:
+    _base: elo_poisson_base
+    description: "Baseline Elo + Poisson model"
+
+  elo-poisson-v1-drawboost:
+    _base: elo_poisson_base
+    draw_boost: 1.10
+    description: "Draw probability boosted by 10% for group stage draws"
+
+  elo-poisson-v1-drawboost-high:
+    _base: elo_poisson_base
+    draw_boost: 1.15
+    description: "Draw probability boosted by 15% (aggressive)"
+
+  elo-poisson-v1-favorite-dampened:
+    _base: elo_poisson_base
+    favorite_dampening: 0.10
+    description: "Dampen favorite overconfidence by 10%"
+
+  elo-poisson-v1-upset:
+    _base: elo_poisson_base
+    underdog_boost: 0.03
+    upset_factor: 0.02
+    description: "Boost underdog probability and tail events"
+
+  elo-poisson-v1-upset-aggressive:
+    _base: elo_poisson_base
+    underdog_boost: 0.06
+    upset_factor: 0.04
+    favorite_dampening: 0.05
+    description: "Aggressive underdog boost with mild favorite dampening"
+
+  elo-poisson-v1-market-lite:
+    _base: elo_poisson_base
+    market_blend_weight: 0.15
+    description: "Blend 15% market odds for probability calibration"
+
+  elo-poisson-v1-market-medium:
+    _base: elo_poisson_base
+    market_blend_weight: 0.25
+    description: "Blend 25% market odds"
+
+  elo-poisson-v1-intel-numeric:
+    _base: elo_poisson_base
+    numerical_adjustment_weight: 1.00
+    description: "Use experimental injury/suspension numerical adjustments"
+
+  elo-poisson-v2-calibrated:
+    _base: elo_poisson_base
+    draw_boost: 1.08
+    favorite_dampening: 0.05
+    underdog_boost: 0.02
+    market_blend_weight: 0.10
+    description: "Calibrated v2: mild draw boost + favorite dampening + market blend"

@@ -39,7 +39,7 @@ def parse_response(body: str) -> dict:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:
         raise SportteryUnavailable("Sporttery returned invalid JSON") from exc
-    if payload.get("errorCode") != 0 or not isinstance(payload.get("value"), dict):
+    error_code = payload.get("errorCode")
+    if str(error_code) != "0" or not isinstance(payload.get("value"), dict):
         raise SportteryUnavailable("Sporttery response is unavailable")
     return payload
-

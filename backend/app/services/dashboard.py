@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
+from app.prediction.shadow import SHADOW_MODEL_VERSIONS
 from app.models import (
     DashboardRevision,
     DataSnapshot,
@@ -17,18 +19,85 @@ from app.models import (
     SyncRun,
     Team,
     TeamRating,
+    MatchIntelligence,
+    AutoAdjustment,
+    ProviderQuotaState,
+    TeamProfilePrediction,
 )
 from app.services.market import compute_divergence
 from app.services.localization import localized_team_names
-from app.services.manual_adjustments import adjustments_by_match, serialize_adjustment
+from app.services.manual_adjustments import adjustments_by_match, list_manual_adjustments, serialize_adjustment
 from app.services.scoring import score_predictions
+
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
+def _china_time_fields(kickoff_dt: datetime) -> dict:
+    """Add China-time helper fields for a match kickoff."""
+    if kickoff_dt.tzinfo is None:
+        kickoff_dt = kickoff_dt.replace(tzinfo=timezone.utc)
+    local_kickoff = kickoff_dt.astimezone(SHANGHAI)
+    china_date_key = local_kickoff.strftime("%Y-%m-%d")
+    now_utc = datetime.now(timezone.utc)
+    now_shanghai = now_utc.astimezone(SHANGHAI)
+    today_key = now_shanghai.strftime("%Y-%m-%d")
+    is_today_china = china_date_key == today_key
+    is_next_48h = (kickoff_dt >= now_utc) and (kickoff_dt <= now_utc + timedelta(hours=48))
+    return {
+        "kickoff_china": local_kickoff.strftime("%Y-%m-%d %H:%M"),
+        "china_date_key": china_date_key,
+        "is_today_china": is_today_china,
+        "is_next_48h": is_next_48h,
+    }
+
+
 def decision_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _display_snapshots(session: Session, matches: list[Match]) -> dict[str, PredictionSnapshot]:
+    if not matches:
+        return {}
+    matches_by_id = {match.id: match for match in matches}
+    grouped: dict[str, list[PredictionSnapshot]] = defaultdict(list)
+    for snapshot in session.scalars(
+        select(PredictionSnapshot)
+        .where(PredictionSnapshot.match_id.in_(matches_by_id))
+        .order_by(PredictionSnapshot.snapshotted_at.desc())
+    ):
+        grouped[snapshot.match_id].append(snapshot)
+
+    selected = {}
+    for match_id, snapshots in grouped.items():
+        kickoff = _as_utc(matches_by_id[match_id].kickoff)
+        pre_kickoff = [
+            snapshot
+            for snapshot in snapshots
+            if _as_utc(snapshot.snapshotted_at) < kickoff
+        ]
+        selected[match_id] = pre_kickoff[0] if pre_kickoff else snapshots[0]
+    return selected
+
+
+def _snapshot_status(snapshot: PredictionSnapshot | None, match: Match) -> dict:
+    is_pre_kickoff = bool(
+        snapshot and _as_utc(snapshot.snapshotted_at) < _as_utc(match.kickoff)
+    )
+    return {
+        "locked": is_pre_kickoff,
+        "locked_at": snapshot.snapshotted_at.isoformat() if snapshot else None,
+        "is_fallback": snapshot.is_fallback_locked if snapshot else False,
+        "participates_in_model_score": is_pre_kickoff,
+        "real_time_only": bool(snapshot and not is_pre_kickoff),
+    }
 
 
 def build_dashboard(session: Session) -> dict:
@@ -60,7 +129,10 @@ def build_dashboard(session: Session) -> dict:
     predictions = {
         row.match_id: row
         for row in session.scalars(
-            select(MatchPrediction).where(MatchPrediction.revision_id == revision.id)
+            select(MatchPrediction).where(
+                MatchPrediction.revision_id == revision.id,
+                MatchPrediction.model_version.notin_(SHADOW_MODEL_VERSIONS),
+            )
         )
     }
     market_snaps = {
@@ -69,6 +141,21 @@ def build_dashboard(session: Session) -> dict:
             select(MarketSnapshot).where(MarketSnapshot.provider == "sporttery")
         )
     }
+
+    intelligences_by_match = defaultdict(list)
+    for row in session.scalars(select(MatchIntelligence)):
+        intelligences_by_match[row.match_id].append(row)
+
+    adjustments_by_match_auto = defaultdict(list)
+    seen_auto_adjs = set()
+    for row in session.scalars(select(AutoAdjustment).order_by(AutoAdjustment.id.desc())):
+        sig = (row.match_id, row.adjustment_type, row.affected_team_id, row.reason)
+        if sig not in seen_auto_adjs:
+            seen_auto_adjs.add(sig)
+            adjustments_by_match_auto[row.match_id].append(row)
+
+    snapshots = _display_snapshots(session, matches)
+
     ratings = _latest_ratings(session)
     teams_by_id = {team.id: team for team in teams}
     display_names = localized_team_names(session, teams)
@@ -127,8 +214,12 @@ def build_dashboard(session: Session) -> dict:
                 "raw_overround": market_snap.raw_overround,
                 "divergence": None,
             }
+        snap = snapshots.get(match.id)
+        snapshot_status = _snapshot_status(snap, match)
+
         matches_by_group[match.group_code].append(
             {
+                **_china_time_fields(match.kickoff),
                 "id": match.id,
                 "group_code": match.group_code,
                 "kickoff": match.kickoff.isoformat(),
@@ -139,6 +230,48 @@ def build_dashboard(session: Session) -> dict:
                 "home_score": match.home_score,
                 "away_score": match.away_score,
                 "manual_adjustments": manual_adjustments.get(match.id, []),
+                "intelligence": [
+                    {
+                        "type": intel.intelligence_type,
+                        "provider": intel.provider,
+                        "confidence": intel.source_confidence,
+                        "fetched_at": intel.fetched_at.isoformat(),
+                        "payload": intel.normalized_payload,
+                    }
+                    for intel in intelligences_by_match[match.id]
+                ],
+                "auto_adjustments": [
+                    {
+                        "type": adj.adjustment_type,
+                        "affected_team_id": adj.affected_team_id,
+                        "confidence_penalty": adj.confidence,
+                        "reason": adj.reason,
+                        "source_intelligence_ids": adj.source_intelligence_ids,
+                    }
+                    for adj in adjustments_by_match_auto[match.id]
+                    if adj.adjustment_type != "numerical_roster_adjustment"
+                ],
+                "numerical_adjustments": [
+                    {
+                        "type": adj.adjustment_type,
+                        "affected_team_id": adj.affected_team_id,
+                        "attack_delta": adj.attack_delta,
+                        "defense_delta": adj.defense_delta,
+                        "reason": adj.reason,
+                    }
+                    for adj in adjustments_by_match_auto[match.id]
+                    if adj.adjustment_type == "numerical_roster_adjustment"
+                ],
+                "numerical_delta_summary": {
+                    "home_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
+                    "home_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
+                    "away_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
+                    "away_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
+                },
+                "numerical_enabled": getattr(revision, 'model_version', '') == 'elo-poisson-v1-intel-numeric',
+                "model_version": getattr(revision, 'model_version', ''),
+                "risk_flags": list(set(adj.adjustment_type for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type != "numerical_roster_adjustment")),
+                "snapshot_status": snapshot_status,
                 "prediction": _prediction_dict(prediction) if prediction else None,
                 "market": market_data,
                 "source": match.source,
@@ -167,7 +300,420 @@ def build_dashboard(session: Session) -> dict:
             }
             for group in "ABCDEFGHIJKL"
         ],
-        "data_sources": list_data_sources(session),
+        "data_sources": list_data_sources(session) + list_intelligence_providers(session),
+    }
+
+
+def build_match_detail(session: Session, match_id: str) -> dict | None:
+    """Build detail for a single match using direct DB queries instead of full dashboard."""
+    match = session.get(Match, match_id)
+    if match is None:
+        return None
+
+    revision = session.scalar(
+        select(DashboardRevision)
+        .where(DashboardRevision.active.is_(True))
+        .order_by(DashboardRevision.id.desc())
+        .limit(1)
+    )
+    if revision is None:
+        return None
+
+    # Only fetch data related to this match
+    prediction = session.scalar(
+        select(MatchPrediction)
+        .where(MatchPrediction.revision_id == revision.id)
+        .where(MatchPrediction.match_id == match_id)
+        .where(MatchPrediction.model_version.notin_(SHADOW_MODEL_VERSIONS))
+    ) if revision else None
+
+    market_snap = session.scalar(
+        select(MarketSnapshot)
+        .where(MarketSnapshot.provider == "sporttery")
+        .where(MarketSnapshot.match_id == match_id)
+    )
+
+    snap = _display_snapshots(session, [match]).get(match_id)
+
+    intelligences = list(session.scalars(
+        select(MatchIntelligence).where(MatchIntelligence.match_id == match_id)
+    ))
+
+    # Auto adjustments for this match (deduplicated)
+    auto_adjs_raw = list(session.scalars(
+        select(AutoAdjustment)
+        .where(AutoAdjustment.match_id == match_id)
+        .order_by(AutoAdjustment.id.desc())
+    ))
+    seen_auto = set()
+    auto_adjs = []
+    for adj in auto_adjs_raw:
+        sig = (adj.match_id, adj.adjustment_type, adj.affected_team_id, adj.reason)
+        if sig not in seen_auto:
+            seen_auto.add(sig)
+            auto_adjs.append(adj)
+
+    # Manual adjustments for this match
+    home_team = session.get(Team, match.home_team_id)
+    away_team = session.get(Team, match.away_team_id)
+    teams_list = [t for t in (home_team, away_team) if t]
+    display_names = localized_team_names(session, teams_list)
+    manual_adjs = list_manual_adjustments(session, match_id=match_id)
+    manual_adjustments = [serialize_adjustment(a, display_names) for a in manual_adjs]
+    from app.team_profiles.service import explain_team_profile, get_team_profile, profile_payload
+    home_profile = get_team_profile(session, match.home_team_id, match.kickoff)
+    away_profile = get_team_profile(session, match.away_team_id, match.kickoff)
+    profile_prediction = session.scalar(
+        select(TeamProfilePrediction)
+        .where(TeamProfilePrediction.match_id == match_id)
+        .order_by(TeamProfilePrediction.created_at.desc())
+        .limit(1)
+    )
+
+    # Build market data
+    market_data = None
+    if market_snap and prediction:
+        div = compute_divergence(
+            {"home_win": prediction.home_win, "draw": prediction.draw, "away_win": prediction.away_win},
+            market_snap,
+        )
+        market_data = {
+            "home_probability": market_snap.home_probability,
+            "draw_probability": market_snap.draw_probability,
+            "away_probability": market_snap.away_probability,
+            "raw_overround": market_snap.raw_overround,
+            "divergence": {
+                "home_diff": div.home_diff,
+                "draw_diff": div.draw_diff,
+                "away_diff": div.away_diff,
+                "max_divergence": div.max_divergence,
+                "level": div.level,
+            },
+        }
+    elif market_snap:
+        market_data = {
+            "home_probability": market_snap.home_probability,
+            "draw_probability": market_snap.draw_probability,
+            "away_probability": market_snap.away_probability,
+            "raw_overround": market_snap.raw_overround,
+            "divergence": None,
+        }
+
+    snapshot_status = _snapshot_status(snap, match)
+
+    teams_by_id = {t.id: t for t in teams_list}
+
+    return {
+        **_china_time_fields(match.kickoff),
+        "id": match.id,
+        "group_code": match.group_code,
+        "kickoff": match.kickoff.isoformat(),
+        "venue": match.venue,
+        "status": match.status,
+        "home_team": _team_ref(teams_by_id[match.home_team_id], display_names) if match.home_team_id in teams_by_id else None,
+        "away_team": _team_ref(teams_by_id[match.away_team_id], display_names) if match.away_team_id in teams_by_id else None,
+        "home_score": match.home_score,
+        "away_score": match.away_score,
+        "manual_adjustments": manual_adjustments,
+        "intelligence": [
+            {
+                "type": intel.intelligence_type,
+                "provider": intel.provider,
+                "confidence": intel.source_confidence,
+                "fetched_at": intel.fetched_at.isoformat(),
+                "payload": intel.normalized_payload,
+            }
+            for intel in intelligences
+        ],
+        "auto_adjustments": [
+            {
+                "type": adj.adjustment_type,
+                "affected_team_id": adj.affected_team_id,
+                "confidence_penalty": adj.confidence,
+                "reason": adj.reason,
+                "source_intelligence_ids": adj.source_intelligence_ids,
+            }
+            for adj in auto_adjs
+            if adj.adjustment_type != "numerical_roster_adjustment"
+        ],
+        "numerical_adjustments": [
+            {
+                "type": adj.adjustment_type,
+                "affected_team_id": adj.affected_team_id,
+                "attack_delta": adj.attack_delta,
+                "defense_delta": adj.defense_delta,
+                "reason": adj.reason,
+            }
+            for adj in auto_adjs
+            if adj.adjustment_type == "numerical_roster_adjustment"
+        ],
+        "numerical_delta_summary": {
+            "home_attack_delta": sum(adj.attack_delta for adj in auto_adjs if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
+            "home_defense_delta": sum(adj.defense_delta for adj in auto_adjs if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
+            "away_attack_delta": sum(adj.attack_delta for adj in auto_adjs if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
+            "away_defense_delta": sum(adj.defense_delta for adj in auto_adjs if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
+        },
+        "numerical_enabled": getattr(revision, 'model_version', '') == 'elo-poisson-v1-intel-numeric',
+        "model_version": getattr(revision, 'model_version', ''),
+        "risk_flags": list(set(adj.adjustment_type for adj in auto_adjs if adj.adjustment_type != "numerical_roster_adjustment")),
+        "snapshot_status": snapshot_status,
+        "prediction": _prediction_dict(prediction) if prediction else None,
+        "market": market_data,
+        "source": match.source,
+        "source_updated_at": (
+            match.source_updated_at.isoformat() if match.source_updated_at else None
+        ),
+        "team_profiles": {
+            "home": {"profile": profile_payload(home_profile), "summary": explain_team_profile(home_profile)} if home_profile else None,
+            "away": {"profile": profile_payload(away_profile), "summary": explain_team_profile(away_profile)} if away_profile else None,
+        },
+        "profile_prediction": ({
+            "model_version": profile_prediction.model_version,
+            "profile_version": profile_prediction.profile_version,
+            "profile_as_of": profile_prediction.profile_as_of.isoformat(),
+            "home_win": profile_prediction.home_win,
+            "draw": profile_prediction.draw,
+            "away_win": profile_prediction.away_win,
+            "home_xg": profile_prediction.home_xg,
+            "away_xg": profile_prediction.away_xg,
+            "probability_deltas": profile_prediction.probability_deltas_json,
+            "xg_deltas": profile_prediction.xg_deltas_json,
+            "risk_flags": profile_prediction.risk_flags_json,
+            "triggered_traits": profile_prediction.triggered_traits_json,
+            "explanation": profile_prediction.explanation,
+            "is_pre_match_locked": profile_prediction.is_pre_match_locked,
+        } if profile_prediction else None),
+    }
+
+
+def build_team_detail(session: Session, team_id: str) -> dict | None:
+    """Build detail for a single team using direct DB queries instead of full dashboard."""
+    team = session.get(Team, team_id)
+    if team is None:
+        return None
+
+    revision = session.scalar(
+        select(DashboardRevision)
+        .where(DashboardRevision.active.is_(True))
+        .order_by(DashboardRevision.id.desc())
+        .limit(1)
+    )
+    if revision is None:
+        return None
+
+    # Only fetch data related to this team
+    standing = session.scalar(
+        select(StandingSnapshot)
+        .where(StandingSnapshot.revision_id == revision.id)
+        .where(StandingSnapshot.team_id == team_id)
+    )
+    qualification = session.scalar(
+        select(QualificationPrediction)
+        .where(QualificationPrediction.revision_id == revision.id)
+        .where(QualificationPrediction.team_id == team_id)
+    )
+    rating = session.scalar(
+        select(TeamRating)
+        .where(TeamRating.team_id == team_id)
+        .order_by(TeamRating.effective_date.desc(), TeamRating.id.desc())
+        .limit(1)
+    )
+
+    # Get matches for this team's group
+    group_matches = list(session.scalars(
+        select(Match)
+        .where(Match.group_code == team.group_code)
+        .order_by(Match.kickoff, Match.id)
+    ))
+
+    # Build display names for teams in this group
+    team_ids = {team_id}
+    for m in group_matches:
+        if m.home_team_id:
+            team_ids.add(m.home_team_id)
+        if m.away_team_id:
+            team_ids.add(m.away_team_id)
+    group_teams = list(session.scalars(
+        select(Team).where(Team.id.in_(team_ids))
+    ))
+    display_names = localized_team_names(session, group_teams)
+    teams_by_id = {t.id: t for t in group_teams}
+
+    # Predictions and market snaps for group matches
+    predictions = {
+        row.match_id: row
+        for row in session.scalars(
+            select(MatchPrediction)
+            .where(MatchPrediction.revision_id == revision.id)
+            .where(MatchPrediction.match_id.in_([m.id for m in group_matches]))
+            .where(MatchPrediction.model_version.notin_(SHADOW_MODEL_VERSIONS))
+        )
+    } if group_matches else {}
+
+    market_snaps = {
+        row.match_id: row
+        for row in session.scalars(
+            select(MarketSnapshot)
+            .where(MarketSnapshot.provider == "sporttery")
+            .where(MarketSnapshot.match_id.in_([m.id for m in group_matches]))
+        )
+    } if group_matches else {}
+
+    snapshots = _display_snapshots(session, group_matches)
+
+    intelligences_by_match = defaultdict(list)
+    for row in session.scalars(
+        select(MatchIntelligence)
+        .where(MatchIntelligence.match_id.in_([m.id for m in group_matches]))
+    ):
+        intelligences_by_match[row.match_id].append(row)
+
+    # Auto adjustments for group matches
+    adjustments_by_match_auto = defaultdict(list)
+    if group_matches:
+        match_ids = [m.id for m in group_matches]
+        auto_adjs_raw = list(session.scalars(
+            select(AutoAdjustment)
+            .where(AutoAdjustment.match_id.in_(match_ids))
+            .order_by(AutoAdjustment.id.desc())
+        ))
+        seen_auto = set()
+        for adj in auto_adjs_raw:
+            sig = (adj.match_id, adj.adjustment_type, adj.affected_team_id, adj.reason)
+            if sig not in seen_auto:
+                seen_auto.add(sig)
+                adjustments_by_match_auto[adj.match_id].append(adj)
+
+    # Manual adjustments for group matches
+    manual_adjustments = {
+        match_id: [serialize_adjustment(item, display_names) for item in items]
+        for match_id, items in adjustments_by_match(session).items()
+        if match_id in {m.id for m in group_matches}
+    }
+
+    # Build team dict
+    if not rating or not standing:
+        return None
+
+    team_dict = {
+        "id": team.id,
+        "name": display_names[team.id],
+        "short_name": display_names[team.id],
+        "code": team.code,
+        "flag": team.flag_url,
+        "elo": round(rating.elo),
+        "fifa_rank": rating.fifa_rank,
+        "fifa_points": rating.fifa_points,
+        "recent_form": rating.recent_form,
+        "standing": _standing_dict(standing),
+        "qualification": _qualification_dict(qualification) if qualification else None,
+    }
+
+    # Build match dicts for this team
+    team_matches = []
+    for m in group_matches:
+        if team_id not in (m.home_team_id, m.away_team_id):
+            continue
+        pred = predictions.get(m.id)
+        market_snap = market_snaps.get(m.id)
+        market_data = None
+        if market_snap and pred:
+            div = compute_divergence(
+                {"home_win": pred.home_win, "draw": pred.draw, "away_win": pred.away_win},
+                market_snap,
+            )
+            market_data = {
+                "home_probability": market_snap.home_probability,
+                "draw_probability": market_snap.draw_probability,
+                "away_probability": market_snap.away_probability,
+                "raw_overround": market_snap.raw_overround,
+                "divergence": {
+                    "home_diff": div.home_diff,
+                    "draw_diff": div.draw_diff,
+                    "away_diff": div.away_diff,
+                    "max_divergence": div.max_divergence,
+                    "level": div.level,
+                },
+            }
+        elif market_snap:
+            market_data = {
+                "home_probability": market_snap.home_probability,
+                "draw_probability": market_snap.draw_probability,
+                "away_probability": market_snap.away_probability,
+                "raw_overround": market_snap.raw_overround,
+                "divergence": None,
+            }
+        snap = snapshots.get(m.id)
+        snapshot_status = _snapshot_status(snap, m)
+        team_matches.append({
+            **_china_time_fields(m.kickoff),
+            "id": m.id,
+            "group_code": m.group_code,
+            "kickoff": m.kickoff.isoformat(),
+            "venue": m.venue,
+            "status": m.status,
+            "home_team": _team_ref(teams_by_id[m.home_team_id], display_names) if m.home_team_id in teams_by_id else None,
+            "away_team": _team_ref(teams_by_id[m.away_team_id], display_names) if m.away_team_id in teams_by_id else None,
+            "home_score": m.home_score,
+            "away_score": m.away_score,
+            "manual_adjustments": manual_adjustments.get(m.id, []),
+            "intelligence": [
+                {
+                    "type": intel.intelligence_type,
+                    "provider": intel.provider,
+                    "confidence": intel.source_confidence,
+                    "fetched_at": intel.fetched_at.isoformat(),
+                    "payload": intel.normalized_payload,
+                }
+                for intel in intelligences_by_match[m.id]
+            ],
+            "auto_adjustments": [
+                {
+                    "type": adj.adjustment_type,
+                    "affected_team_id": adj.affected_team_id,
+                    "confidence_penalty": adj.confidence,
+                    "reason": adj.reason,
+                    "source_intelligence_ids": adj.source_intelligence_ids,
+                }
+                for adj in adjustments_by_match_auto[m.id]
+                if adj.adjustment_type != "numerical_roster_adjustment"
+            ],
+            "numerical_adjustments": [
+                {
+                    "type": adj.adjustment_type,
+                    "affected_team_id": adj.affected_team_id,
+                    "attack_delta": adj.attack_delta,
+                    "defense_delta": adj.defense_delta,
+                    "reason": adj.reason,
+                }
+                for adj in adjustments_by_match_auto[m.id]
+                if adj.adjustment_type == "numerical_roster_adjustment"
+            ],
+            "numerical_delta_summary": {
+                "home_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[m.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == m.home_team_id),
+                "home_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[m.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == m.home_team_id),
+                "away_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[m.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == m.away_team_id),
+                "away_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[m.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == m.away_team_id),
+            },
+            "numerical_enabled": getattr(revision, 'model_version', '') == 'elo-poisson-v1-intel-numeric',
+            "model_version": getattr(revision, 'model_version', ''),
+            "risk_flags": list(set(adj.adjustment_type for adj in adjustments_by_match_auto[m.id] if adj.adjustment_type != "numerical_roster_adjustment")),
+            "snapshot_status": snapshot_status,
+            "prediction": _prediction_dict(pred) if pred else None,
+            "market": market_data,
+            "source": m.source,
+            "source_updated_at": (
+                m.source_updated_at.isoformat() if m.source_updated_at else None
+            ),
+        })
+
+    from app.team_profiles.service import explain_team_profile, get_team_profile, profile_payload
+    team_profile = get_team_profile(session, team_id)
+    return {
+        **team_dict,
+        "group_code": team.group_code,
+        "matches": team_matches,
+        "team_profile": ({"profile": profile_payload(team_profile), "summary": explain_team_profile(team_profile)} if team_profile else None),
     }
 
 
@@ -189,6 +735,62 @@ def list_data_sources(session: Session) -> list[dict]:
         }
         for snapshot in latest.values()
     ]
+
+
+def list_intelligence_providers(session: Session) -> list[dict]:
+    states = {row.provider: row for row in session.scalars(select(ProviderQuotaState))}
+    providers = []
+
+    # sporttery
+    sporttery_state = states.get("sporttery")
+    providers.append({
+        "provider": "sporttery",
+        "status": "enabled",
+        "daily_limit": sporttery_state.daily_limit if sporttery_state else 5000,
+        "used_today": sporttery_state.used_today if sporttery_state else 0,
+        "last_success_at": sporttery_state.updated_at.isoformat() if sporttery_state else None,
+        "error": None
+    })
+
+    # api-football
+    api_football_state = states.get("api-football")
+    token = settings.api_football_token
+    status = "enabled"
+    error = None
+    if not token:
+        status = "disabled_no_token"
+    elif api_football_state and api_football_state.used_today >= api_football_state.daily_limit:
+        status = "quota_limited"
+        error = "Quota exceeded"
+    providers.append({
+        "provider": "api-football",
+        "status": status,
+        "daily_limit": api_football_state.daily_limit if api_football_state else 100,
+        "used_today": api_football_state.used_today if api_football_state else 0,
+        "last_success_at": api_football_state.updated_at.isoformat() if api_football_state else None,
+        "error": error
+    })
+
+    # sportmonks
+    sportmonks_state = states.get("sportmonks")
+    token = settings.sportmonks_token
+    status = "enabled"
+    error = None
+    if not token:
+        status = "disabled_no_token"
+    elif sportmonks_state and sportmonks_state.used_today >= sportmonks_state.daily_limit:
+        status = "quota_limited"
+        error = "Quota exceeded"
+    providers.append({
+        "provider": "sportmonks",
+        "status": status,
+        "daily_limit": sportmonks_state.daily_limit if sportmonks_state else 500,
+        "used_today": sportmonks_state.used_today if sportmonks_state else 0,
+        "last_success_at": sportmonks_state.updated_at.isoformat() if sportmonks_state else None,
+        "error": error
+    })
+
+    return providers
 
 
 def list_sync_runs(session: Session, limit: int = 20) -> list[dict]:
@@ -246,7 +848,7 @@ def _qualification_dict(row: QualificationPrediction) -> dict:
 
 
 def _prediction_dict(row: MatchPrediction) -> dict:
-    return {
+    d = {
         "home_xg": row.home_xg,
         "away_xg": row.away_xg,
         "home_win": row.home_win,
@@ -263,6 +865,11 @@ def _prediction_dict(row: MatchPrediction) -> dict:
         "model_inputs": row.model_inputs,
         "model_version": row.model_version,
     }
+    if getattr(row, "has_auto_adjustments", False) and getattr(row, "base_home_win", None) is not None:
+        d["base_home_win"] = row.base_home_win
+        d["base_draw"] = row.base_draw
+        d["base_away_win"] = row.base_away_win
+    return d
 
 
 def _team_ref(team: Team, display_names: dict[str, str]) -> dict:
@@ -339,7 +946,10 @@ def build_decision(session: Session) -> dict:
     predictions = {
         row.match_id: row
         for row in session.scalars(
-            select(MatchPrediction).where(MatchPrediction.revision_id == revision.id)
+            select(MatchPrediction).where(
+                MatchPrediction.revision_id == revision.id,
+                MatchPrediction.model_version.notin_(SHADOW_MODEL_VERSIONS),
+            )
         )
     }
     market_snaps = {
@@ -354,6 +964,16 @@ def build_decision(session: Session) -> dict:
         match_id: [serialize_adjustment(item, display_names) for item in items]
         for match_id, items in adjustments_by_match(session).items()
     }
+
+    adjustments_by_match_auto = defaultdict(list)
+    seen_auto_adjs_decision = set()
+    for row in session.scalars(select(AutoAdjustment).order_by(AutoAdjustment.id.desc())):
+        sig = (row.match_id, row.adjustment_type, row.affected_team_id, row.reason)
+        if sig not in seen_auto_adjs_decision:
+            seen_auto_adjs_decision.add(sig)
+            adjustments_by_match_auto[row.match_id].append(row)
+
+    intelligences = {row.id: row for row in session.scalars(select(MatchIntelligence))}
 
     local_now = decision_now().astimezone(SHANGHAI)
     local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -381,6 +1001,7 @@ def build_decision(session: Session) -> dict:
     def _match_card(match, pred=None, market_snap=None):
         """Build a compact match card for decision view."""
         card = {
+            **_china_time_fields(match.kickoff),
             "id": match.id,
             "group_code": match.group_code,
             "kickoff": match.kickoff.isoformat(),
@@ -390,6 +1011,27 @@ def build_decision(session: Session) -> dict:
             "home_score": match.home_score,
             "away_score": match.away_score,
             "manual_adjustments": manual_adjustments.get(match.id, []),
+            "intelligence_risks": [
+                {
+                    "type": adj.adjustment_type,
+                    "affected_team_id": adj.affected_team_id,
+                    "reason": adj.reason,
+                }
+                for adj in adjustments_by_match_auto[match.id]
+                if adj.adjustment_type != "numerical_roster_adjustment"
+            ],
+            "numerical_adjustments": [
+                {
+                    "type": adj.adjustment_type,
+                    "affected_team_id": adj.affected_team_id,
+                    "attack_delta": adj.attack_delta,
+                    "defense_delta": adj.defense_delta,
+                    "reason": adj.reason,
+                }
+                for adj in adjustments_by_match_auto[match.id]
+                if adj.adjustment_type == "numerical_roster_adjustment"
+            ],
+            "numerical_enabled": getattr(revision, 'model_version', '') == 'elo-poisson-v1-intel-numeric',
         }
         if pred:
             card["prediction"] = {
@@ -398,6 +1040,10 @@ def build_decision(session: Session) -> dict:
                 "model_confidence_label": pred.model_confidence_label,
                 "home_xg": pred.home_xg, "away_xg": pred.away_xg,
             }
+            if getattr(pred, "has_auto_adjustments", False) and getattr(pred, "base_home_win", None) is not None:
+                card["prediction"]["base_home_win"] = pred.base_home_win
+                card["prediction"]["base_draw"] = pred.base_draw
+                card["prediction"]["base_away_win"] = pred.base_away_win
         if market_snap and pred:
             div = compute_divergence(
                 {"home_win": pred.home_win, "draw": pred.draw, "away_win": pred.away_win},
@@ -465,9 +1111,7 @@ def build_decision(session: Session) -> dict:
     upset_risk = [_match_card(m, p, market_snaps.get(m.id)) for m, p in upset if p.home_win > 0.45 or p.away_win > 0.45]
 
     # Recent review: yesterday's finalized matches
-    snapshots = {
-        row.match_id: row for row in session.scalars(select(PredictionSnapshot))
-    }
+    snapshots = _display_snapshots(session, matches)
     review_pairs = []
     for m in matches:
         snap = snapshots.get(m.id)
@@ -508,6 +1152,38 @@ def build_decision(session: Session) -> dict:
                 }
             recent.append(card)
 
+    intelligence_risks = []
+    for m in matches:
+        if m.status == "final":
+            continue
+        for adj in adjustments_by_match_auto.get(m.id, []):
+            if adj.adjustment_type in ("market_divergence", "data_completeness", "roster_warning"):
+                # find provider from source intelligences
+                provider = "unknown"
+                if adj.source_intelligence_ids:
+                    first_intel = intelligences.get(adj.source_intelligence_ids[0])
+                    if first_intel:
+                        provider = first_intel.provider
+                elif adj.adjustment_type == "market_divergence":
+                    provider = "sporttery"
+
+                level = "低"
+                if adj.confidence < -0.1:
+                    level = "高"
+                elif adj.confidence < -0.02:
+                    level = "中"
+
+                intelligence_risks.append({
+                    "match_id": m.id,
+                    "home_team": _team_ref(teams_by_id[m.home_team_id], display_names),
+                    "away_team": _team_ref(teams_by_id[m.away_team_id], display_names),
+                    "kickoff": m.kickoff.isoformat(),
+                    "risk_type": adj.adjustment_type,
+                    "level": level,
+                    "provider": provider,
+                    "reason": adj.reason
+                })
+
     return {
         "today_matches": today_matches,
         "most_confident": most_confident,
@@ -515,6 +1191,7 @@ def build_decision(session: Session) -> dict:
         "biggest_divergence": biggest_divergence,
         "upset_risk": upset_risk,
         "recent_review": recent,
+        "intelligence_risks": intelligence_risks,
         "review_summary": {
             "matches_scored": review_report.matches_scored,
             "brier_score": review_report.brier_score,

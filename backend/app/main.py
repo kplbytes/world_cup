@@ -9,14 +9,16 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.routes import router, _build_providers
+from app.api.routes import router
+from app.api.routes.dashboard_routes import _build_providers
 from app.config import PROJECT_ROOT, settings
 from app.db import create_database, session_scope
-from app.models import DashboardRevision, Match, Team
+from app.models import DashboardRevision, Match, Team, TeamProfile
 from app.schemas import TournamentPayload
 from app.services.recompute import recompute_all
 from app.services.refresh import refresh_tournament
 from app.services.seed import seed_ratings, seed_team_aliases, seed_tournament
+from app.services.snapshots import lock_due_predictions, repair_invalid_prediction_locks
 
 
 def _is_live_window(session: Session, now: datetime | None = None) -> bool:
@@ -47,6 +49,10 @@ def initialize_database() -> None:
         seed_team_aliases(
             session, PROJECT_ROOT / "data" / "seed" / "sporttery-team-aliases.json"
         )
+        profile_count = session.scalar(select(func.count(TeamProfile.id))) or 0
+        if profile_count == 0:
+            from app.team_profiles.service import rebuild_team_profiles
+            rebuild_team_profiles(session, use_seed=True)
         active = session.scalar(
             select(DashboardRevision.id).where(DashboardRevision.active.is_(True)).limit(1)
         )
@@ -56,6 +62,8 @@ def initialize_database() -> None:
                 iterations=settings.simulation_iterations,
                 seed=settings.simulation_seed,
             )
+        repair_invalid_prediction_locks(session)
+        lock_due_predictions(session)
 
 
 def create_app(start_background: bool = True) -> FastAPI:
@@ -82,6 +90,10 @@ def create_app(start_background: bool = True) -> FastAPI:
                 minutes=target_interval,
             )
 
+    def scheduled_snapshot_lock() -> None:
+        with session_scope() as session:
+            lock_due_predictions(session)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         if start_background:
@@ -94,10 +106,22 @@ def create_app(start_background: bool = True) -> FastAPI:
                 max_instances=1,
                 coalesce=True,
             )
+            scheduler.add_job(
+                scheduled_snapshot_lock,
+                "interval",
+                minutes=settings.snapshot_lock_interval_minutes,
+                id="world-cup-snapshot-lock",
+                max_instances=1,
+                coalesce=True,
+                next_run_time=datetime.now(timezone.utc),
+            )
             scheduler.start()
         yield
         if scheduler.running:
             scheduler.shutdown(wait=False)
+        # Close AI provider clients on shutdown
+        from app.ai.provider_registry import close_all_ai_providers
+        await close_all_ai_providers()
 
     app = FastAPI(title="2026 World Cup Predictor", lifespan=lifespan)
     app.include_router(router)

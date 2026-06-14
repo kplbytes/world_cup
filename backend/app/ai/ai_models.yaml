@@ -1,0 +1,92 @@
+# AI Models Configuration
+# This file defines all available AI prediction models.
+# Add new providers and models here - no code changes needed.
+
+providers:
+  deepseek:
+    enabled: true
+    api_key_env: DEEPSEEK_API_KEY
+    base_url_env: DEEPSEEK_BASE_URL
+    default_timeout_seconds: 30
+    default_temperature: 0
+    max_retries: 2
+    models:
+      - model_id: deepseek-v4-flash
+        enabled: true
+        model_version: ai-deepseek-v4-flash-v1
+        display_name: DeepSeek V4 Flash
+        cost_tier: low
+        latency_tier: fast
+        role: fast_baseline
+        ensemble_weight: 0.33
+        prompt_version: worldcup-ai-v1
+
+      - model_id: deepseek-v4-pro
+        enabled: true
+        model_version: ai-deepseek-v4-pro-v1
+        display_name: DeepSeek V4 Pro
+        cost_tier: high
+        latency_tier: slow
+        role: reasoning_strong
+        ensemble_weight: 0.67
+        prompt_version: worldcup-ai-v1
+
+# To add more models in the future, add entries under providers or create new providers.
+# Example:
+#   openai:
+#     enabled: true
+#     api_key_env: OPENAI_API_KEY
+#     base_url_env: OPENAI_BASE_URL
+#     default_timeout_seconds: 30
+#     default_temperature: 0
+#     max_retries: 2
+#     models:
+#       - model_id: gpt-4o
+#         enabled: true
+#         model_version: ai-openai-gpt4o-v1
+#         display_name: GPT-4o
+#         cost_tier: high
+#         latency_tier: medium
+#         role: reasoning_strong
+#         ensemble_weight: 0.50
+
+  xiaomi:
+    enabled: true
+    api_key_env: XIAOMI_API_KEY
+    base_url_env: XIAOMI_BASE_URL
+    default_timeout_seconds: 30
+    default_temperature: 0
+    max_retries: 2
+    models:
+      - model_id: mimo-v2.5-pro
+        enabled: true
+        model_version: ai-xiaomi-mimo-v2.5-pro-v1
+        display_name: MiMo V2.5 Pro
+        cost_tier: high
+        latency_tier: slow
+        role: reasoning_strong
+        ensemble_weight: 0.67
+        prompt_version: worldcup-ai-v1
+
+      - model_id: mimo-v2-pro
+        enabled: true
+        model_version: ai-xiaomi-mimo-v2-pro-v1
+        display_name: MiMo V2 Pro
+        cost_tier: low
+        latency_tier: fast
+        role: fast_baseline
+        ensemble_weight: 0.33
+        prompt_version: worldcup-ai-v1
+
+ensemble_defaults:
+  system_weight: 0.50
+  market_weight: 0.20
+  total_ai_weight: 0.30
+  # When market is missing
+  system_weight_no_market: 0.60
+  total_ai_weight_no_market: 0.40
+  # When AI is missing
+  system_weight_no_ai: 0.80
+  market_weight_no_ai: 0.20
+  # When both are missing
+  system_weight_only: 1.00

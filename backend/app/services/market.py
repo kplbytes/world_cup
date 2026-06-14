@@ -22,6 +22,16 @@ _BROWSER_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
+_SPORTTERY_HEADERS = {
+    "User-Agent": _BROWSER_UA,
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Origin": "https://www.sporttery.cn",
+    "Referer": "https://www.sporttery.cn/",
+    "Sec-Fetch-Site": "same-site",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
+}
 _TIMEOUT = 15.0
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -86,7 +96,7 @@ class SportteryRemoteProvider:
         try:
             resp = httpx.get(
                 _SPORTTERY_URL,
-                headers={"User-Agent": _BROWSER_UA, "Accept": "application/json"},
+                headers=_SPORTTERY_HEADERS,
                 timeout=self._timeout,
                 follow_redirects=True,
             )
@@ -103,33 +113,53 @@ class SportteryRemoteProvider:
         match_list = value.get("matchInfoList") or value.get("matchCalcList") or []
         results = []
         for item in match_list:
-            match_info = item.get("matchInfo", item)
-            try:
-                home = match_info.get("homeTeamName", "")
-                away = match_info.get("awayTeamName", "")
-                match_date = match_info.get("matchDate", "")
-                match_num = str(match_info.get("matchNum", item.get("matchNumStr", "")))
+            entries = item.get("subMatchList") if isinstance(item, dict) else None
+            if not entries:
+                entries = [item]
+            for entry in entries:
+                match_info = entry.get("matchInfo", entry)
                 had = match_info.get("had", {})
                 if not had:
-                    # Try nested structure
-                    odds_info = item.get("matchOddsInfo", {})
+                    had = _extract_had_from_odds(match_info.get("oddsList", []))
+                if not had:
+                    odds_info = entry.get("matchOddsInfo", {})
                     had = odds_info.get("had", {})
-                had_home = float(had.get("h", 0))
-                had_draw = float(had.get("d", 0))
-                had_away = float(had.get("a", 0))
-                if had_home > 1.0 and had_draw > 1.0 and had_away > 1.0:
-                    results.append({
-                        "match_num": match_num,
-                        "home_team": home,
-                        "away_team": away,
-                        "match_date": match_date,
-                        "had_home": had_home,
-                        "had_draw": had_draw,
-                        "had_away": had_away,
-                    })
-            except (ValueError, TypeError, KeyError):
-                continue
+                try:
+                    home = match_info.get("homeTeamAbbName") or match_info.get("homeTeamName", "")
+                    away = match_info.get("awayTeamAbbName") or match_info.get("awayTeamName", "")
+                    match_date = _match_datetime(match_info)
+                    match_num = str(match_info.get("matchNum", entry.get("matchNumStr", "")))
+                    had_home = float(had.get("h", 0))
+                    had_draw = float(had.get("d", 0))
+                    had_away = float(had.get("a", 0))
+                    if had_home > 1.0 and had_draw > 1.0 and had_away > 1.0:
+                        results.append({
+                            "match_num": match_num,
+                            "home_team": home,
+                            "away_team": away,
+                            "match_date": match_date,
+                            "had_home": had_home,
+                            "had_draw": had_draw,
+                            "had_away": had_away,
+                        })
+                except (ValueError, TypeError, KeyError):
+                    continue
         return results
+
+
+def _extract_had_from_odds(odds_list: list[dict[str, Any]]) -> dict[str, Any]:
+    for odds in odds_list:
+        if odds.get("poolCode") == "HAD":
+            return odds
+    return {}
+
+
+def _match_datetime(match_info: dict[str, Any]) -> str:
+    match_date = match_info.get("matchDate", "")
+    match_time = match_info.get("matchTime", "")
+    if match_date and match_time:
+        return f"{match_date} {match_time}"
+    return match_date
 
 
 def fetch_and_store_market_data(
@@ -216,6 +246,7 @@ def fetch_and_store_market_data(
     return stored
 
 
+# TODO: Replace with app.services.team_matching.match_team() for unified matching
 def _fuzzy_match(canonical: str, sporttery: str) -> bool:
     """Fuzzy match between canonical team name and Sporttery team name."""
     if canonical == sporttery:
@@ -227,6 +258,7 @@ def _fuzzy_match(canonical: str, sporttery: str) -> bool:
     return False
 
 
+# TODO: Replace with app.services.team_matching.match_team() for unified matching
 def _name_matches(candidates: set[str], provider_name: str) -> bool:
     normalized = provider_name.strip().lower()
     return any(_fuzzy_match(candidate, normalized) for candidate in candidates)

@@ -35,7 +35,7 @@ def test_recompute_publishes_one_complete_revision(db_session):
 
     assert db_session.scalar(
         select(func.count(MatchPrediction.id)).where(MatchPrediction.revision_id == revision.id)
-    ) == 70
+    ) == 350
     assert db_session.scalar(
         select(func.count(QualificationPrediction.id)).where(
             QualificationPrediction.revision_id == revision.id

@@ -22,6 +22,7 @@ from app.schemas import (
     TournamentPayload,
     TournamentTeam,
 )
+from app.services.team_matching import resolve_code_alias
 
 
 COMPETITION_CODE = "WC"
@@ -91,12 +92,14 @@ class FootballDataProvider:
     @staticmethod
     def _normalize_match(raw: dict) -> TournamentMatch:
         group_label = raw.get("group", "")
-        group_code = group_label.replace("Group ", "").strip()
+        group_code = group_label.replace("Group ", "").removeprefix("GROUP_").strip()
 
         home_team = raw.get("homeTeam", {})
         away_team = raw.get("awayTeam", {})
         home_code = (home_team.get("tla") or home_team.get("shortName", ""))[:3].upper()
         away_code = (away_team.get("tla") or away_team.get("shortName", ""))[:3].upper()
+        home_code = resolve_code_alias(home_code)
+        away_code = resolve_code_alias(away_code)
 
         utc_date = raw.get("utcDate", "")
         kickoff = datetime.fromisoformat(utc_date.replace("Z", "+00:00"))

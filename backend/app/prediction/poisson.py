@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
+from typing import Any
 
 import numpy as np
 from scipy.stats import poisson
@@ -62,9 +63,31 @@ def predict_match(
     home_strength: float,
     away_strength: float,
     context: MatchContext,
+    config: Any | None = None,
 ) -> MatchPredictionResult:
+    """Predict a match outcome using Elo + Poisson model.
+
+    If a ModelConfig is provided, uses its parameters instead of hardcoded values.
+    The config object is expected to have attributes like:
+      elo_scale, base_goal_mean_home, base_goal_mean_away, strength_coeff_home,
+      strength_coeff_away, draw_boost, favorite_dampening, underdog_boost,
+      min_xg, max_xg, market_blend_weight, upset_factor
+    """
     if not isfinite(home_strength) or not isfinite(away_strength):
         raise ValueError("team strengths must be finite")
+
+    # Extract config parameters with defaults
+    base_goal_home = getattr(config, 'base_goal_mean_home', 1.25)
+    base_goal_away = getattr(config, 'base_goal_mean_away', 1.10)
+    str_coeff_home = getattr(config, 'strength_coeff_home', 0.90)
+    str_coeff_away = getattr(config, 'strength_coeff_away', 0.75)
+    min_xg = getattr(config, 'min_xg', 0.20)
+    max_xg = getattr(config, 'max_xg', 3.50)
+    draw_boost = getattr(config, 'draw_boost', 1.00)
+    favorite_dampening = getattr(config, 'favorite_dampening', 0.00)
+    underdog_boost = getattr(config, 'underdog_boost', 0.00)
+    market_blend_weight = getattr(config, 'market_blend_weight', 0.00)
+    upset_factor = getattr(config, 'upset_factor', 0.00)
 
     strength_delta = (
         home_strength
@@ -74,22 +97,22 @@ def predict_match(
     )
     home_xg = float(
         np.clip(
-            1.25
-            + 0.90 * strength_delta
+            base_goal_home
+            + str_coeff_home * strength_delta
             + context.home_attack_adjustment
             - context.away_defense_adjustment,
-            0.20,
-            3.50,
+            min_xg,
+            max_xg,
         )
     )
     away_xg = float(
         np.clip(
-            1.10
-            - 0.75 * strength_delta
+            base_goal_away
+            - str_coeff_away * strength_delta
             + context.away_attack_adjustment
             - context.home_defense_adjustment,
-            0.20,
-            3.50,
+            min_xg,
+            max_xg,
         )
     )
     home_goals = _goal_probabilities(home_xg)
@@ -101,6 +124,64 @@ def predict_match(
     away_win = float(np.triu(matrix, k=1).sum())
     total = home_win + draw + away_win
     home_win, draw, away_win = home_win / total, draw / total, away_win / total
+
+    # Apply draw_boost
+    if draw_boost != 1.0 and draw > 0:
+        draw_boosted = draw * draw_boost
+        excess = draw_boosted - draw
+        # Take proportionally from home and away
+        home_win -= excess * (home_win / (home_win + away_win)) if (home_win + away_win) > 0 else 0
+        away_win -= excess * (away_win / (home_win + away_win)) if (home_win + away_win) > 0 else 0
+        draw = draw_boosted
+        # Renormalize
+        total = home_win + draw + away_win
+        home_win, draw, away_win = home_win / total, draw / total, away_win / total
+
+    # Apply favorite_dampening: reduce the gap between max prob and 1/3
+    if favorite_dampening > 0:
+        probs = [home_win, draw, away_win]
+        max_idx = probs.index(max(probs))
+        uniform = 1.0 / 3.0
+        excess = probs[max_idx] - uniform
+        if excess > 0:
+            reduction = excess * favorite_dampening
+            probs[max_idx] -= reduction
+            # Distribute reduction to other outcomes proportionally
+            others = [i for i in range(3) if i != max_idx]
+            other_sum = sum(probs[i] for i in others)
+            if other_sum > 0:
+                for i in others:
+                    probs[i] += reduction * (probs[i] / other_sum)
+            else:
+                for i in others:
+                    probs[i] += reduction / len(others)
+            home_win, draw, away_win = probs
+            total = home_win + draw + away_win
+            home_win, draw, away_win = home_win / total, draw / total, away_win / total
+
+    # Apply underdog_boost: add probability to the weaker side
+    if underdog_boost > 0:
+        if home_win <= away_win:
+            home_win += underdog_boost
+        else:
+            away_win += underdog_boost
+        total = home_win + draw + away_win
+        home_win, draw, away_win = home_win / total, draw / total, away_win / total
+
+    # Apply upset_factor: add to underdog tail probability
+    if upset_factor > 0:
+        if home_win <= away_win:
+            home_win += upset_factor
+        else:
+            away_win += upset_factor
+        total = home_win + draw + away_win
+        home_win, draw, away_win = home_win / total, draw / total, away_win / total
+
+    # Market blend: if market_blend_weight > 0 and market data available in context
+    if market_blend_weight > 0:
+        # Market probabilities can be injected via the context's model_inputs
+        # For now, this is handled at the recompute level
+        pass
 
     exact_scores = [
         ScorelineProbability(home, away, float(matrix[home, away]))
@@ -117,6 +198,12 @@ def predict_match(
         )
     )
     m_conf, m_label = model_confidence(home_win, draw, away_win)
+
+    # Determine model version
+    model_ver = MODEL_VERSION
+    if config is not None:
+        model_ver = getattr(config, 'name', MODEL_VERSION)
+
     return MatchPredictionResult(
         home_xg=home_xg,
         away_xg=away_xg,
@@ -139,8 +226,30 @@ def predict_match(
             away_win,
             strength_delta,
         ),
-        model_version=MODEL_VERSION,
+        model_version=model_ver,
     )
+
+
+def blend_with_market(
+    model_probs: dict[str, float],
+    market_probs: dict[str, float],
+    weight: float,
+) -> dict[str, float]:
+    """Blend model probabilities with market probabilities.
+
+    weight: 0 = pure model, 1 = pure market, 0.15 = 85% model + 15% market
+    """
+    blended = {}
+    for key in ("home_win", "draw", "away_win"):
+        m = model_probs.get(key, 1.0 / 3)
+        k = market_probs.get(key, 1.0 / 3)
+        blended[key] = (1 - weight) * m + weight * k
+    # Renormalize
+    total = sum(blended.values())
+    if total > 0:
+        for key in blended:
+            blended[key] /= total
+    return blended
 
 
 def _goal_probabilities(expected_goals: float) -> np.ndarray:

@@ -3,9 +3,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.config import settings
 from app.db import create_database, session_scope
 from app.main import create_app
 from app.models import Match
+from app.providers.worldcup26 import WorldCup26Provider
 from app.providers.openfootball import OpenFootballProvider
 from app.services.recompute import recompute_all
 from app.services.seed import seed_ratings, seed_team_aliases, seed_tournament
@@ -46,6 +48,74 @@ def test_dashboard_returns_one_complete_revision(tmp_path):
     assert payload["revision"]["id"] > 0
 
 
+def test_dashboard_uses_latest_pre_kickoff_snapshot_for_finished_match(tmp_path):
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        from app.models import DashboardRevision, PredictionSnapshot
+        from sqlalchemy import select
+
+        match = session.get(Match, "2026-B-QAT-SUI-2026-06-13")
+        revision = session.scalar(
+            select(DashboardRevision).where(DashboardRevision.active.is_(True))
+        )
+        match.status = "final"
+        match.home_score = 1
+        match.away_score = 1
+        match.kickoff = datetime(2026, 6, 13, 19, tzinfo=timezone.utc)
+        session.add_all([
+            PredictionSnapshot(
+                match_id=match.id,
+                revision_id=revision.id,
+                kickoff=match.kickoff,
+                snapshotted_at=datetime(2026, 6, 13, 18, tzinfo=timezone.utc),
+                home_win=0.2,
+                draw=0.3,
+                away_win=0.5,
+                home_xg=0.8,
+                away_xg=1.4,
+                scorelines=[],
+                score_matrix=[],
+                confidence=0.5,
+                confidence_label="medium",
+                model_inputs={},
+                model_version="pre-match-test",
+            ),
+            PredictionSnapshot(
+                match_id=match.id,
+                revision_id=revision.id,
+                kickoff=match.kickoff,
+                snapshotted_at=datetime(2026, 6, 13, 20, tzinfo=timezone.utc),
+                home_win=0.3,
+                draw=0.4,
+                away_win=0.3,
+                home_xg=1.0,
+                away_xg=1.0,
+                scorelines=[],
+                score_matrix=[],
+                confidence=0.4,
+                confidence_label="low",
+                model_inputs={},
+                model_version="post-match-test",
+            ),
+        ])
+
+    payload = client.get("/api/dashboard").json()
+    match_payload = next(
+        match
+        for group in payload["groups"]
+        for match in group["matches"]
+        if match["id"] == "2026-B-QAT-SUI-2026-06-13"
+    )
+
+    assert match_payload["snapshot_status"] == {
+        "locked": True,
+        "locked_at": "2026-06-13T18:00:00",
+        "is_fallback": False,
+        "participates_in_model_score": True,
+        "real_time_only": False,
+    }
+
+
 def test_dashboard_uses_chinese_team_names_everywhere(tmp_path):
     client = api_client(tmp_path)
 
@@ -82,8 +152,18 @@ def test_group_match_team_and_source_endpoints(tmp_path):
     assert client.get("/api/matches/missing").status_code == 404
 
 
+def test_build_providers_always_includes_worldcup26(monkeypatch):
+    from app.api.routes.dashboard_routes import _build_providers
+
+    monkeypatch.setattr("app.api.routes.dashboard_routes.fd_is_configured", lambda: False)
+
+    providers = _build_providers()
+
+    assert any(isinstance(provider, WorldCup26Provider) for provider in providers)
+
+
 def test_health_does_not_expose_api_token(tmp_path, monkeypatch):
-    monkeypatch.setenv("FOOTBALL_DATA_API_TOKEN", "top-secret-token")
+    monkeypatch.setattr(settings, "football_data_api_token", "top-secret-token")
     client = api_client(tmp_path)
 
     response = client.get("/api/health")
@@ -107,7 +187,28 @@ def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monk
         dashboard = client.get("/api/dashboard").json()
         match_id = dashboard["groups"][0]["matches"][2]["id"]
         match = session.get(Match, match_id)
-        snapshot_prediction(session, match_id)
+
+        from app.models import PredictionSnapshot
+        from sqlalchemy import select
+        from datetime import datetime, timezone
+
+        existing = session.scalar(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id, PredictionSnapshot.revision_id == dashboard["revision"]["id"]))
+        if existing:
+            existing.is_pre_match_locked = True
+        else:
+            snap = PredictionSnapshot(
+                match_id=match_id,
+                revision_id=dashboard["revision"]["id"],
+                kickoff=datetime.now(timezone.utc),
+                is_pre_match_locked=True,
+                home_win=0.5, draw=0.3, away_win=0.2, home_xg=1.0, away_xg=1.0,
+                scorelines=[], score_matrix=[],
+                confidence=0.8, confidence_label="High",
+                model_inputs={}, model_version="elo-poisson-v1"
+            )
+            session.add(snap)
+        session.flush()
+
         match.status = "final"
         match.home_score = 1
         match.away_score = 0
@@ -118,6 +219,24 @@ def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monk
         monkeypatch.setattr("app.services.recompute.MODEL_VERSION", "elo-poisson-v1.1")
         monkeypatch.setattr("app.prediction.poisson.MODEL_VERSION", "elo-poisson-v1.1")
         second_revision = recompute_all(session, iterations=100, seed=11)
+
+        existing2 = session.scalar(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id, PredictionSnapshot.revision_id == second_revision.id))
+        if existing2:
+            existing2.is_pre_match_locked = True
+        else:
+            snap2 = PredictionSnapshot(
+                match_id=match_id,
+                revision_id=second_revision.id,
+                kickoff=datetime.now(timezone.utc),
+                is_pre_match_locked=True,
+                home_win=0.6, draw=0.2, away_win=0.2, home_xg=1.2, away_xg=0.8,
+                scorelines=[], score_matrix=[],
+                confidence=0.9, confidence_label="High",
+                model_inputs={}, model_version="elo-poisson-v1.1"
+            )
+            session.add(snap2)
+        session.flush()
+
         second_report = score_model(session)
         save_model_score(session, second_report, second_revision.id)
 
