@@ -323,6 +323,15 @@ def _get_today_ai_stats() -> dict:
             else:
                 failed += 1
 
+        # Load matches for kickoff comparison
+        match_ids = {p.match_id for p in today_preds}
+        match_kickoffs: dict[int, datetime | None] = {}
+        if match_ids:
+            matches = list(session.scalars(
+                select(Match).where(Match.id.in_(match_ids))
+            ))
+            match_kickoffs = {m.id: _ensure_utc(m.kickoff) for m in matches}
+
         # Count effective for ensemble (success + not real_time_only)
         effective_for_ensemble = sum(
             1 for p in today_preds
@@ -331,13 +340,26 @@ def _get_today_ai_stats() -> dict:
             and not p.real_time_only
         )
 
-        # Count effective for scoring (success + pre-match or fallback locked)
-        effective_for_scoring = sum(
+        # Count locked for scoring (success + pre-match or fallback locked)
+        locked_for_scoring_count = sum(
             1 for p in today_preds
             if p.error_code is None
             and p.parsed_home_win is not None
             and (p.is_pre_match_locked or p.is_fallback_locked)
         )
+
+        # Count eligible for scoring (success + created_at < kickoff)
+        # This matches the scoring system's actual criterion in evaluation.py
+        eligible_for_scoring_count = sum(
+            1 for p in today_preds
+            if p.error_code is None
+            and p.parsed_home_win is not None
+            and match_kickoffs.get(p.match_id) is not None
+            and (_ensure_utc(p.created_at) < match_kickoffs[p.match_id])
+        )
+
+        # Backward-compatible alias
+        effective_for_scoring_count = eligible_for_scoring_count
 
         # Check if any workflow was skipped due to cooldown today
         from app.models import WorkflowStep
@@ -371,7 +393,9 @@ def _get_today_ai_stats() -> dict:
             "parse_error": parse_error,
             "today_ai_skipped": skipped,
             "effective_for_ensemble": effective_for_ensemble,
-            "effective_for_scoring": effective_for_scoring,
+            "locked_for_scoring_count": locked_for_scoring_count,
+            "eligible_for_scoring_count": eligible_for_scoring_count,
+            "effective_for_scoring": effective_for_scoring_count,
             "cooldown_skipped": cooldown_skipped,
             "only_missing_skipped": only_missing_skipped,
         }
@@ -506,6 +530,8 @@ def _get_ai_status_info() -> dict:
         "failed": today_stats.get("today_ai_failed", 0),
         "parse_error": today_stats.get("parse_error", 0),
         "effective_for_ensemble": today_stats.get("effective_for_ensemble", 0),
+        "locked_for_scoring_count": today_stats.get("locked_for_scoring_count", 0),
+        "eligible_for_scoring_count": today_stats.get("eligible_for_scoring_count", 0),
         "effective_for_scoring": today_stats.get("effective_for_scoring", 0),
         "api_key_ready": has_key,
     }

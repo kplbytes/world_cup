@@ -712,6 +712,40 @@ class TestAIPromptIncludesProfile:
 # AI prediction deduplication tests
 # ===================================================================
 
+def _create_match_and_teams(db_session, match_id="match-1"):
+    """Helper to create prerequisite Match and Team records for AIPrediction FK constraints."""
+    from app.models import Match, Team
+
+    home_team = Team(
+        id="team-home",
+        name="Home Team",
+        short_name="Home",
+        code="HOM",
+        group_code="A",
+    )
+    away_team = Team(
+        id="team-away",
+        name="Away Team",
+        short_name="Away",
+        code="AWY",
+        group_code="A",
+    )
+    db_session.add(home_team)
+    db_session.add(away_team)
+    db_session.flush()
+    match = Match(
+        id=match_id,
+        home_team_id="team-home",
+        away_team_id="team-away",
+        kickoff=datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc),
+        status="upcoming",
+        source="test",
+    )
+    db_session.add(match)
+    db_session.flush()
+    return match
+
+
 class TestFindExistingPrediction:
     """Test _find_existing_prediction helper for dedup logic."""
 
@@ -720,6 +754,7 @@ class TestFindExistingPrediction:
         from app.ai.service import _find_existing_prediction, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred = AIPrediction(
             match_id="match-1",
@@ -754,6 +789,7 @@ class TestFindExistingPrediction:
         from app.ai.service import _find_existing_prediction, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred = AIPrediction(
             match_id="match-1",
@@ -777,6 +813,7 @@ class TestFindExistingPrediction:
         from app.ai.service import _find_existing_prediction
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         pred = AIPrediction(
             match_id="match-1",
             provider="deepseek",
@@ -808,6 +845,7 @@ class TestFindExistingPrediction:
         from app.ai.service import _find_existing_prediction, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred_old = AIPrediction(
             match_id="match-1",
@@ -854,6 +892,7 @@ class TestRunAIPredictionDedup:
         from app.ai.service import run_ai_prediction, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred = AIPrediction(
             match_id="match-1",
@@ -888,6 +927,7 @@ class TestRunAIPredictionDedup:
         from app.ai.service import run_ai_prediction, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred = AIPrediction(
             match_id="match-1",
@@ -940,6 +980,7 @@ class TestRunAIPredictionDedup:
         from app.ai.service import run_ai_prediction, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred = AIPrediction(
             match_id="match-1",
@@ -977,6 +1018,7 @@ class TestRunAIPredictionsForMatchDedup:
         from app.ai.service import run_ai_predictions_for_match, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         # Existing prediction for v1
         pred = AIPrediction(
@@ -1046,6 +1088,7 @@ class TestRunAIPredictionsForMatchDedup:
         from app.ai.service import run_ai_predictions_for_match, get_prompt_version
         from app.models import AIPrediction
 
+        _create_match_and_teams(db_session)
         prompt_ver = get_prompt_version()
         pred = AIPrediction(
             match_id="match-1",
@@ -1088,3 +1131,338 @@ class TestRunAIPredictionsForMatchDedup:
         mock_call.assert_called_once()
         assert len(results) == 1
         assert results[0]["status"] == "success"
+
+
+# ===================================================================
+# Identical-to-baseline detection tests
+# ===================================================================
+
+class TestIdenticalToBaselineDetection:
+    """Test that _serialize_ai_prediction correctly detects when AI probs match baseline."""
+
+    def test_identical_probs_flagged(self):
+        """AI prediction with probs within 0.01 of baseline should be flagged."""
+        from app.ai.service import _serialize_ai_prediction
+        from unittest.mock import MagicMock
+
+        row = MagicMock()
+        row.id = 1
+        row.match_id = "test-match"
+        row.provider = "deepseek"
+        row.model_id = "deepseek-v4-flash"
+        row.model_version = "ai-deepseek-v4-flash-v1"
+        row.prompt_version = "v1"
+        row.parsed_home_win = 0.681  # baseline is 0.68
+        row.parsed_draw = 0.211      # baseline is 0.21
+        row.parsed_away_win = 0.108   # baseline is 0.11
+        row.confidence = 0.7
+        row.risk_flags_json = []
+        row.key_factors_json = []
+        row.reason = "test"
+        row.uncertainties_json = []
+        row.disagreement_with_system = ""
+        row.disagreement_with_market = ""
+        row.recommended_label = "home_win"
+        row.created_at = datetime.now(timezone.utc)
+        row.locked_at = None
+        row.is_pre_match_locked = False
+        row.is_fallback_locked = False
+        row.real_time_only = False
+        row.error_code = None
+        row.error_message = None
+        row.latency_ms = 1000
+
+        baseline = {"home_win": 0.68, "draw": 0.21, "away_win": 0.11}
+        result = _serialize_ai_prediction(row, baseline)
+
+        assert result["identical_to_baseline"] is True
+        assert result["deviation_from_baseline"] < 0.01
+        assert result["baseline_home_win"] == 0.68
+
+    def test_different_probs_not_flagged(self):
+        """AI prediction with probs significantly different from baseline should NOT be flagged."""
+        from app.ai.service import _serialize_ai_prediction
+        from unittest.mock import MagicMock
+
+        row = MagicMock()
+        row.id = 2
+        row.match_id = "test-match"
+        row.provider = "deepseek"
+        row.model_id = "deepseek-v4-pro"
+        row.model_version = "ai-deepseek-v4-pro-v1"
+        row.prompt_version = "v1"
+        row.parsed_home_win = 0.60  # baseline is 0.68
+        row.parsed_draw = 0.25      # baseline is 0.21
+        row.parsed_away_win = 0.15   # baseline is 0.11
+        row.confidence = 0.7
+        row.risk_flags_json = []
+        row.key_factors_json = []
+        row.reason = "test"
+        row.uncertainties_json = []
+        row.disagreement_with_system = ""
+        row.disagreement_with_market = ""
+        row.recommended_label = "home_win"
+        row.created_at = datetime.now(timezone.utc)
+        row.locked_at = None
+        row.is_pre_match_locked = False
+        row.is_fallback_locked = False
+        row.real_time_only = False
+        row.error_code = None
+        row.error_message = None
+        row.latency_ms = 1000
+
+        baseline = {"home_win": 0.68, "draw": 0.21, "away_win": 0.11}
+        result = _serialize_ai_prediction(row, baseline)
+
+        assert result["identical_to_baseline"] is False
+        assert result["deviation_from_baseline"] >= 0.01
+        assert result["baseline_home_win"] == 0.68
+
+    def test_no_baseline_returns_none(self):
+        """Without baseline comparison, identical_to_baseline should be None."""
+        from app.ai.service import _serialize_ai_prediction
+        from unittest.mock import MagicMock
+
+        row = MagicMock()
+        row.id = 3
+        row.match_id = "test-match"
+        row.provider = "deepseek"
+        row.model_id = "deepseek-v4-flash"
+        row.model_version = "ai-deepseek-v4-flash-v1"
+        row.prompt_version = "v1"
+        row.parsed_home_win = 0.68
+        row.parsed_draw = 0.21
+        row.parsed_away_win = 0.11
+        row.confidence = 0.7
+        row.risk_flags_json = []
+        row.key_factors_json = []
+        row.reason = "test"
+        row.uncertainties_json = []
+        row.disagreement_with_system = ""
+        row.disagreement_with_market = ""
+        row.recommended_label = "home_win"
+        row.created_at = datetime.now(timezone.utc)
+        row.locked_at = None
+        row.is_pre_match_locked = False
+        row.is_fallback_locked = False
+        row.real_time_only = False
+        row.error_code = None
+        row.error_message = None
+        row.latency_ms = 1000
+
+        result = _serialize_ai_prediction(row, None)
+
+        assert result["identical_to_baseline"] is None
+        assert result["deviation_from_baseline"] is None
+        assert result["baseline_home_win"] is None
+
+    def test_failed_prediction_no_baseline_comparison(self):
+        """Failed AI prediction should have None for baseline comparison fields."""
+        from app.ai.service import _serialize_ai_prediction
+        from unittest.mock import MagicMock
+
+        row = MagicMock()
+        row.id = 4
+        row.match_id = "test-match"
+        row.provider = "deepseek"
+        row.model_id = "deepseek-v4-flash"
+        row.model_version = "ai-deepseek-v4-flash-v1"
+        row.prompt_version = "v1"
+        row.parsed_home_win = None
+        row.parsed_draw = None
+        row.parsed_away_win = None
+        row.confidence = None
+        row.risk_flags_json = []
+        row.key_factors_json = []
+        row.reason = ""
+        row.uncertainties_json = []
+        row.disagreement_with_system = ""
+        row.disagreement_with_market = ""
+        row.recommended_label = ""
+        row.created_at = datetime.now(timezone.utc)
+        row.locked_at = None
+        row.is_pre_match_locked = False
+        row.is_fallback_locked = False
+        row.real_time_only = False
+        row.error_code = "parse_failed"
+        row.error_message = "Could not parse response"
+        row.latency_ms = 500
+
+        baseline = {"home_win": 0.68, "draw": 0.21, "away_win": 0.11}
+        result = _serialize_ai_prediction(row, baseline)
+
+        assert result["identical_to_baseline"] is None
+        assert result["parsed_home_win"] is None
+
+
+# ===================================================================
+# Ensemble preserves different AI probabilities tests
+# ===================================================================
+
+class TestEnsemblePreservesDifferentProbs:
+    """Test that ensemble computation correctly uses different AI probabilities."""
+
+    def test_ensemble_different_from_baseline_when_ai_differs(self, db_session):
+        """When AI predictions differ from baseline, ensemble should also differ."""
+        from app.ai.ensemble import compute_ensemble
+        from app.models import (
+            DashboardRevision, Match, Team, TeamRating,
+            MatchPrediction, PredictionSnapshot, AIPrediction,
+        )
+
+        now = datetime.now(timezone.utc)
+        kickoff = now + timedelta(hours=2)
+
+        # Create minimal test data
+        team_home = Team(id="TST1", name="Team Home", short_name="Home", code="THM", group_code="A")
+        team_away = Team(id="TST2", name="Team Away", short_name="Away", code="TAW", group_code="A")
+        db_session.add_all([team_home, team_away])
+        db_session.flush()
+
+        rating1 = TeamRating(team_id="TST1", effective_date=now.date(), elo=1800, recent_form="WDL", source="test")
+        rating2 = TeamRating(team_id="TST2", effective_date=now.date(), elo=1600, recent_form="LDW", source="test")
+        db_session.add_all([rating1, rating2])
+        db_session.flush()
+
+        match = Match(id="ens-test-1", group_code="A", home_team_id="TST1", away_team_id="TST2",
+                      kickoff=kickoff, status="scheduled", source="test", stage="group")
+        db_session.add(match)
+        db_session.flush()
+
+        revision = DashboardRevision(model_version="elo-poisson-v1", simulation_iterations=1000, simulation_seed=42, active=True)
+        db_session.add(revision)
+        db_session.flush()
+
+        # Baseline prediction: 68/21/11
+        pred = MatchPrediction(
+            revision_id=revision.id, match_id="ens-test-1",
+            home_xg=1.8, away_xg=0.9,
+            home_win=0.68, draw=0.21, away_win=0.11,
+            has_auto_adjustments=False,
+            scorelines=[], score_matrix={},
+            confidence=0.7, confidence_label="中",
+            data_confidence=0.8, data_confidence_label="高",
+            model_confidence=0.6, model_confidence_label="中",
+            explanation="test", model_inputs={}, model_version="elo-poisson-v1",
+        )
+        db_session.add(pred)
+
+        # Snapshot for ensemble to read
+        snap = PredictionSnapshot(
+            match_id="ens-test-1", revision_id=revision.id,
+            kickoff=kickoff, is_pre_match_locked=False, is_fallback_locked=False,
+            home_win=0.68, draw=0.21, away_win=0.11,
+            home_xg=1.8, away_xg=0.9,
+            has_auto_adjustments=False,
+            scorelines=[], score_matrix={},
+            confidence=0.7, confidence_label="中",
+            model_inputs={}, model_version="elo-poisson-v1",
+            snapshotted_at=now,
+        )
+        db_session.add(snap)
+
+        # AI prediction: DIFFERENT from baseline (60/25/15)
+        ai_pred = AIPrediction(
+            match_id="ens-test-1", provider="deepseek", model_id="deepseek-v4-flash",
+            model_version="ai-deepseek-v4-flash-v1", prompt_version="v1",
+            input_snapshot_json={}, raw_response_text="test",
+            parsed_home_win=0.60, parsed_draw=0.25, parsed_away_win=0.15,
+            confidence=0.65, risk_flags_json=[], key_factors_json=[],
+            reason="AI analysis", uncertainties_json=[],
+            recommended_label="home_win",
+            created_at=now, is_pre_match_locked=False,
+            is_fallback_locked=False, real_time_only=False,
+        )
+        db_session.add(ai_pred)
+        db_session.flush()
+
+        # Compute ensemble
+        result = compute_ensemble(db_session, "ens-test-1")
+
+        # Ensemble should be DIFFERENT from baseline (0.68/0.21/0.11)
+        # With default weights (system 60%, AI 40% when no market)
+        # The ensemble should be pulled toward the AI prediction
+        assert result["status"] == "success"
+        assert result["home_win"] != 0.68  # Must differ from baseline
+        assert result["home_win"] < 0.68   # Should be pulled down by AI's 0.60
+        assert result["draw"] > 0.21       # Should be pulled up by AI's 0.25
+        assert result["away_win"] > 0.11   # Should be pulled up by AI's 0.15
+
+    def test_ensemble_identical_to_baseline_when_ai_same(self, db_session):
+        """When AI predictions are identical to baseline, ensemble should also be close."""
+        from app.ai.ensemble import compute_ensemble
+        from app.models import (
+            DashboardRevision, Match, Team, TeamRating,
+            MatchPrediction, PredictionSnapshot, AIPrediction,
+        )
+
+        now = datetime.now(timezone.utc)
+        kickoff = now + timedelta(hours=2)
+
+        team_home = Team(id="TST3", name="Team Home 3", short_name="Home3", code="TH3", group_code="B")
+        team_away = Team(id="TST4", name="Team Away 3", short_name="Away3", code="TA3", group_code="B")
+        db_session.add_all([team_home, team_away])
+        db_session.flush()
+
+        rating1 = TeamRating(team_id="TST3", effective_date=now.date(), elo=1800, recent_form="WDL", source="test")
+        rating2 = TeamRating(team_id="TST4", effective_date=now.date(), elo=1600, recent_form="LDW", source="test")
+        db_session.add_all([rating1, rating2])
+        db_session.flush()
+
+        match = Match(id="ens-test-2", group_code="B", home_team_id="TST3", away_team_id="TST4",
+                      kickoff=kickoff, status="scheduled", source="test", stage="group")
+        db_session.add(match)
+        db_session.flush()
+
+        revision = DashboardRevision(model_version="elo-poisson-v1", simulation_iterations=1000, simulation_seed=42, active=True)
+        db_session.add(revision)
+        db_session.flush()
+
+        pred = MatchPrediction(
+            revision_id=revision.id, match_id="ens-test-2",
+            home_xg=1.8, away_xg=0.9,
+            home_win=0.68, draw=0.21, away_win=0.11,
+            has_auto_adjustments=False,
+            scorelines=[], score_matrix={},
+            confidence=0.7, confidence_label="中",
+            data_confidence=0.8, data_confidence_label="高",
+            model_confidence=0.6, model_confidence_label="中",
+            explanation="test", model_inputs={}, model_version="elo-poisson-v1",
+        )
+        db_session.add(pred)
+
+        snap = PredictionSnapshot(
+            match_id="ens-test-2", revision_id=revision.id,
+            kickoff=kickoff, is_pre_match_locked=False, is_fallback_locked=False,
+            home_win=0.68, draw=0.21, away_win=0.11,
+            home_xg=1.8, away_xg=0.9,
+            has_auto_adjustments=False,
+            scorelines=[], score_matrix={},
+            confidence=0.7, confidence_label="中",
+            model_inputs={}, model_version="elo-poisson-v1",
+            snapshotted_at=now,
+        )
+        db_session.add(snap)
+
+        # AI prediction: IDENTICAL to baseline (68/21/11)
+        ai_pred = AIPrediction(
+            match_id="ens-test-2", provider="deepseek", model_id="deepseek-v4-flash",
+            model_version="ai-deepseek-v4-flash-v1", prompt_version="v1",
+            input_snapshot_json={}, raw_response_text="test",
+            parsed_home_win=0.68, parsed_draw=0.21, parsed_away_win=0.11,
+            confidence=0.65, risk_flags_json=[], key_factors_json=[],
+            reason="AI analysis", uncertainties_json=[],
+            recommended_label="home_win",
+            created_at=now, is_pre_match_locked=False,
+            is_fallback_locked=False, real_time_only=False,
+        )
+        db_session.add(ai_pred)
+        db_session.flush()
+
+        result = compute_ensemble(db_session, "ens-test-2")
+
+        # When AI is identical to baseline and no market, ensemble = baseline
+        assert result["status"] == "success"
+        assert abs(result["home_win"] - 0.68) < 0.01
+        assert abs(result["draw"] - 0.21) < 0.01
+        assert abs(result["away_win"] - 0.11) < 0.01

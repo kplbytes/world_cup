@@ -305,3 +305,138 @@ def test_repair_removes_locks_created_outside_t30(db_session: Session):
     assert ai.locked_at is None
     assert ensemble.is_pre_match_locked is False
     assert ensemble.locked_at is None
+
+
+# P0-5: Regression tests — post-match data must not pollute pre-match snapshot
+
+def test_match_result_update_does_not_change_pre_match_snapshot(db_session: Session):
+    """After a match result is synced, the pre-match snapshot probabilities must remain unchanged."""
+    from app.services.dashboard import _compute_match_review, _display_snapshots
+
+    rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    kickoff = now + timedelta(minutes=20)  # within T-30
+    match_id = "p05_result_pollution_test"
+    match, pred = _create_match_and_prediction(db_session, match_id, kickoff, rev)
+
+    # Write and lock pre-match snapshot
+    write_snapshots(db_session, rev, now=now)
+    db_session.flush()
+
+    snap = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap is not None
+    assert snap.is_pre_match_locked is True
+
+    # Record pre-match snapshot values
+    pre_match_home_win = snap.home_win
+    pre_match_draw = snap.draw
+    pre_match_away_win = snap.away_win
+
+    # Now update match result (simulating post-match sync)
+    match.status = "final"
+    match.home_score = 2
+    match.away_score = 1
+    db_session.flush()
+
+    # Re-read the snapshot
+    db_session.expire(snap)
+    snap_after = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+
+    # Snapshot probabilities must NOT have changed
+    assert snap_after.home_win == pre_match_home_win
+    assert snap_after.draw == pre_match_draw
+    assert snap_after.away_win == pre_match_away_win
+    assert snap_after.is_pre_match_locked is True
+
+
+def test_match_review_uses_pre_match_prediction_not_post_match(db_session: Session):
+    """match_review must compute Brier/deviations based on pre-match snapshot,
+    not any post-match updated prediction."""
+    from app.services.dashboard import _compute_match_review
+
+    rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    kickoff = now + timedelta(minutes=20)
+    match_id = "p05_review_snapshot_test"
+    match, pred = _create_match_and_prediction(db_session, match_id, kickoff, rev)
+
+    # Pre-match snapshot: home_win=0.5, draw=0.3, away_win=0.2
+    write_snapshots(db_session, rev, now=now)
+    db_session.flush()
+
+    snap = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap.is_pre_match_locked is True
+
+    # Finalize match: away team wins (upset)
+    match.status = "final"
+    match.home_score = 0
+    match.away_score = 1
+    db_session.flush()
+
+    # Compute match_review using the pre-match snapshot
+    review = _compute_match_review(match, snap, [], [], None)
+
+    assert review is not None
+    assert review["actual_result"] == "away"
+    # Baseline predicted home (0.5 > 0.3 > 0.2), but actual was away
+    assert review["baseline"]["predicted_result"] == "home"
+    assert review["baseline"]["outcome_hit"] is False
+    # Brier must be based on pre-match probabilities (0.5, 0.3, 0.2)
+    # actual = (0, 0, 1), so Brier = (0.5-0)^2 + (0.3-0)^2 + (0.2-1)^2 = 0.25+0.09+0.64 = 0.98
+    assert review["baseline"]["brier"] == round(0.98, 4)
+    # actual_probability for away must be 0.2 (the pre-match away_win)
+    assert review["baseline"]["actual_probability"] == 0.2
+
+
+def test_match_review_does_not_write_back_to_snapshot(db_session: Session):
+    """Computing match_review must not modify the PredictionSnapshot row."""
+    from app.services.dashboard import _compute_match_review
+
+    rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    kickoff = now + timedelta(minutes=20)
+    match_id = "p05_no_writeback_test"
+    match, pred = _create_match_and_prediction(db_session, match_id, kickoff, rev)
+
+    write_snapshots(db_session, rev, now=now)
+    db_session.flush()
+
+    snap = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    original_home_win = snap.home_win
+    original_draw = snap.draw
+    original_away_win = snap.away_win
+
+    match.status = "final"
+    match.home_score = 1
+    match.away_score = 0
+    db_session.flush()
+
+    # Compute review multiple times
+    _compute_match_review(match, snap, [], [], None)
+    _compute_match_review(match, snap, [], [], None)
+
+    # Snapshot must be unchanged
+    db_session.expire(snap)
+    snap_check = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap_check.home_win == original_home_win
+    assert snap_check.draw == original_draw
+    assert snap_check.away_win == original_away_win

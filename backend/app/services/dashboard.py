@@ -23,11 +23,17 @@ from app.models import (
     AutoAdjustment,
     ProviderQuotaState,
     TeamProfilePrediction,
+    AIPrediction,
+    EnsemblePrediction,
 )
 from app.services.market import compute_divergence
 from app.services.localization import localized_team_names
 from app.services.manual_adjustments import adjustments_by_match, list_manual_adjustments, serialize_adjustment
 from app.services.scoring import score_predictions
+
+from typing import Any
+
+import math
 
 
 
@@ -100,6 +106,180 @@ def _snapshot_status(snapshot: PredictionSnapshot | None, match: Match) -> dict:
     }
 
 
+_CLIP = 1e-6
+
+
+def _compute_brier(p_home: float, p_draw: float, p_away: float,
+                   o_home: float, o_draw: float, o_away: float) -> float:
+    """Three-class Brier score for a single match."""
+    return (p_home - o_home) ** 2 + (p_draw - o_draw) ** 2 + (p_away - o_away) ** 2
+
+
+def _compute_deviations(p_home: float, p_draw: float, p_away: float,
+                        o_home: float, o_draw: float, o_away: float) -> dict[str, float]:
+    """Probability deviation = predicted - actual for each class."""
+    return {
+        "home_win": round(p_home - o_home, 4),
+        "draw": round(p_draw - o_draw, 4),
+        "away_win": round(p_away - o_away, 4),
+    }
+
+
+def _compute_match_review(
+    match: Match,
+    snapshot: PredictionSnapshot | None,
+    ai_preds: list[AIPrediction],
+    ensemble_preds: list[EnsemblePrediction],
+    market_snap: MarketSnapshot | None,
+) -> dict | None:
+    """Compute per-match review data for a finished match.
+
+    Returns None if the match is not finished or lacks scores.
+    """
+    if match.status != "final" or match.home_score is None or match.away_score is None:
+        return None
+
+    # Determine actual outcome indicators
+    actual_home = match.home_score
+    actual_away = match.away_score
+    if actual_home > actual_away:
+        o_home, o_draw, o_away = 1.0, 0.0, 0.0
+        actual_result = "home"
+    elif actual_home == actual_away:
+        o_home, o_draw, o_away = 0.0, 1.0, 0.0
+        actual_result = "draw"
+    else:
+        o_home, o_draw, o_away = 0.0, 0.0, 1.0
+        actual_result = "away"
+
+    result: dict[str, Any] = {
+        "actual_result": actual_result,
+        "actual_score": {"home": actual_home, "away": actual_away},
+    }
+
+    # Map actual_result to the probability key for lookup
+    actual_prob_key = {"home": "home_win", "draw": "draw", "away": "away_win"}[actual_result]
+
+    # --- Baseline review (from snapshot) ---
+    if snapshot:
+        b_home = snapshot.base_home_win if snapshot.base_home_win is not None else snapshot.home_win
+        b_draw = snapshot.base_draw if snapshot.base_draw is not None else snapshot.draw
+        b_away = snapshot.base_away_win if snapshot.base_away_win is not None else snapshot.away_win
+        baseline_predicted = max(
+            [("home", b_home), ("draw", b_draw), ("away", b_away)],
+            key=lambda x: x[1],
+        )[0]
+        baseline_brier = _compute_brier(b_home, b_draw, b_away, o_home, o_draw, o_away)
+        baseline_actual_prob = {"home_win": b_home, "draw": b_draw, "away_win": b_away}[actual_prob_key]
+        result["baseline"] = {
+            "predicted_result": baseline_predicted,
+            "outcome_hit": baseline_predicted == actual_result,
+            "brier": round(baseline_brier, 4),
+            "actual_probability": round(baseline_actual_prob, 4),
+            "probabilities": {"home_win": b_home, "draw": b_draw, "away_win": b_away},
+            "deviations": _compute_deviations(b_home, b_draw, b_away, o_home, o_draw, o_away),
+        }
+    else:
+        result["baseline"] = None
+
+    # --- AI review ---
+    if ai_preds:
+        # Use the first effective AI prediction (no error, has parsed probs)
+        effective_ai = None
+        for ai in ai_preds:
+            if ai.error_code is None and ai.parsed_home_win is not None:
+                effective_ai = ai
+                break
+        if effective_ai:
+            a_home = effective_ai.parsed_home_win
+            a_draw = effective_ai.parsed_draw
+            a_away = effective_ai.parsed_away_win
+            ai_predicted = max(
+                [("home", a_home), ("draw", a_draw), ("away", a_away)],
+                key=lambda x: x[1],
+            )[0]
+            ai_brier = _compute_brier(a_home, a_draw, a_away, o_home, o_draw, o_away)
+            ai_actual_prob = {"home_win": a_home, "draw": a_draw, "away_win": a_away}[actual_prob_key]
+            result["ai"] = {
+                "predicted_result": ai_predicted,
+                "outcome_hit": ai_predicted == actual_result,
+                "brier": round(ai_brier, 4),
+                "actual_probability": round(ai_actual_prob, 4),
+                "probabilities": {"home_win": a_home, "draw": a_draw, "away_win": a_away},
+                "deviations": _compute_deviations(a_home, a_draw, a_away, o_home, o_draw, o_away),
+                "model_version": effective_ai.model_version,
+            }
+        else:
+            result["ai"] = None
+    else:
+        result["ai"] = None
+
+    # --- Ensemble review ---
+    if ensemble_preds:
+        ens = ensemble_preds[0]
+        e_home = ens.ensemble_home_win
+        e_draw = ens.ensemble_draw
+        e_away = ens.ensemble_away_win
+        ens_predicted = max(
+            [("home", e_home), ("draw", e_draw), ("away", e_away)],
+            key=lambda x: x[1],
+        )[0]
+        ens_brier = _compute_brier(e_home, e_draw, e_away, o_home, o_draw, o_away)
+        ens_actual_prob = {"home_win": e_home, "draw": e_draw, "away_win": e_away}[actual_prob_key]
+        result["ensemble"] = {
+            "predicted_result": ens_predicted,
+            "outcome_hit": ens_predicted == actual_result,
+            "brier": round(ens_brier, 4),
+            "actual_probability": round(ens_actual_prob, 4),
+            "probabilities": {"home_win": e_home, "draw": e_draw, "away_win": e_away},
+            "deviations": _compute_deviations(e_home, e_draw, e_away, o_home, o_draw, o_away),
+            "model_version": ens.model_version,
+        }
+    else:
+        result["ensemble"] = None
+
+    # --- Market review (for reference) ---
+    if market_snap and market_snap.home_probability is not None:
+        m_home = market_snap.home_probability
+        m_draw = market_snap.draw_probability
+        m_away = market_snap.away_probability
+        m_predicted = max(
+            [("home", m_home), ("draw", m_draw), ("away", m_away)],
+            key=lambda x: x[1],
+        )[0]
+        m_brier = _compute_brier(m_home, m_draw, m_away, o_home, o_draw, o_away)
+        m_actual_prob = {"home_win": m_home, "draw": m_draw, "away_win": m_away}[actual_prob_key]
+        result["market"] = {
+            "predicted_result": m_predicted,
+            "outcome_hit": m_predicted == actual_result,
+            "brier": round(m_brier, 4),
+            "actual_probability": round(m_actual_prob, 4),
+            "probabilities": {"home_win": m_home, "draw": m_draw, "away_win": m_away},
+            "deviations": _compute_deviations(m_home, m_draw, m_away, o_home, o_draw, o_away),
+        }
+    else:
+        result["market"] = None
+
+    # --- Top-level convenience fields ---
+    # winner_hit: prefer Ensemble, fallback to Baseline
+    if result.get("ensemble"):
+        result["winner_hit"] = result["ensemble"]["outcome_hit"]
+    elif result.get("baseline"):
+        result["winner_hit"] = result["baseline"]["outcome_hit"]
+    else:
+        result["winner_hit"] = None
+
+    # best_model: lowest Brier score among available sources
+    brier_scores: list[tuple[str, float]] = []
+    for source in ("baseline", "ai", "ensemble"):
+        src = result.get(source)
+        if src:
+            brier_scores.append((source, src["brier"]))
+    result["best_model"] = min(brier_scores, key=lambda x: x[1])[0] if brier_scores else None
+
+    return result
+
+
 def build_dashboard(session: Session) -> dict:
     revision = session.scalar(
         select(DashboardRevision)
@@ -155,6 +335,24 @@ def build_dashboard(session: Session) -> dict:
             adjustments_by_match_auto[row.match_id].append(row)
 
     snapshots = _display_snapshots(session, matches)
+
+    # Pre-fetch AI and Ensemble predictions for all matches (used in review + match card)
+    all_match_ids = [m.id for m in matches]
+    ai_preds_by_match: dict[str, list[AIPrediction]] = defaultdict(list)
+    for row in session.scalars(
+        select(AIPrediction)
+        .where(AIPrediction.match_id.in_(all_match_ids))
+        .order_by(AIPrediction.created_at.desc())
+    ):
+        ai_preds_by_match[row.match_id].append(row)
+
+    ensemble_preds_by_match: dict[str, list[EnsemblePrediction]] = defaultdict(list)
+    for row in session.scalars(
+        select(EnsemblePrediction)
+        .where(EnsemblePrediction.match_id.in_(all_match_ids))
+        .order_by(EnsemblePrediction.created_at.desc())
+    ):
+        ensemble_preds_by_match[row.match_id].append(row)
 
     ratings = _latest_ratings(session)
     teams_by_id = {team.id: team for team in teams}
@@ -277,6 +475,21 @@ def build_dashboard(session: Session) -> dict:
                 "source": match.source,
                 "source_updated_at": (
                     match.source_updated_at.isoformat() if match.source_updated_at else None
+                ),
+                # P0-4: Result sync metadata for finished matches
+                "result_source": match.source if match.status == "final" else None,
+                "result_synced_at": (
+                    match.source_updated_at.isoformat() if match.source_updated_at and match.status == "final" else None
+                ),
+                "revision_id": revision.id,
+                # AI prediction summary (for MatchCard / P0-3 fix)
+                "ai_prediction": _ai_prediction_summary(ai_preds_by_match[match.id]),
+                # Ensemble prediction summary (for MatchCard / P0-3 fix)
+                "ensemble_prediction": _ensemble_prediction_summary(ensemble_preds_by_match[match.id]),
+                # Per-match review data for finished matches (P0-2)
+                "match_review": _compute_match_review(
+                    match, snap, ai_preds_by_match[match.id],
+                    ensemble_preds_by_match[match.id], market_snap,
                 ),
             }
         )
@@ -463,6 +676,12 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
         "source_updated_at": (
             match.source_updated_at.isoformat() if match.source_updated_at else None
         ),
+        # P0-4: Result sync metadata for finished matches
+        "result_source": match.source if match.status == "final" else None,
+        "result_synced_at": (
+            match.source_updated_at.isoformat() if match.source_updated_at and match.status == "final" else None
+        ),
+        "revision_id": revision.id,
         "team_profiles": {
             "home": {"profile": profile_payload(home_profile), "summary": explain_team_profile(home_profile)} if home_profile else None,
             "away": {"profile": profile_payload(away_profile), "summary": explain_team_profile(away_profile)} if away_profile else None,
@@ -483,6 +702,32 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
             "explanation": profile_prediction.explanation,
             "is_pre_match_locked": profile_prediction.is_pre_match_locked,
         } if profile_prediction else None),
+        # AI/Ensemble prediction summaries (P0-3 fix)
+        "ai_prediction": _ai_prediction_summary(list(session.scalars(
+            select(AIPrediction)
+            .where(AIPrediction.match_id == match_id)
+            .order_by(AIPrediction.created_at.desc())
+        ))),
+        "ensemble_prediction": _ensemble_prediction_summary(list(session.scalars(
+            select(EnsemblePrediction)
+            .where(EnsemblePrediction.match_id == match_id)
+            .order_by(EnsemblePrediction.created_at.desc())
+        ))),
+        # Per-match review data (P0-2)
+        "match_review": _compute_match_review(
+            match, snap,
+            list(session.scalars(
+                select(AIPrediction)
+                .where(AIPrediction.match_id == match_id)
+                .order_by(AIPrediction.created_at.desc())
+            )),
+            list(session.scalars(
+                select(EnsemblePrediction)
+                .where(EnsemblePrediction.match_id == match_id)
+                .order_by(EnsemblePrediction.created_at.desc())
+            )),
+            market_snap,
+        ),
     }
 
 
@@ -870,6 +1115,38 @@ def _prediction_dict(row: MatchPrediction) -> dict:
         d["base_draw"] = row.base_draw
         d["base_away_win"] = row.base_away_win
     return d
+
+
+def _ai_prediction_summary(ai_preds: list[AIPrediction]) -> dict | None:
+    """Extract a summary of the best AI prediction for a match (for MatchCard)."""
+    if not ai_preds:
+        return None
+    # Pick the first effective prediction (no error, has parsed probs)
+    for ai in ai_preds:
+        if ai.error_code is None and ai.parsed_home_win is not None:
+            return {
+                "home_win": ai.parsed_home_win,
+                "draw": ai.parsed_draw,
+                "away_win": ai.parsed_away_win,
+                "model_version": ai.model_version,
+                "recommended_label": ai.recommended_label,
+            }
+    return None
+
+
+def _ensemble_prediction_summary(ensemble_preds: list[EnsemblePrediction]) -> dict | None:
+    """Extract a summary of the ensemble prediction for a match (for MatchCard)."""
+    if not ensemble_preds:
+        return None
+    ens = ensemble_preds[0]
+    return {
+        "home_win": ens.ensemble_home_win,
+        "draw": ens.ensemble_draw,
+        "away_win": ens.ensemble_away_win,
+        "model_version": ens.model_version,
+        "system_weight": ens.system_weight,
+        "market_weight": ens.market_weight,
+    }
 
 
 def _team_ref(team: Team, display_names: dict[str, str]) -> dict:

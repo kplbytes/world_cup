@@ -27,15 +27,6 @@ def model_score_details():
         details = _details(session)
         exclusions = get_scoring_exclusions(session)
 
-        # Build exclusion lookup by match_id
-        exclusion_map = {}
-        for exc in exclusions:
-            exclusion_map[exc["match_id"]] = exc.get("reason_codes", [])
-
-        # Add exclusion_reason to each detail
-        for d in details:
-            d["exclusion_reason"] = None
-
         return {"details": details, "exclusions": exclusions}
 
 
@@ -119,6 +110,19 @@ def data_quality():
     with session_scope() as session:
         from app.services.data_quality import check_data_quality
         return check_data_quality(session)
+
+
+@router.get("/model-comparison")
+def model_comparison():
+    """Get structured comparison: Baseline vs AI v1 vs AI v2 vs Ensemble."""
+    with session_scope() as session:
+        from app.services.accuracy_command import get_accuracy_command_center
+        data = get_accuracy_command_center(session)
+        return {
+            "comparison": data.get("model_comparison", []),
+            "sample_sufficient": data.get("sample_sufficient", False),
+            "sample_count": data.get("sample_count", 0),
+        }
 
 
 @router.get("/model-configs")

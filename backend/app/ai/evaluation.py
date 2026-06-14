@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import AIPrediction, EnsemblePrediction, MarketSnapshot, Match, PredictionSnapshot
+from app.models import AIPrediction, EnsemblePrediction, Match, PredictionSnapshot
 from app.services.scoring import _select_scorable_snapshot
 
 _CLIP = 1e-6
@@ -90,11 +90,6 @@ def evaluate_ai_predictions(session: Session) -> dict[str, Any]:
     final_matches = list(session.scalars(
         select(Match).where(Match.status == "final")
     ))
-
-    market_snaps = {
-        row.match_id: row
-        for row in session.scalars(select(MarketSnapshot).where(MarketSnapshot.provider == "sporttery"))
-    }
 
     # Evaluate system predictions
     system_results = _evaluate_source(session, final_matches, "system")

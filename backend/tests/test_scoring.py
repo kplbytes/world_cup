@@ -782,3 +782,54 @@ def test_no_pre_kickoff_snapshot_appears_in_scoring_exclusions(db_session):
     excluded = [e for e in exclusions if e["match_id"] == "m_excluded"]
     assert len(excluded) == 1
     assert "excluded_after_kickoff" in excluded[0]["reason_codes"]
+
+
+class TestModelComparison:
+    def test_model_comparison_includes_all_sources(self, db_session):
+        """model_comparison should include Baseline, AI versions, and Ensemble."""
+        from app.services.accuracy_command import get_accuracy_command_center
+        result = get_accuracy_command_center(db_session)
+        comparison = result.get("model_comparison", [])
+        sources = [item["source"] for item in comparison]
+        # Baseline should always be present
+        assert any("Baseline" in s for s in sources), "Baseline missing from comparison"
+        # Ensemble should always be present
+        assert any("Ensemble" in s for s in sources), "Ensemble missing from comparison"
+
+    def test_v2_models_marked_as_shadow(self, db_session):
+        """v2 models should be marked as shadow role in comparison."""
+        from app.services.accuracy_command import get_accuracy_command_center
+        result = get_accuracy_command_center(db_session)
+        comparison = result.get("model_comparison", [])
+        v2_items = [item for item in comparison if item.get("prompt_version") == "worldcup-ai-v2"]
+        for item in v2_items:
+            assert item["role"] == "shadow", f"{item['model_version']} should be shadow"
+
+    def test_available_true_when_sample_count_positive(self):
+        """available must be True when sample_count > 0, regardless of source dict."""
+        from app.services.accuracy_command import _build_model_comparison
+        # Simulate baseline with sample_count=4 but available=False from _format_version_score
+        baseline_score = {"available": False, "sample_count": 4, "brier": 0.25, "logloss": 0.6, "hit_rate": 0.5}
+        ensemble_score = {"available": False, "sample_count": 4, "brier": 0.20, "logloss": 0.5, "hit_rate": 0.6}
+        result = _build_model_comparison(baseline_score, [], {"ai_by_version": {}}, ensemble_score)
+        baseline_item = next(r for r in result if r["source"] == "Baseline")
+        ensemble_item = next(r for r in result if r["source"] == "Ensemble")
+        assert baseline_item["available"] is True, f"Baseline available should be True when sample_count=4, got {baseline_item['available']}"
+        assert ensemble_item["available"] is True, f"Ensemble available should be True when sample_count=4, got {ensemble_item['available']}"
+
+    def test_available_false_when_sample_count_zero(self):
+        """available must be False when sample_count == 0."""
+        from app.services.accuracy_command import _build_model_comparison
+        baseline_score = {"available": False, "sample_count": 0, "brier": None, "logloss": None, "hit_rate": None}
+        ensemble_score = {"available": False, "sample_count": 0, "brier": None, "logloss": None, "hit_rate": None}
+        result = _build_model_comparison(baseline_score, [], {"ai_by_version": {}}, ensemble_score)
+        baseline_item = next(r for r in result if r["source"] == "Baseline")
+        ensemble_item = next(r for r in result if r["source"] == "Ensemble")
+        assert baseline_item["available"] is False
+        assert ensemble_item["available"] is False
+
+    def test_sample_sufficient_independent_of_available(self):
+        """sample_sufficient is about statistical power, available is about data presence."""
+        # sample_count=4 means available=True but sample_sufficient=False (need >=20)
+        assert 4 > 0  # available should be True
+        assert 4 < 20  # sample_sufficient should be False

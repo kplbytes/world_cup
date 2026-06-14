@@ -83,6 +83,13 @@ def compute_ensemble(
         if pred.model_version not in ai_by_version:
             ai_by_version[pred.model_version] = pred
 
+    # Filter out shadow models (include_in_ensemble=False)
+    ai_by_version = {
+        version: pred
+        for version, pred in ai_by_version.items()
+        if _should_include_in_ensemble(version)
+    }
+
     ai_probs_list: list[tuple[str, dict[str, float], float]] = []
     for version, pred in ai_by_version.items():
         ai_probs_list.append((
@@ -238,7 +245,7 @@ def _compute_ensemble_confidence(
 
     # Direction agreement: what does each source predict?
     directions = []
-    for source_key, source_data in source_probs.items():
+    for source_data in source_probs.values():
         probs = source_data.get("probs", {})
         if probs:
             direction = max(probs, key=probs.get)
@@ -253,7 +260,7 @@ def _compute_ensemble_confidence(
 
     # Magnitude agreement: variance of home_win probs across sources
     home_probs = []
-    for source_key, source_data in source_probs.items():
+    for source_data in source_probs.values():
         probs = source_data.get("probs", {})
         if "home_win" in probs:
             home_probs.append(probs["home_win"])
@@ -325,7 +332,7 @@ def _compute_weights(
                     weights[f"ai_{version}"] = total_ai_w * (w / total_explicit)
             else:
                 # Equal distribution
-                for i, version in enumerate(ai_weights_override):
+                for version in ai_weights_override:
                     weights[f"ai_{version}"] = total_ai_w / len(ai_weights_override)
         else:
             # Use ensemble_weight from model configs
@@ -336,7 +343,7 @@ def _compute_weights(
                     weights[f"ai_{model.model_version}"] = w
             else:
                 # Equal distribution
-                for i, model in enumerate(enabled_models):
+                for model in enabled_models:
                     weights[f"ai_{model.model_version}"] = total_ai_w / len(enabled_models)
 
     # Normalize all weights
@@ -346,6 +353,15 @@ def _compute_weights(
             weights[key] /= total
 
     return weights
+
+
+def _should_include_in_ensemble(version: str) -> bool:
+    """Check if an AI model version should be included in ensemble calculations."""
+    from app.ai.model_registry import get_model_config
+    config = get_model_config(version)
+    if config is None:
+        return True  # Unknown models included by default (backward compat)
+    return config.include_in_ensemble
 
 
 def _get_ai_weight(version: str, overrides: dict[str, float] | None) -> float:

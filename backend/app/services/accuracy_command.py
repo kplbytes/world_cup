@@ -97,6 +97,21 @@ def get_accuracy_command_center(session: Session) -> dict[str, Any]:
         "ai_enabled": ai_enabled,
         "ai_models_configured": len(ai_models),
         "scoring_exclusions": scoring_exclusions,
+        # Structured model comparison for Baseline vs AI v1 vs AI v2 vs Ensemble
+        "model_comparison": _build_model_comparison(
+            baseline_score, version_scores, ai_eval, ensemble_score
+        ),
+        # Frontend compatibility fields
+        "version_scores": version_scores,
+        "model_recommendation": {
+            "recommended_model_version": recommendation.get("recommended_model_version", "elo-poisson-v1"),
+            "confidence": recommendation.get("confidence", "low"),
+            "reason": recommendation.get("reason", ""),
+            "fallback_model_version": recommendation.get("fallback_model_version", "elo-poisson-v1"),
+            "sample_warning": recommendation.get("sample_warning"),
+            "brier_improvement": recommendation.get("brier_improvement"),
+            "relative_improvement": recommendation.get("relative_improvement"),
+        },
     }
 
 
@@ -273,6 +288,66 @@ def _get_recent_match_scores(session: Session, limit: int = 5) -> list[dict[str,
             "away_score": actual_away,
         })
     return results
+
+
+def _build_model_comparison(
+    baseline_score: dict,
+    version_scores: list[dict],
+    ai_eval: dict[str, Any],
+    ensemble_score: dict,
+) -> list[dict[str, Any]]:
+    """Build structured comparison: Baseline vs AI v1 vs AI v2 vs Ensemble."""
+    comparison = []
+
+    # Baseline — available is based on sample_count, not the formatted dict
+    baseline_sample_count = baseline_score.get("sample_count", 0)
+    comparison.append({
+        "source": "Baseline",
+        "model_version": "elo-poisson-v1",
+        "prompt_version": None,
+        "role": "production",
+        "sample_count": baseline_sample_count,
+        "brier": baseline_score.get("brier"),
+        "logloss": baseline_score.get("logloss"),
+        "hit_rate": baseline_score.get("hit_rate"),
+        "available": baseline_sample_count > 0,
+    })
+
+    # AI models by version
+    for version, results in ai_eval.get("ai_by_version", {}).items():
+        from app.ai.model_registry import get_model_config
+        config = get_model_config(version)
+        role = config.role if config else "unknown"
+        prompt_version = config.prompt_version if config else "unknown"
+        include_in_ensemble = config.ensemble_weight > 0 if config else True
+
+        comparison.append({
+            "source": f"AI ({version})",
+            "model_version": version,
+            "prompt_version": prompt_version,
+            "role": "shadow" if not include_in_ensemble else "production",
+            "sample_count": results.get("sample_count", 0),
+            "brier": results.get("brier"),
+            "logloss": results.get("logloss"),
+            "hit_rate": results.get("hit_rate"),
+            "available": results.get("sample_count", 0) > 0,
+        })
+
+    # Ensemble — available is based on sample_count, not the formatted dict
+    ensemble_sample_count = ensemble_score.get("sample_count", 0)
+    comparison.append({
+        "source": "Ensemble",
+        "model_version": "ensemble-v1",
+        "prompt_version": None,
+        "role": "production",
+        "sample_count": ensemble_sample_count,
+        "brier": ensemble_score.get("brier"),
+        "logloss": ensemble_score.get("logloss"),
+        "hit_rate": ensemble_score.get("hit_rate"),
+        "available": ensemble_sample_count > 0,
+    })
+
+    return comparison
 
 
 def _get_upcoming_matches(session: Session, limit: int = 10) -> list[dict[str, Any]]:

@@ -50,6 +50,41 @@ export type SnapshotStatus = {
   participates_in_model_score: boolean; real_time_only: boolean;
 };
 
+/** Per-source review data for a finished match */
+export type MatchReviewSource = {
+  predicted_result: string;
+  outcome_hit: boolean;
+  brier: number;
+  actual_probability: number;
+  probabilities: { home_win: number; draw: number; away_win: number };
+  deviations: { home_win: number; draw: number; away_win: number };
+  model_version?: string;
+};
+
+/** Review data for a finished match (P0-2) */
+export type MatchReview = {
+  actual_result: string;
+  actual_score: { home: number; away: number };
+  winner_hit: boolean | null;
+  best_model: string | null;
+  baseline: MatchReviewSource | null;
+  ai: MatchReviewSource | null;
+  ensemble: MatchReviewSource | null;
+  market: MatchReviewSource | null;
+};
+
+/** AI prediction summary for MatchCard (P0-3) */
+export type AIPredictionSummary = {
+  home_win: number; draw: number; away_win: number;
+  model_version: string; recommended_label: string | null;
+};
+
+/** Ensemble prediction summary for MatchCard (P0-3) */
+export type EnsemblePredictionSummary = {
+  home_win: number; draw: number; away_win: number;
+  model_version: string; system_weight: number; market_weight: number;
+};
+
 export type Prediction = {
   home_xg: number; away_xg: number; home_win: number; draw: number; away_win: number;
   base_home_win?: number; base_draw?: number; base_away_win?: number;
@@ -81,8 +116,14 @@ export type Match = {
   risk_flags: string[];
   snapshot_status: SnapshotStatus;
   prediction: Prediction | null; market: MarketData | null; source: string; source_updated_at: string | null;
+  result_source?: string | null;
+  result_synced_at?: string | null;
+  revision_id?: number;
   team_profiles?: MatchTeamProfiles;
   profile_prediction?: ProfilePrediction | null;
+  match_review?: MatchReview | null;
+  ai_prediction?: AIPredictionSummary | null;
+  ensemble_prediction?: EnsemblePredictionSummary | null;
 };
 
 export type TeamProfile = {
@@ -321,10 +362,26 @@ export type AIEvaluationResult = {
   ai_effect: Record<string, { effect: string; brier_diff: number }>;
 };
 
+// Model comparison item for Baseline vs AI v1 vs AI v2 vs Ensemble
+export type ModelComparisonItem = {
+  source: string;
+  model_version: string;
+  prompt_version: string | null;
+  role: "production" | "shadow" | "unknown";
+  sample_count: number;
+  brier: number | null;
+  logloss: number | null;
+  hit_rate: number | null;
+  available: boolean;
+};
+
 // P2+: Accuracy Command Center
 export type AccuracyCommandCenter = {
+  sample_count: number;
+  baseline_score: { available: boolean; sample_count?: number; brier?: number | null; logloss?: number | null; hit_rate?: number | null };
   model_recommendation: ModelRecommendation;
   version_scores: VersionScoreSummary[];
+  model_comparison?: ModelComparisonItem[];
   calibration: { buckets: CalibrationBucket[] };
   market_comparison: MarketComparisonData;
   data_quality: DataQualityReport;

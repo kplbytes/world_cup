@@ -102,3 +102,43 @@ def ai_evaluation():
     from app.ai.evaluation import evaluate_ai_predictions
     with session_scope() as session:
         return evaluate_ai_predictions(session)
+
+
+@router.get("/ai-independence")
+def ai_independence():
+    """Audit how far AI predictions deviate from the active baseline predictions."""
+    from app.services.ai_independence import analyze_ai_independence
+    with session_scope() as session:
+        return analyze_ai_independence(session)
+
+
+@router.get("/ai-prompt-preview")
+def ai_prompt_preview(
+    match_id: str = Query(..., description="Match ID to preview prompt for"),
+    prompt_version: str = Query("worldcup-ai-v1", description="Prompt version to preview"),
+):
+    """Preview the AI prediction prompt for a match without calling any AI provider.
+
+    This is a debug endpoint to inspect what data is sent to AI models.
+    No API keys are exposed.
+    """
+    from app.ai.prompt_builder import build_prompt, analyze_prompt_independence
+    from app.ai.service import _build_prediction_request, is_ai_enabled
+
+    with session_scope() as session:
+        request = _build_prediction_request(session, match_id)
+        if request is None:
+            raise HTTPException(status_code=404, detail=f"No prediction data found for match {match_id}")
+
+        prompt_text = build_prompt(request, prompt_version)
+        analysis = analyze_prompt_independence(prompt_text)
+
+        return {
+            "match_id": match_id,
+            "prompt_version": prompt_version,
+            "prompt": prompt_text,
+            "contains_baseline_probabilities": analysis["contains_baseline_probabilities"],
+            "anchor_count": analysis["anchor_count"],
+            "prompt_length": analysis["prompt_length"],
+            "ai_enabled": is_ai_enabled(),
+        }

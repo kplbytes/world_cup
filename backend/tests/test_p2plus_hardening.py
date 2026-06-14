@@ -170,7 +170,7 @@ class TestAIRegistry:
         with open(config_path) as f:
             data = yaml.safe_load(f)
         deepseek_models = data["providers"]["deepseek"]["models"]
-        assert len(deepseek_models) == 2
+        assert len(deepseek_models) >= 2
         # Each model must have required fields
         required = {"model_id", "model_version", "display_name", "enabled", "cost_tier", "latency_tier", "role", "ensemble_weight", "prompt_version"}
         for m in deepseek_models:

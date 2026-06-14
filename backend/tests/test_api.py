@@ -181,6 +181,64 @@ def test_sync_runs_returns_list(tmp_path):
     assert isinstance(response.json(), list)
 
 
+def test_ai_independence_endpoint_returns_summary(tmp_path):
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        from app.models import AIPrediction
+        from sqlalchemy import select
+        from app.models import DashboardRevision, MatchPrediction
+
+        revision = session.scalar(
+            select(DashboardRevision)
+            .where(DashboardRevision.active.is_(True))
+            .order_by(DashboardRevision.id.desc())
+        )
+        prediction = session.scalar(
+            select(MatchPrediction)
+            .where(MatchPrediction.revision_id == revision.id)
+            .order_by(MatchPrediction.id.asc())
+        )
+        baseline_home = prediction.base_home_win if prediction.base_home_win is not None else prediction.home_win
+        baseline_draw = prediction.base_draw if prediction.base_draw is not None else prediction.draw
+        baseline_away = prediction.base_away_win if prediction.base_away_win is not None else prediction.away_win
+
+        session.add(
+            AIPrediction(
+                match_id=prediction.match_id,
+                provider="deepseek",
+                model_id="audit-model-a",
+                model_version="audit-model-a",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                raw_response_json={},
+                parsed_home_win=baseline_home,
+                parsed_draw=baseline_draw,
+                parsed_away_win=baseline_away,
+                confidence=0.8,
+                risk_flags_json=[],
+                key_factors_json=[],
+                reason="audit",
+                uncertainties_json=[],
+                disagreement_with_system="",
+                disagreement_with_market="",
+                recommended_label="home_win",
+                created_at=datetime(2026, 6, 14, 9, tzinfo=timezone.utc),
+            )
+        )
+
+    response = client.get("/api/ai-independence")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["summary"]["total_valid_ai_prediction_count"] == 1
+    assert payload["summary"]["audited_prediction_count"] == 1
+    assert payload["summary"]["buckets"]["identical"]["count"] == 1
+    assert payload["by_model_version"]["audit-model-a"]["average_max_abs_delta"] == 0.0
+    assert len(payload["top_divergent"]) == 1
+    assert len(payload["top_aligned"]) == 1
+
+
 def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monkeypatch):
     client = api_client(tmp_path)
     with session_scope() as session:
@@ -357,3 +415,162 @@ def test_manual_adjustment_changes_match_prediction_and_can_be_removed(tmp_path)
     restored = client.get(f"/api/matches/{match_id}").json()
     assert restored["manual_adjustments"] == []
     assert restored["prediction"]["home_xg"] == before["prediction"]["home_xg"]
+
+
+def test_dashboard_ai_ensemble_prediction_are_distinct_from_baseline(tmp_path):
+    """P0-3: Verify that ai_prediction and ensemble_prediction come from
+    different data sources than the baseline prediction."""
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        from app.models import AIPrediction, EnsemblePrediction, DashboardRevision, MatchPrediction
+        from sqlalchemy import select
+
+        revision = session.scalar(
+            select(DashboardRevision).where(DashboardRevision.active.is_(True))
+        )
+        prediction = session.scalar(
+            select(MatchPrediction)
+            .where(MatchPrediction.revision_id == revision.id)
+            .order_by(MatchPrediction.id.asc())
+        )
+        match_id = prediction.match_id
+
+        # Create an AI prediction with DIFFERENT probabilities than baseline
+        session.add(
+            AIPrediction(
+                match_id=match_id,
+                provider="deepseek",
+                model_id="deepseek-chat",
+                model_version="ai-deepseek-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                raw_response_json={},
+                parsed_home_win=0.10,
+                parsed_draw=0.20,
+                parsed_away_win=0.70,
+                confidence=0.8,
+                risk_flags_json=[],
+                key_factors_json=[],
+                reason="test",
+                uncertainties_json=[],
+                disagreement_with_system="",
+                disagreement_with_market="",
+                recommended_label="away_win",
+                created_at=datetime(2026, 6, 14, 10, tzinfo=timezone.utc),
+            )
+        )
+        session.flush()
+
+        # Create an Ensemble prediction with DIFFERENT probabilities
+        session.add(
+            EnsemblePrediction(
+                match_id=match_id,
+                model_version="ensemble-v1",
+                system_model_version="elo-poisson-v1",
+                system_weight=0.5,
+                market_weight=0.3,
+                ai_weights_json={"ai-deepseek-v1": 0.2},
+                source_probabilities_json={},
+                ensemble_home_win=0.15,
+                ensemble_draw=0.25,
+                ensemble_away_win=0.60,
+                confidence=0.75,
+                reason="test ensemble",
+                created_at=datetime(2026, 6, 14, 10, 30, tzinfo=timezone.utc),
+            )
+        )
+
+    payload = client.get("/api/dashboard").json()
+    match_payload = next(
+        m for g in payload["groups"] for m in g["matches"] if m["id"] == match_id
+    )
+
+    # Baseline prediction exists
+    assert match_payload["prediction"] is not None
+    baseline_home = match_payload["prediction"]["home_win"]
+
+    # AI prediction is distinct from baseline
+    assert match_payload["ai_prediction"] is not None
+    assert match_payload["ai_prediction"]["home_win"] != baseline_home
+    assert match_payload["ai_prediction"]["home_win"] == 0.10
+
+    # Ensemble prediction is distinct from both baseline and AI
+    assert match_payload["ensemble_prediction"] is not None
+    assert match_payload["ensemble_prediction"]["home_win"] != baseline_home
+    assert match_payload["ensemble_prediction"]["home_win"] != match_payload["ai_prediction"]["home_win"]
+    assert match_payload["ensemble_prediction"]["home_win"] == 0.15
+
+
+def test_match_detail_ai_ensemble_prediction_are_distinct(tmp_path):
+    """P0-3: Verify match detail endpoint also returns distinct AI/Ensemble."""
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        from app.models import AIPrediction, EnsemblePrediction, DashboardRevision, MatchPrediction
+        from sqlalchemy import select
+
+        revision = session.scalar(
+            select(DashboardRevision).where(DashboardRevision.active.is_(True))
+        )
+        prediction = session.scalar(
+            select(MatchPrediction)
+            .where(MatchPrediction.revision_id == revision.id)
+            .order_by(MatchPrediction.id.asc())
+        )
+        match_id = prediction.match_id
+
+        session.add(
+            AIPrediction(
+                match_id=match_id,
+                provider="deepseek",
+                model_id="deepseek-chat",
+                model_version="ai-deepseek-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                raw_response_json={},
+                parsed_home_win=0.05,
+                parsed_draw=0.15,
+                parsed_away_win=0.80,
+                confidence=0.9,
+                risk_flags_json=[],
+                key_factors_json=[],
+                reason="test",
+                uncertainties_json=[],
+                disagreement_with_system="",
+                disagreement_with_market="",
+                recommended_label="away_win",
+                created_at=datetime(2026, 6, 14, 11, tzinfo=timezone.utc),
+            )
+        )
+        session.flush()
+        session.add(
+            EnsemblePrediction(
+                match_id=match_id,
+                model_version="ensemble-v1",
+                system_model_version="elo-poisson-v1",
+                system_weight=0.4,
+                market_weight=0.3,
+                ai_weights_json={"ai-deepseek-v1": 0.3},
+                source_probabilities_json={},
+                ensemble_home_win=0.12,
+                ensemble_draw=0.18,
+                ensemble_away_win=0.70,
+                confidence=0.8,
+                reason="test ensemble",
+                created_at=datetime(2026, 6, 14, 11, 30, tzinfo=timezone.utc),
+            )
+        )
+
+    detail = client.get(f"/api/matches/{match_id}").json()
+
+    assert detail["prediction"] is not None
+    assert detail["ai_prediction"] is not None
+    assert detail["ensemble_prediction"] is not None
+    # All three must have different home_win probabilities
+    probs = {
+        detail["prediction"]["home_win"],
+        detail["ai_prediction"]["home_win"],
+        detail["ensemble_prediction"]["home_win"],
+    }
+    assert len(probs) == 3, "Baseline, AI, and Ensemble must have distinct probabilities"

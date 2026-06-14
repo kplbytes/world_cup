@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getAccuracyCommandCenter, getAIEvaluation, getModelScore, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion } from "../api";
 import { formatChinaTimeShort } from "../utils/time";
 import { getTeamDisplayNameFromAny } from "../utils/teamNames";
-import type { MatchScoreDetailItem, VersionScoreSummary, MatchCountBreakdown, ErrorAttributionSummary, ShadowModelRow } from "../types";
+import type { MatchScoreDetailItem, VersionScoreSummary, MatchCountBreakdown, ErrorAttributionSummary, ShadowModelRow, ModelComparisonItem } from "../types";
 import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
 import EmptyState from "./ui/EmptyState";
@@ -621,6 +621,72 @@ function ShadowModelObservation({ rows }: { rows: ShadowModelRow[] }) {
   );
 }
 
+// ─── Section: 赛后评分对比 ──────────────────────────────────────────
+function PostMatchScoringComparison({ items, insufficientSample }: { items: ModelComparisonItem[]; insufficientSample: boolean }) {
+  if (!items.length) return null;
+
+  const bestBrier = Math.min(...items.filter((i) => i.brier != null).map((i) => i.brier!));
+
+  return (
+    <section className="accuracy-section">
+      <h3>赛后评分对比</h3>
+      {insufficientSample && (
+        <div
+          style={{
+            color: "var(--amber)", fontSize: "12px", marginBottom: "10px", padding: "8px 12px",
+            border: "1px solid var(--amber)", borderRadius: "4px", background: "oklch(34% .025 80 / .1)",
+          }}
+        >
+          ⚠️ 样本不足，以下对比仅供参考
+        </div>
+      )}
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>来源</th>
+              <th>模型版本</th>
+              <th>Prompt</th>
+              <th>角色</th>
+              <th>样本</th>
+              <th>Brier</th>
+              <th>LogLoss</th>
+              <th>命中率</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const isBest = item.brier != null && item.brier === bestBrier;
+              const roleLabel = item.role === "production" ? "生产" : item.role === "shadow" ? "影子" : "未知";
+              const roleColor = item.role === "production" ? "var(--mint)" : item.role === "shadow" ? "var(--amber)" : "var(--muted)";
+
+              return (
+                <tr key={item.model_version} style={{ background: item.role === "shadow" ? "oklch(34% .015 260 / .06)" : undefined }}>
+                  <td style={{ fontWeight: 600 }}>{item.source}</td>
+                  <td className="version-cell">{item.model_version}</td>
+                  <td style={{ fontSize: "11px", color: "var(--muted)" }}>{item.prompt_version ?? "—"}</td>
+                  <td>
+                    <span style={{ fontSize: "11px", fontWeight: 600, color: roleColor }}>
+                      {roleLabel}
+                    </span>
+                  </td>
+                  <td>{item.available ? item.sample_count : <span style={{ color: "var(--muted)" }}>0</span>}</td>
+                  <td className={item.brier != null ? (item.brier <= 0.3 ? "good" : item.brier >= 0.5 ? "bad" : "") : ""}>
+                    {item.brier != null ? fmt(item.brier) : "—"}
+                    {isBest && <span style={{ fontSize: "10px", marginLeft: "4px", color: "var(--mint)" }}>★</span>}
+                  </td>
+                  <td>{item.logloss != null ? fmt(item.logloss) : "—"}</td>
+                  <td>{item.hit_rate != null ? pct(item.hit_rate) : "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 // ─── Main Component ─────────────────────────────────────────────────
 export default function ModelReviewCenter() {
   const cmd = useQuery({ queryKey: ["accuracy-command-center"], queryFn: getAccuracyCommandCenter });
@@ -642,9 +708,13 @@ export default function ModelReviewCenter() {
 
   const d = cmd.data;
   const versionScores = d.version_scores ?? [];
+  const modelComparison = (d.model_comparison ?? []) as ModelComparisonItem[];
   const minSample = versionScores.length ? Math.min(...versionScores.map((v) => v.sample_count)) : 0;
   const insufficientSample = minSample < 5;
-  const totalSample = versionScores.length ? versionScores.reduce((sum, v) => sum + v.sample_count, 0) : 0;
+  // Use API-provided sample_count (total scored matches) instead of derived sum
+  const totalSample = d.sample_count ?? (versionScores.length ? versionScores.reduce((sum, v) => sum + v.sample_count, 0) : 0);
+  const baselineAvailable = d.baseline_score?.available === true;
+  const baselineSampleCount = d.baseline_score?.sample_count ?? 0;
 
   // Scoring exclusions from accuracy command center
   const scoringExclusions = (d.scoring_exclusions ?? []) as Array<{ match_id: string; home_team: string; away_team: string; reason: string }>;
@@ -717,6 +787,30 @@ export default function ModelReviewCenter() {
 
       {/* B. Baseline表现 */}
       <SectionCard title="Baseline 表现">
+        {baselineAvailable ? (
+          <div style={{ display: "flex", gap: "10px", marginBottom: "12px", flexWrap: "wrap" }}>
+            <div style={{ padding: "6px 14px", borderRadius: "4px", background: "var(--paper-2)", fontSize: "13px" }}>
+              <span style={{ color: "var(--muted)" }}>样本: </span>
+              <strong style={{ color: baselineSampleCount > 0 ? "var(--mint)" : "var(--coral)" }}>{baselineSampleCount}</strong>
+            </div>
+            {d.baseline_score?.brier != null && (
+              <div style={{ padding: "6px 14px", borderRadius: "4px", background: "var(--paper-2)", fontSize: "13px" }}>
+                <span style={{ color: "var(--muted)" }}>Brier: </span>
+                <strong>{fmt(d.baseline_score.brier)}</strong>
+              </div>
+            )}
+            {d.baseline_score?.hit_rate != null && (
+              <div style={{ padding: "6px 14px", borderRadius: "4px", background: "var(--paper-2)", fontSize: "13px" }}>
+                <span style={{ color: "var(--muted)" }}>命中率: </span>
+                <strong>{pct(d.baseline_score.hit_rate)}</strong>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ color: "var(--muted)", fontSize: "12px", marginBottom: "10px", padding: "8px 12px", border: "1px solid var(--line)", borderRadius: "4px" }}>
+            Baseline 暂无数据
+          </div>
+        )}
         <ModelComparison versions={versionScores} insufficientSample={insufficientSample} />
       </SectionCard>
 
@@ -742,6 +836,11 @@ export default function ModelReviewCenter() {
       {/* D. AI表现 */}
       <SectionCard title="AI 表现">
         <AIComparison aiEvaluation={aiEval.data ?? null} insufficientSample={insufficientSample} />
+      </SectionCard>
+
+      {/* D+. 赛后评分对比 */}
+      <SectionCard title="赛后评分对比" badge="Baseline vs AI v1 vs AI v2 vs Ensemble">
+        <PostMatchScoringComparison items={modelComparison} insufficientSample={insufficientSample} />
       </SectionCard>
 
       {/* E. 影子模型观察 */}

@@ -60,6 +60,7 @@ def _ensure_loaded() -> None:
                 role=model_data.get("role", "general"),
                 ensemble_weight=model_data.get("ensemble_weight", 1.0),
                 prompt_version=model_data.get("prompt_version", "worldcup-ai-v1"),
+                include_in_ensemble=model_data.get("include_in_ensemble", True),
             )
             _models[model_config.model_version] = model_config
 

@@ -17,10 +17,6 @@ def run_intelligence_pipeline(session: Session) -> bool:
 
     Returns True if any new intelligence was persisted.
     """
-    sporttery = SportteryIntelligenceProvider()
-    apifootball = ApiFootballIntelligenceProvider()
-    sportmonks = SportMonksIntelligenceProvider()
-
     # We only fetch for matches that are not final and within next 24 hours maybe?
     # Or just all upcoming matches.
     now = datetime.now(timezone.utc)
@@ -39,7 +35,7 @@ def run_intelligence_pipeline(session: Session) -> bool:
     providers = [
         SportteryIntelligenceProvider(),
         ApiFootballIntelligenceProvider(),
-        SportMonksIntelligenceProvider()
+        SportMonksIntelligenceProvider(),
     ]
 
     inserted_any = False

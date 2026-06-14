@@ -15,6 +15,8 @@ type Props = {
 export default function MatchCard({ match, onOpenDetails, detailsOpen = false }: Props) {
   const kickoff = formatChinaTimeShort(match.kickoff);
   const pred = match.prediction;
+  const aiPred = match.ai_prediction;
+  const ensPred = match.ensemble_prediction;
   const isFinished = isFinishedMatch(match);
   const hasBaseline = pred?.base_home_win != null;
   const locked = match.snapshot_status?.locked ?? false;
@@ -41,8 +43,8 @@ export default function MatchCard({ match, onOpenDetails, detailsOpen = false }:
       <div className="match-summary-body">
         <div className="summary-grid">
           <div><span>Baseline</span><strong>{pred ? directionLabel(pred.base_home_win ?? pred.home_win, pred.base_draw ?? pred.draw, pred.base_away_win ?? pred.away_win) : "待生成"}</strong></div>
-          <div><span>AI</span><strong>{pred ? directionLabel(pred.home_win, pred.draw, pred.away_win) : "待运行"}</strong></div>
-          <div><span>Ensemble</span><strong>{pred ? directionLabel(pred.home_win, pred.draw, pred.away_win) : "待生成"}</strong></div>
+          <div><span>AI</span><strong>{aiPred ? directionLabel(aiPred.home_win, aiPred.draw, aiPred.away_win) : "待运行"}</strong></div>
+          <div><span>Ensemble</span><strong>{ensPred ? directionLabel(ensPred.home_win, ensPred.draw, ensPred.away_win) : "待生成"}</strong></div>
           <div><span>预测比分</span><strong>{pred ? `${pred.home_xg.toFixed(1)} : ${pred.away_xg.toFixed(1)}` : "待生成"}</strong></div>
           <div><span>风险等级</span><strong className={risk.tone}>{risk.text}</strong></div>
           <div><span>锁定</span><strong>{locked ? "已锁定" : match.snapshot_status?.real_time_only ? "实时" : "未锁定"}</strong></div>

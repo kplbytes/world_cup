@@ -413,10 +413,6 @@ def model_score_details(session: Session) -> list[dict[str, Any]]:
 
 def model_score_by_version(session: Session) -> list[dict[str, Any]]:
     """Aggregate model score by version with detailed error stats."""
-    from app.models import Team
-
-    team_names = {row.id: row.short_name for row in session.scalars(select(Team))}
-
     rows = _scorable_snapshot_rows_by_version(session)
 
     market_snaps = {
@@ -822,16 +818,7 @@ def snapshot_prediction(session: Session, match_id: str) -> PredictionSnapshot |
 
 def model_score_by_stage(session: Session) -> dict[str, list[dict[str, Any]]]:
     """Aggregate model scores by tournament stage and version."""
-    from app.models import Team
-
-    team_names = {row.id: row.short_name for row in session.scalars(select(Team))}
-
     rows = _scorable_snapshot_rows(session)
-
-    market_snaps = {
-        row.match_id: row
-        for row in session.scalars(select(MarketSnapshot).where(MarketSnapshot.provider == "sporttery"))
-    }
 
     # Group by (stage, model_version)
     by_stage_version: dict[str, dict[str, dict[str, Any]]] = {}

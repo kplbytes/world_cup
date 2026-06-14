@@ -21,6 +21,9 @@ type PredRow = {
   recommendation: string;
   status: string;
   error: string | null;
+  identicalToBaseline: boolean | null;
+  deviationFromBaseline: number | null;
+  isShadow?: boolean;
 };
 
 function normalizeRecommendation(label: string | null | undefined, homeWin: number | null, draw: number | null, awayWin: number | null): string {
@@ -48,7 +51,7 @@ function deriveRisk(match: Match) {
   if ((pred.base_home_win != null && Math.abs(pred.base_home_win - pred.home_win) > 0.08)
     || (pred.base_draw != null && Math.abs(pred.base_draw - pred.draw) > 0.08)
     || (pred.base_away_win != null && Math.abs(pred.base_away_win - pred.away_win) > 0.08)) {
-    reasons.push("AI 与 baseline 存在分歧");
+    reasons.push("系统内部调整差异");
   }
   if (!match.snapshot_status?.locked) reasons.push("当前无赛前决策快照，只作实时参考");
   if (reasons.length === 0) reasons.push("预测分布相对稳定");
@@ -171,15 +174,24 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
     recommendation: normalizeRecommendation(null, match.prediction?.base_home_win ?? match.prediction?.home_win ?? null, match.prediction?.base_draw ?? match.prediction?.draw ?? null, match.prediction?.base_away_win ?? match.prediction?.away_win ?? null),
     status: match.prediction ? "已生成" : "未生成",
     error: null,
+    identicalToBaseline: null,
+    deviationFromBaseline: null,
   };
 
-  const aiRows: PredRow[] = [
-    "ai-deepseek-v4-flash-v1",
-    "ai-deepseek-v4-pro-v1",
-  ].map((version) => {
+  // Get all unique model versions from AI predictions for this match
+  const availableVersions = [...new Set(aiPredictions.map((p: AIPredictionItem) => p.model_version))];
+
+  // Also include enabled models from modelMap that don't have predictions yet
+  const enabledVersions = [...modelMap.keys()].filter(v => v.startsWith("ai-"));
+
+  // Merge: available predictions first, then enabled but missing
+  const allAIVersions = [...new Set([...availableVersions, ...enabledVersions])];
+
+  const aiRows: PredRow[] = allAIVersions.map((version) => {
     const pred = aiPredictions.find((p: AIPredictionItem) => p.model_version === version);
     const model = modelMap.get(version);
-    const label = version.includes("flash") ? "AI Flash" : "AI Pro";
+    // Generate a display label from the model version
+    const label = model?.display_name ?? version.replace(/^ai-/, "").replace(/-v\d+$/, "");
     if (!pred) {
       return {
         source: label,
@@ -190,6 +202,9 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
         recommendation: "未生成",
         status: model?.status === "disabled_no_key" ? "未配置 API Key" : "未生成",
         error: model?.status === "disabled_no_key" ? "API Key 未配置" : null,
+        identicalToBaseline: null,
+        deviationFromBaseline: null,
+        isShadow: (model as any)?.prompt_version === "worldcup-ai-v2" || version.includes("-v2"),
       };
     }
     if (pred.error_message || pred.error_code) {
@@ -202,6 +217,9 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
         recommendation: "未生成",
         status: "AI 预测失败",
         error: pred.error_message || pred.error_code || "未知错误",
+        identicalToBaseline: null,
+        deviationFromBaseline: null,
+        isShadow: (pred as any).prompt_version === "worldcup-ai-v2" || version.includes("-v2"),
       };
     }
     if (pred.parsed_home_win == null || pred.parsed_draw == null || pred.parsed_away_win == null) {
@@ -214,6 +232,9 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
         recommendation: "解析失败",
         status: "解析失败",
         error: "解析失败",
+        identicalToBaseline: null,
+        deviationFromBaseline: null,
+        isShadow: (pred as any).prompt_version === "worldcup-ai-v2" || version.includes("-v2"),
       };
     }
     return {
@@ -225,6 +246,9 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
       recommendation: normalizeRecommendation(pred.recommended_label, pred.parsed_home_win, pred.parsed_draw, pred.parsed_away_win),
       status: "已生成",
       error: null,
+      identicalToBaseline: (pred as any).identical_to_baseline ?? null,
+      deviationFromBaseline: (pred as any).deviation_from_baseline ?? null,
+      isShadow: (pred as any).prompt_version === "worldcup-ai-v2" || version.includes("-v2"),
     };
   });
 
@@ -238,6 +262,8 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
         recommendation: normalizeRecommendation(null, ensemble.home_win, ensemble.draw, ensemble.away_win),
         status: "已生成",
         error: null,
+        identicalToBaseline: null,
+        deviationFromBaseline: null,
       }
     : {
         source: "Ensemble",
@@ -248,6 +274,8 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
         recommendation: "未生成",
         status: "未生成",
         error: aiPredictions.length === 0 ? "AI 未生成 / API Key 未配置" : "市场缺失或尚未生成集成预测",
+        identicalToBaseline: null,
+        deviationFromBaseline: null,
       };
 
   const ensembleWeights = ensemble
@@ -347,11 +375,16 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
             </div>
             {[baselineRow, ...aiRows, ensembleRow].map((row) => (
               <div className="prob-row" key={`${row.source}-${row.version}`}>
-                <span className="source-name">{row.source}</span>
-                <span>{row.homeWin == null ? "未生成" : `${(row.homeWin * 100).toFixed(0)}%`}</span>
-                <span>{row.draw == null ? "未生成" : `${(row.draw * 100).toFixed(0)}%`}</span>
-                <span>{row.awayWin == null ? "未生成" : `${(row.awayWin * 100).toFixed(0)}%`}</span>
-                <span>{row.recommendation}</span>
+                <span className="source-name">
+                  {row.source}{row.isShadow ? " (Shadow)" : ""}
+                  {row.identicalToBaseline === true && (
+                    <span style={{ fontSize: 10, color: "var(--coral, #e06060)", marginLeft: 4 }} title="AI 预测与 Baseline 几乎一致，可能未提供独立判断">⚠</span>
+                  )}
+                </span>
+                <span>{row.homeWin == null ? "未生成" : `${(row.homeWin * 100).toFixed(1)}%`}</span>
+                <span>{row.draw == null ? "未生成" : `${(row.draw * 100).toFixed(1)}%`}</span>
+                <span>{row.awayWin == null ? "未生成" : `${(row.awayWin * 100).toFixed(1)}%`}</span>
+                <span>{row.isShadow && row.status === "已生成" ? "独立观察" : row.recommendation}</span>
               </div>
             ))}
           </div>
@@ -364,6 +397,11 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
                 参与来源：Baseline {ensembleSourceStatus?.system ? "已参与" : "缺失"}；AI {ensembleSourceStatus?.ai_versions?.length ?? 0} 个模型参与；Market {ensembleSourceStatus?.market ? "已参与" : "缺失，权重已自动重分配"}；Team Profile 未参与当前 Ensemble（独立影子模型）。
               </div>
             </>
+          )}
+          {aiRows.some(r => r.identicalToBaseline === true) && (
+            <div className="detail-muted" style={{ color: "var(--coral, #e06060)" }}>
+              ⚠ 部分 AI 预测与 Baseline 概率偏差 &lt;1%，可能未提供独立判断。建议关注 deviation 值或尝试 force 刷新。
+            </div>
           )}
         </section>
 
@@ -437,6 +475,57 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
             )}
           </div>
         </section>
+
+        {isFinished && match.match_review && (
+        <section className="detail-section">
+          {sectionTitle("赛后复盘")}
+          {(() => {
+            const review = match.match_review!;
+            const resultLabel: Record<string, string> = { home: "主胜", draw: "平局", away: "客胜" };
+            const sourceLabel: Record<string, string> = { baseline: "Baseline", ai: "AI", ensemble: "Ensemble", market: "市场" };
+            return (
+              <>
+                <div className="detail-grid-2">
+                  <div><span>实际赛果</span><strong>{resultLabel[review.actual_result] ?? review.actual_result} ({review.actual_score.home}:{review.actual_score.away})</strong></div>
+                  <div><span>方向命中</span><strong style={{ color: review.winner_hit ? "var(--success-green)" : review.winner_hit === false ? "var(--risk-red)" : "var(--text-secondary)" }}>{review.winner_hit == null ? "无预测" : review.winner_hit ? "命中" : "偏差"}</strong></div>
+                  <div><span>最佳模型</span><strong>{review.best_model ? (sourceLabel[review.best_model] ?? review.best_model) : "无"}</strong></div>
+                </div>
+                <div className="prob-compare-table" style={{ marginTop: 8 }}>
+                  <div className="prob-row head">
+                    <span>来源</span><span>预测方向</span><span>命中</span><span>Brier</span><span>实际概率</span>
+                  </div>
+                  {(["baseline", "ai", "ensemble"] as const).map((src) => {
+                    const r = review[src];
+                    if (!r) return (
+                      <div className="prob-row" key={src}>
+                        <span className="source-name">{sourceLabel[src]}</span>
+                        <span>暂无</span><span>—</span><span>—</span><span>—</span>
+                      </div>
+                    );
+                    return (
+                      <div className="prob-row" key={src}>
+                        <span className="source-name">{sourceLabel[src]}</span>
+                        <span>{resultLabel[r.predicted_result] ?? r.predicted_result}</span>
+                        <span style={{ color: r.outcome_hit ? "var(--success-green)" : "var(--risk-red)" }}>{r.outcome_hit ? "命中" : "偏差"}</span>
+                        <span>{r.brier.toFixed(4)}</span>
+                        <span>{(r.actual_probability * 100).toFixed(1)}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* P0-4: Result sync metadata */}
+                {(match.result_source || match.result_synced_at) && (
+                  <div className="detail-muted" style={{ marginTop: 8 }}>
+                    数据来源：{match.result_source ?? "未知"}
+                    {match.result_synced_at && ` · 同步时间：${formatChinaTimeShort(match.result_synced_at)}`}
+                    {match.revision_id != null && ` · Revision #${match.revision_id}`}
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </section>
+        )}
 
         <section className="detail-section">
           {sectionTitle("AI / Ensemble")}

@@ -32,6 +32,7 @@ class AIModelConfig:
     role: str  # fast_baseline, reasoning_strong, etc.
     ensemble_weight: float = 1.0  # relative weight within the AI pool
     prompt_version: str = "worldcup-ai-v1"
+    include_in_ensemble: bool = True  # shadow models set this to False
 
 
 @dataclass

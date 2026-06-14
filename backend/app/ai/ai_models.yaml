@@ -31,6 +31,28 @@ providers:
         ensemble_weight: 0.67
         prompt_version: worldcup-ai-v1
 
+      - model_id: deepseek-v4-flash
+        enabled: true
+        model_version: ai-deepseek-v4-flash-v2
+        display_name: DeepSeek V4 Flash (Independent)
+        cost_tier: low
+        latency_tier: fast
+        role: shadow
+        ensemble_weight: 0
+        prompt_version: worldcup-ai-v2
+        include_in_ensemble: false
+
+      - model_id: deepseek-v4-pro
+        enabled: false
+        model_version: ai-deepseek-v4-pro-v2
+        display_name: DeepSeek V4 Pro (Independent)
+        cost_tier: high
+        latency_tier: slow
+        role: shadow
+        ensemble_weight: 0
+        prompt_version: worldcup-ai-v2
+        include_in_ensemble: false
+
 # To add more models in the future, add entries under providers or create new providers.
 # Example:
 #   openai:
@@ -77,6 +99,28 @@ providers:
         role: fast_baseline
         ensemble_weight: 0.33
         prompt_version: worldcup-ai-v1
+
+      - model_id: mimo-v2.5-pro
+        enabled: false
+        model_version: ai-xiaomi-mimo-v2.5-pro-v2
+        display_name: MiMo V2.5 Pro (Independent)
+        cost_tier: high
+        latency_tier: slow
+        role: shadow
+        ensemble_weight: 0
+        prompt_version: worldcup-ai-v2
+        include_in_ensemble: false
+
+      - model_id: mimo-v2-pro
+        enabled: false
+        model_version: ai-xiaomi-mimo-v2-pro-v2
+        display_name: MiMo V2 Pro (Independent)
+        cost_tier: low
+        latency_tier: fast
+        role: shadow
+        ensemble_weight: 0
+        prompt_version: worldcup-ai-v2
+        include_in_ensemble: false
 
 ensemble_defaults:
   system_weight: 0.50

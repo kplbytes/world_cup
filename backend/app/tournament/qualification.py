@@ -258,7 +258,7 @@ def _build_r32_matchups(
     third_allocation = _allocate_third_placed_teams(qualified_third, third_group_map)
 
     matchups: list[tuple[str, str]] = []
-    for match_num, home_slot, away_slot in OFFICIAL_R32_MATCHUPS:
+    for _, home_slot, away_slot in OFFICIAL_R32_MATCHUPS:
         home = _resolve_slot(home_slot, group_standings, third_allocation)
         away = _resolve_slot(away_slot, group_standings, third_allocation)
         matchups.append((home, away))
@@ -272,7 +272,7 @@ def _advance_bracket(
 ) -> list[tuple[str, str]]:
     """Given winners keyed by match number, produce the next round's (home, away) pairs."""
     pairs: list[tuple[str, str]] = []
-    for match_num, home_match, away_match in next_round_matchups:
+    for _, home_match, away_match in next_round_matchups:
         home = prev_winners.get(home_match)
         away = prev_winners.get(away_match)
         pairs.append((home, away))

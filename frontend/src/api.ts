@@ -7,7 +7,7 @@ import type {
   AccuracyCommandCenter,
   Match, ProfileEvaluation, TeamProfileEnvelope,
   MatchCountBreakdown, ErrorAttributionSummary,
-  DecisionSnapshotStatus,
+  DecisionSnapshotStatus, ModelComparisonItem,
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -247,5 +247,11 @@ export async function getErrorAttributionSummary(): Promise<ErrorAttributionSumm
 export async function getDecisionSnapshotStatus(): Promise<DecisionSnapshotStatus> {
   const res = await fetchWithTimeout("/api/decision-snapshot-status");
   if (!res.ok) throw new Error("Failed to fetch decision snapshot status");
+  return res.json();
+}
+
+export async function getModelComparison(): Promise<{ comparison: ModelComparisonItem[]; sample_sufficient: boolean; sample_count: number }> {
+  const res = await fetchWithTimeout("/api/model-comparison");
+  if (!res.ok) throw new Error("Failed to fetch model comparison");
   return res.json();
 }

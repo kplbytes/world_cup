@@ -5,7 +5,6 @@ if accidentally instantiated outside of test environments.
 """
 import os
 from typing import Any
-from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.intelligence.providers.base import IntelligenceProvider
 from app.intelligence.cache import save_intelligence
@@ -28,8 +27,6 @@ class MockProvider(IntelligenceProvider):
     def fetch_intelligence(
         self, session: Session, match_id: str, kickoff: Any, home_team_id: str, away_team_id: str
     ) -> list[int]:
-        now = datetime.now(timezone.utc)
-
         row1 = save_intelligence(
             session=session,
             match_id=match_id,

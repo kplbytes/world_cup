@@ -1,11 +1,51 @@
 from __future__ import annotations
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _value(profile, name: str) -> float:
     return float(profile.get(name, 0.0) if isinstance(profile, dict) else getattr(profile, name, 0.0))
 
 
+def _is_mock_profile(profile) -> bool:
+    """Check if a profile is based on seed_mock_v1 data (not real history)."""
+    if profile is None:
+        return False
+    source_summary = getattr(profile, "source_summary_json", None)
+    if isinstance(profile, dict):
+        source_summary = profile.get("source_summary_json")
+    if not source_summary:
+        return False
+    mode = source_summary.get("mode", "") if isinstance(source_summary, dict) else ""
+    return mode == "seed_mock_v1"
+
+
 def apply_profile_adjustment(base: dict, home_profile, away_profile, home_elo: float, away_elo: float) -> dict:
+    # Guard: if either profile is mock data, produce a no-op result with clear warning.
+    # This ensures mock profiles can NEVER affect any downstream consumer (Ensemble, etc.)
+    # even if someone accidentally wires this output into a weight-bearing path.
+    home_is_mock = _is_mock_profile(home_profile)
+    away_is_mock = _is_mock_profile(away_profile)
+    if home_is_mock or away_is_mock:
+        mock_reason = []
+        if home_is_mock:
+            mock_reason.append("主队画像为 seed_mock_v1 假数据")
+        if away_is_mock:
+            mock_reason.append("客队画像为 seed_mock_v1 假数据")
+        explanation = "；".join(mock_reason) + "。画像调整已跳过，不参与任何 Ensemble 或评分。"
+        logger.info("Skipping profile adjustment: %s", explanation)
+        return {
+            "model_version": "elo-poisson-v1-team-profile",
+            "probabilities": {"home_win": base["home_win"], "draw": base["draw"], "away_win": base["away_win"]},
+            "probability_deltas": {"home_win": 0.0, "draw": 0.0, "away_win": 0.0},
+            "xg": {"home": base["home_xg"], "away": base["away_xg"]},
+            "xg_deltas": {"home": 0.0, "away": 0.0},
+            "risk_flags": ["mock_data_skipped"],
+            "explanation": explanation,
+        }
+
     deltas = {"home_win": 0.0, "draw": 0.0, "away_win": 0.0}
     flags: list[str] = []
     explanations: list[str] = []

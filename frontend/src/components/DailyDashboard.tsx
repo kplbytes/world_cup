@@ -412,7 +412,7 @@ export default function DailyDashboard() {
               if (pred?.base_home_win != null) {
                 const baselineRec = directionLabel(pred.base_home_win, pred.base_draw!, pred.base_away_win!);
                 const currentRec = directionLabel(pred.home_win, pred.draw, pred.away_win);
-                if (baselineRec !== currentRec) reasons.push("AI 与 baseline 分歧较大");
+                if (baselineRec !== currentRec) reasons.push("系统内部调整差异较大");
               }
               if (m.market?.divergence?.level === "高") reasons.push("市场分歧高");
               if (pred?.confidence_label === "低") reasons.push("低置信度");
@@ -477,6 +477,7 @@ export default function DailyDashboard() {
               const away = getTeamDisplayFromRef(m.away_team);
               const score = m.home_score != null && m.away_score != null ? `${m.home_score} : ${m.away_score}` : "进行中";
               const pred = m.prediction;
+              const review = m.match_review;
               const hasPreMatchSnapshot = m.snapshot_status?.locked ?? false;
               const scoringText = m.snapshot_status?.participates_in_model_score
                 ? "已纳入评分"
@@ -496,22 +497,48 @@ export default function DailyDashboard() {
                   else errorType = "冷门偏差";
                 }
               }
+              const resultLabel: Record<string, string> = { home: "主胜", draw: "平局", away: "客胜" };
+              const sourceLabel: Record<string, string> = { baseline: "Baseline", ai: "AI", ensemble: "Ensemble", market: "市场" };
               return (
-                <div key={m.id} className="yesterday-row">
-                  <span style={{ fontWeight: 600, minWidth: 160 }}>{home} vs {away}</span>
-                  <span style={{ fontWeight: 700, minWidth: 60 }}>{score}</span>
-                  <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                    赛前预测：{hasPreMatchSnapshot ? "有" : "无"}
-                  </span>
-                  <span style={{ fontSize: 11, color: m.snapshot_status?.participates_in_model_score ? "var(--success-green)" : "var(--text-secondary)" }}>
-                    {scoringText}
-                  </span>
-                  {baselineHit && (
-                    <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 2, background: baselineHit === "命中" ? "rgba(53,217,155,0.15)" : "rgba(255,107,107,0.15)", color: baselineHit === "命中" ? "var(--success-green)" : "var(--risk-red)" }}>
-                      基线{baselineHit}
+                <div key={m.id} className="yesterday-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontWeight: 600, minWidth: 160 }}>{home} vs {away}</span>
+                    <span style={{ fontWeight: 700, minWidth: 60 }}>{score}</span>
+                    <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                      赛前预测：{hasPreMatchSnapshot ? "有" : "无"}
                     </span>
+                    <span style={{ fontSize: 11, color: m.snapshot_status?.participates_in_model_score ? "var(--success-green)" : "var(--text-secondary)" }}>
+                      {scoringText}
+                    </span>
+                    {baselineHit && (
+                      <span style={{ fontSize: 11, padding: "2px 6px", borderRadius: 2, background: baselineHit === "命中" ? "rgba(53,217,155,0.15)" : "rgba(255,107,107,0.15)", color: baselineHit === "命中" ? "var(--success-green)" : "var(--risk-red)" }}>
+                        基线{baselineHit}
+                      </span>
+                    )}
+                    {errorType && <span style={{ fontSize: 11, color: "var(--risk-red)" }}>{errorType}</span>}
+                  </div>
+                  {review && (
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11, color: "var(--text-secondary)", paddingLeft: 4 }}>
+                      <span>赛果：{resultLabel[review.actual_result] ?? review.actual_result}</span>
+                      {review.winner_hit != null && (
+                        <span style={{ color: review.winner_hit ? "var(--success-green)" : "var(--risk-red)" }}>
+                          方向{review.winner_hit ? "命中" : "偏差"}
+                        </span>
+                      )}
+                      {(["baseline", "ai", "ensemble"] as const).map((src) => {
+                        const r = review[src];
+                        if (!r) return null;
+                        return (
+                          <span key={src}>
+                            {sourceLabel[src]} Brier {r.brier.toFixed(4)} / 实际概率 {(r.actual_probability * 100).toFixed(1)}%
+                          </span>
+                        );
+                      })}
+                      {review.best_model && (
+                        <span style={{ color: "var(--accent-yellow)" }}>最佳：{sourceLabel[review.best_model] ?? review.best_model}</span>
+                      )}
+                    </div>
                   )}
-                  {errorType && <span style={{ fontSize: 11, color: "var(--risk-red)", marginLeft: "auto" }}>{errorType}</span>}
                 </div>
               );
             })}

@@ -19,7 +19,7 @@ from app.ai.model_registry import (
 )
 from app.ai.lock_status import compute_match_lock_status
 from app.ai.parser import parse_ai_response
-from app.ai.prompt_builder import build_prediction_prompt
+from app.ai.prompt_builder import build_prompt
 from app.ai.providers.base import AIPredictionRequest, AIModelConfig
 from app.ai.schemas import AIParsedOutput
 from app.config import settings
@@ -43,9 +43,9 @@ def get_prompt_version() -> str:
     return settings.ai_prompt_version
 
 
-def _find_existing_prediction(session: Session, match_id: str, model_version: str) -> AIPrediction | None:
+def _find_existing_prediction(session: Session, match_id: str, model_version: str, prompt_version: str | None = None) -> AIPrediction | None:
     """Find an existing successful AI prediction for dedup."""
-    prompt_ver = get_prompt_version()
+    prompt_ver = prompt_version or get_prompt_version()
     return session.scalar(
         select(AIPrediction)
         .where(
@@ -73,8 +73,11 @@ async def run_ai_prediction(
     if not is_ai_enabled():
         return {"status": "disabled", "error": "AI prediction is not enabled"}
 
+    model_config = get_model_config(model_version)
+    prompt_ver = model_config.prompt_version if model_config else get_prompt_version()
+
     if not force:
-        existing = _find_existing_prediction(session, match_id, model_version)
+        existing = _find_existing_prediction(session, match_id, model_version, prompt_ver)
         if existing:
             return {
                 "status": "skipped_existing",
@@ -118,13 +121,15 @@ async def _call_ai_provider(
         return {"status": "error", "error": f"Cannot build prediction request for {match_id}"}
 
     # Build the prompt
-    prompt = build_prediction_prompt(request, get_prompt_version())
+    # Use model-specific prompt_version if available, otherwise global default
+    prompt_ver = model_config.prompt_version or get_prompt_version()
+    prompt = build_prompt(request, prompt_ver)
 
     # Save the input snapshot
     input_snapshot = {
         "match_id": match_id,
         "model_version": model_version,
-        "prompt_version": get_prompt_version(),
+        "prompt_version": prompt_ver,
         "system_probs": {
             "home_win": request.system_home_win,
             "draw": request.system_draw,
@@ -196,7 +201,7 @@ def _process_and_save_prediction(
         provider=model_config.provider_name,
         model_id=model_config.model_id,
         model_version=model_version,
-        prompt_version=get_prompt_version(),
+        prompt_version=input_snapshot["prompt_version"],
         input_snapshot_json=input_snapshot,
         raw_response_text=raw_response,
         latency_ms=latency_ms,
@@ -269,7 +274,7 @@ def _process_and_save_prediction(
             sys_pred = _get_system_prediction_direction(
                 request.system_home_win, request.system_draw, request.system_away_win
             )
-            ai_pred_dir = _get_prediction_direction(parsed.home_win, parsed.draw, parsed.away_win)
+            ai_pred_dir = _get_system_prediction_direction(parsed.home_win, parsed.draw, parsed.away_win)
             if sys_pred != ai_pred_dir:
                 ai_pred.disagreement_with_system = ai_pred.disagreement_with_system or f"System says {sys_pred}, AI says {ai_pred_dir}"
 
@@ -344,7 +349,7 @@ async def run_ai_predictions_for_match(
     if not force:
         models_to_run = []
         for model in runnable_models:
-            existing = _find_existing_prediction(session, match_id, model.model_version)
+            existing = _find_existing_prediction(session, match_id, model.model_version, model.prompt_version)
             if existing:
                 skipped_results.append({
                     "status": "skipped_existing",
@@ -476,7 +481,10 @@ def get_ai_predictions(session: Session, match_id: str) -> list[dict[str, Any]]:
         .order_by(AIPrediction.created_at.desc())
     ).scalars().all()
 
-    return [_serialize_ai_prediction(row) for row in rows]
+    # Get baseline system prediction for comparison
+    baseline_probs = _get_baseline_probs(session, match_id)
+
+    return [_serialize_ai_prediction(row, baseline_probs) for row in rows]
 
 
 def list_ai_model_status(session: Session) -> list[dict[str, Any]]:
@@ -585,6 +593,7 @@ def list_ai_model_status(session: Session) -> list[dict[str, Any]]:
             "role": model.role,
             "ensemble_weight": model.ensemble_weight,
             "prompt_version": model.prompt_version,
+            "include_in_ensemble": model.include_in_ensemble,
             "status": status,
             "disabled_no_key": not has_key,
             "provider_health": provider_health,
@@ -710,6 +719,9 @@ def _build_prediction_request(session: Session, match_id: str) -> AIPredictionRe
     def compact_profile(profile):
         if profile is None:
             return None
+        source_summary = profile.source_summary_json or {}
+        source_mode = source_summary.get("mode", "unknown")
+        is_mock = source_mode == "seed_mock_v1"
         return {
             "traits": profile.traits_json,
             "sample_count": profile.sample_count,
@@ -719,6 +731,10 @@ def _build_prediction_request(session: Session, match_id: str) -> AIPredictionRe
             "summary": explain_team_profile(profile),
             "profile_version": profile.profile_version,
             "profile_as_of": profile.profile_as_of.isoformat(),
+            "source_mode": source_mode,
+            "sources": source_summary.get("sources", []),
+            "is_mock": is_mock,
+            "usage_warning": "功能验证数据，不代表真实历史统计；只能作为实验性弱信号，不得作为主要概率调整依据" if is_mock else None,
         }
 
     return AIPredictionRequest(
@@ -768,10 +784,6 @@ def _get_system_prediction_direction(home_win: float, draw: float, away_win: flo
     return max(probs, key=probs.get)
 
 
-def _get_prediction_direction(home_win: float, draw: float, away_win: float) -> str:
-    return _get_system_prediction_direction(home_win, draw, away_win)
-
-
 def _safe_json_parse(text: str) -> dict | None:
     """Safely parse JSON, returning None on failure."""
     try:
@@ -780,9 +792,40 @@ def _safe_json_parse(text: str) -> dict | None:
         return None
 
 
-def _serialize_ai_prediction(row: AIPrediction) -> dict[str, Any]:
+def _get_baseline_probs(session: Session, match_id: str) -> dict[str, float] | None:
+    """Get the baseline system prediction probabilities for a match."""
+    from app.models import DashboardRevision, MatchPrediction
+    from app.prediction.shadow import SHADOW_MODEL_VERSIONS
+
+    revision = session.scalar(
+        select(DashboardRevision)
+        .where(DashboardRevision.active.is_(True))
+        .order_by(DashboardRevision.id.desc())
+        .limit(1)
+    )
+    if not revision:
+        return None
+
+    pred = session.scalar(
+        select(MatchPrediction)
+        .where(MatchPrediction.revision_id == revision.id)
+        .where(MatchPrediction.match_id == match_id)
+        .where(MatchPrediction.model_version.notin_(SHADOW_MODEL_VERSIONS))
+    )
+    if not pred:
+        return None
+
+    # Use base_home_win if available (unadjusted baseline), otherwise home_win
+    home_win = pred.base_home_win if pred.base_home_win is not None else pred.home_win
+    draw = pred.base_draw if pred.base_draw is not None else pred.draw
+    away_win = pred.base_away_win if pred.base_away_win is not None else pred.away_win
+
+    return {"home_win": home_win, "draw": draw, "away_win": away_win}
+
+
+def _serialize_ai_prediction(row: AIPrediction, baseline_probs: dict[str, float] | None = None) -> dict[str, Any]:
     """Serialize an AIPrediction row for API output."""
-    return {
+    result = {
         "id": row.id,
         "match_id": row.match_id,
         "provider": row.provider,
@@ -809,3 +852,24 @@ def _serialize_ai_prediction(row: AIPrediction) -> dict[str, Any]:
         "error_message": row.error_message,
         "latency_ms": row.latency_ms,
     }
+
+    # Add baseline comparison if baseline probs are provided
+    if baseline_probs and row.parsed_home_win is not None and row.parsed_draw is not None and row.parsed_away_win is not None:
+        max_deviation = max(
+            abs(row.parsed_home_win - baseline_probs.get("home_win", 0)),
+            abs(row.parsed_draw - baseline_probs.get("draw", 0)),
+            abs(row.parsed_away_win - baseline_probs.get("away_win", 0)),
+        )
+        result["identical_to_baseline"] = max_deviation < 0.01
+        result["deviation_from_baseline"] = round(max_deviation, 4)
+        result["baseline_home_win"] = baseline_probs.get("home_win")
+        result["baseline_draw"] = baseline_probs.get("draw")
+        result["baseline_away_win"] = baseline_probs.get("away_win")
+    else:
+        result["identical_to_baseline"] = None
+        result["deviation_from_baseline"] = None
+        result["baseline_home_win"] = None
+        result["baseline_draw"] = None
+        result["baseline_away_win"] = None
+
+    return result
