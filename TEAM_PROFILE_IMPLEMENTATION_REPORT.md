@@ -17,7 +17,7 @@
 - `backend/app/db.py` — Migration version 4: creates team profile tables, indexes, unique constraint, and deduplicates existing data
 - `backend/app/services/dashboard.py` — `build_match_detail` and `build_team_detail` include profiles
 - `backend/app/services/recompute.py` — `compute_match_predictions` generates profile predictions
-- `backend/app/services/snapshots.py` — T-30 profile locking
+- `backend/app/services/snapshots.py` — 24h profile locking
 - `backend/app/ai/providers/base.py` — `AIPredictionRequest` has home/away_team_profile fields
 - `backend/app/ai/prompt_builder.py` — Team Profiles section in AI prompt
 - `backend/app/ai/parser.py` — Parses `profile_factors`, `profile_risk_flags`
@@ -116,7 +116,7 @@
 | risk_flags_json | JSON | Risk flag strings |
 | triggered_traits_json | JSON | Triggered trait strings |
 | explanation | TEXT | Adjustment rationale |
-| is_pre_match_locked | BOOLEAN | T-30 locked |
+| is_pre_match_locked | BOOLEAN | 24h locked |
 | is_fallback_locked | BOOLEAN | Fallback locked |
 | real_time_only | BOOLEAN | Post-kickoff |
 | locked_at | DATETIME | Lock timestamp |

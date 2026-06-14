@@ -7,7 +7,7 @@
 1. 白天打开系统，看昨晚哪些比赛已经结束；
 2. 用赛前有效快照做赛后复盘；
 3. 看今天和接下来 48 小时比赛的预测与风险；
-4. 在需要时手动补跑 AI、生成 ensemble、检查 T-30 锁定；
+4. 在需要时手动补跑 AI、生成 ensemble、检查 24h 锁定；
 5. 让复盘继续服务赛前预测，而不是污染赛前口径。
 
 ## AI 协作入口
@@ -26,7 +26,7 @@
 2. shadow / calibrated / numerical experiment versions
 3. AI prediction
 4. ensemble
-5. T-30 赛前锁定
+5. 24h 赛前锁定
 6. 赛后评分与复盘
 7. Team Profile 独立候选模型
 8. 前端四个主入口：今日工作台、比赛中心、模型复盘、冠军与赛程
@@ -42,7 +42,7 @@
 
 ### 赛前决策闭环
 
-- T-30 赛前锁定
+- 24h 赛前锁定
 - fallback 快照逻辑
 - 决策快照状态检查
 - 今日工作台中的下一步建议、昨晚复盘、今日比赛、未来 48 小时比赛
@@ -135,7 +135,7 @@
   - `refresh.py`：赛果刷新与重算触发
   - `recompute.py`：全量重算、revision 发布、profile candidate 生成
   - `scoring.py`：赛后评分、排除原因、评分明细
-  - `snapshots.py`：T-30 锁定与 fallback 相关逻辑
+  - `snapshots.py`：24h 锁定与 fallback 相关逻辑
   - `accuracy_command.py`：准确率指挥中心
 - `backend/app/ai/`
   - AI provider、prompt、parser、ensemble、evaluation
@@ -293,7 +293,7 @@ WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES=60
 WORKFLOW_DEFAULT_HOURS=48
 WORKFLOW_DEFAULT_SINCE_HOURS=24
 WORKFLOW_DEFAULT_LIMIT=10
-WORKFLOW_DEFAULT_LOCK_WINDOW_MINUTES=45
+WORKFLOW_DEFAULT_LOCK_WINDOW_HOURS=24
 ```
 
 说明：

@@ -51,7 +51,7 @@
 
 `backend/app/services/recompute.py` 已尝试在 baseline 之外写入 `TeamProfilePrediction`。
 
-`backend/app/services/snapshots.py` 已增加 profile 预测 T-30 锁定。
+`backend/app/services/snapshots.py` 已增加 profile 预测 24h 锁定。
 
 需要重点审查：
 
@@ -162,7 +162,7 @@ PYTHONPATH=backend backend/.venv/bin/python -c '... recompute_all ...'
 - 每场未赛比赛生成独立 `TeamProfilePrediction`。
 - group 和 knockout 都生成。
 - profile 预测必须保存 baseline 概率、修正后概率、xG、deltas、flags、traits、explanation、as-of。
-- T-30 只锁定最新合法 profile 预测。
+- 24h 只锁定最新合法 profile 预测。
 - 开赛后预测标记 `real_time_only`，不参与评分。
 
 ### 4. 完善评分
@@ -251,7 +251,7 @@ PYTHONPATH=backend backend/.venv/bin/python backend/scripts/build_team_profiles.
 14. 独立 model version；
 15. helped/hurt；
 16. AI prompt；
-17. T-30 profile snapshot 保存 as-of/version。
+17. 24h profile snapshot 保存 as-of/version。
 
 前端至少覆盖：
 
