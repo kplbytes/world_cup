@@ -279,7 +279,7 @@ class TestAIPredictionStorage:
             created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
         )
 
-        # Real-time only prediction (after T-30)
+        # Real-time only prediction (after 24h lock window)
         pred_rt = AIPrediction(
             match_id="m1", provider="deepseek", model_id="deepseek-v4-flash",
             model_version="ai-deepseek-v4-flash-v1", prompt_version="worldcup-ai-v1",

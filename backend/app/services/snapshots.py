@@ -30,7 +30,7 @@ def lock_due_predictions(
     """Lock the latest valid pre-match prediction for matches within 24h of kickoff.
 
     Any match with a kickoff within the next `window_hours` hours that has
-    a prediction will be locked immediately. This replaces the old T-30 logic.
+    a prediction will be locked immediately. This replaces the old 30-minute logic.
     """
     now = _ensure_utc(now or datetime.now(timezone.utc))
     window_end = now + timedelta(hours=window_hours)

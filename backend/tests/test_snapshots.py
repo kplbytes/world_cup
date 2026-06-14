@@ -441,3 +441,157 @@ def test_match_review_does_not_write_back_to_snapshot(db_session: Session):
     assert snap_check.home_win == original_home_win
     assert snap_check.draw == original_draw
     assert snap_check.away_win == original_away_win
+
+
+# Regression tests for 24h lock window business rules
+
+def test_no_lock_before_24h_window(db_session: Session):
+    """Rule 4: Matches more than 24h away must NOT generate a locked snapshot."""
+    rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    match_id = "test_no_lock_before_24h"
+    kickoff = now + timedelta(hours=30)  # 30h away, outside 24h window
+    _create_match_and_prediction(db_session, match_id, kickoff, rev)
+
+    write_snapshots(db_session, rev, now=now)
+    db_session.flush()
+
+    snap = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap is not None
+    assert snap.is_pre_match_locked is False
+    assert snap.is_fallback_locked is False
+
+
+def test_create_lock_inside_24h_window(db_session: Session):
+    """Rule 1: Matches within 24h of kickoff must generate a locked snapshot."""
+    rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    match_id = "test_create_lock_inside_24h"
+    kickoff = now + timedelta(hours=12)  # 12h away, inside 24h window
+    _create_match_and_prediction(db_session, match_id, kickoff, rev)
+
+    write_snapshots(db_session, rev, now=now)
+    db_session.flush()
+
+    snap = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap is not None
+    assert snap.is_pre_match_locked is True
+    assert snap.is_fallback_locked is False
+
+
+def test_update_existing_locked_snapshot_before_kickoff(db_session: Session):
+    """Rule 2: Before kickoff, a new prediction must update the existing locked snapshot in-place."""
+    rev1 = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev1)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    match_id = "test_update_locked_before_kickoff"
+    kickoff = now + timedelta(hours=12)  # Inside 24h window
+    match, pred1 = _create_match_and_prediction(db_session, match_id, kickoff, rev1)
+    pred1.home_win = 0.6
+    pred1.draw = 0.25
+    pred1.away_win = 0.15
+    db_session.flush()
+
+    write_snapshots(db_session, rev1, now=now)
+    db_session.flush()
+
+    # Verify initial locked snapshot
+    snap1 = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap1 is not None
+    assert snap1.is_pre_match_locked is True
+    assert snap1.home_win == 0.6
+    original_snap_id = snap1.id
+
+    # New prediction arrives (different revision, still before kickoff)
+    rev2 = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev2)
+    db_session.flush()
+
+    _, pred2 = _create_match_and_prediction(db_session, match_id, kickoff, rev2)
+    pred2.home_win = 0.45
+    pred2.draw = 0.30
+    pred2.away_win = 0.25
+    db_session.flush()
+
+    write_snapshots(db_session, rev2, now=now + timedelta(hours=1))
+    db_session.flush()
+
+    # Verify the locked snapshot was updated in-place (same row, new values)
+    all_snaps = list(db_session.scalars(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    ))
+    locked_snaps = [s for s in all_snaps if s.is_pre_match_locked]
+    assert len(locked_snaps) == 1, f"Expected 1 locked snapshot, got {len(locked_snaps)}"
+    assert locked_snaps[0].id == original_snap_id, "Should be the same row (in-place update)"
+    assert locked_snaps[0].home_win == 0.45, "Should have updated home_win to new value"
+    assert locked_snaps[0].draw == 0.30
+    assert locked_snaps[0].away_win == 0.25
+    assert locked_snaps[0].revision_id == rev2.id
+
+
+def test_do_not_update_locked_snapshot_after_kickoff(db_session: Session):
+    """Rule 3: After kickoff, the locked snapshot must NOT be updated even if new predictions arrive."""
+    rev1 = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev1)
+    db_session.flush()
+
+    now = datetime.now(timezone.utc)
+    match_id = "test_no_update_after_kickoff"
+    kickoff = now + timedelta(hours=12)
+    match, pred1 = _create_match_and_prediction(db_session, match_id, kickoff, rev1)
+    pred1.home_win = 0.7
+    pred1.draw = 0.2
+    pred1.away_win = 0.1
+    db_session.flush()
+
+    write_snapshots(db_session, rev1, now=now)
+    db_session.flush()
+
+    # Verify initial locked snapshot
+    snap1 = db_session.scalar(
+        select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
+    )
+    assert snap1.is_pre_match_locked is True
+    assert snap1.home_win == 0.7
+    original_home_win = snap1.home_win
+
+    # Now time has passed and match has kicked off
+    rev2 = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev2)
+    db_session.flush()
+
+    _, pred2 = _create_match_and_prediction(db_session, match_id, kickoff, rev2)
+    pred2.home_win = 0.3  # Very different prediction
+    pred2.draw = 0.3
+    pred2.away_win = 0.4
+    db_session.flush()
+
+    # Write snapshot after kickoff
+    write_snapshots(db_session, rev2, now=kickoff + timedelta(minutes=10))
+    db_session.flush()
+
+    # The original locked snapshot must NOT have been updated
+    db_session.expire(snap1)
+    locked_snaps = list(db_session.scalars(
+        select(PredictionSnapshot).where(
+            PredictionSnapshot.match_id == match_id,
+            PredictionSnapshot.is_pre_match_locked.is_(True),
+        )
+    ))
+    assert len(locked_snaps) == 1
+    assert locked_snaps[0].home_win == original_home_win, \
+        f"Locked snapshot should not be updated after kickoff, got {locked_snaps[0].home_win}"
