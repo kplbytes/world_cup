@@ -178,7 +178,7 @@ def workflow_lock(req: LockRequest = LockRequest()):
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
     run_id = run_lock_workflow(
-        window_minutes=req.window_minutes,
+        window_hours=req.window_hours,
         trigger_source="manual_button",
     )
 

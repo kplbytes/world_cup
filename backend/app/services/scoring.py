@@ -35,7 +35,7 @@ def _select_scorable_snapshot(
     """Choose the best scorable snapshot for a finished match.
 
     New rule: Use the latest user-visible prediction snapshot created before kickoff.
-    T-30 locking is no longer the core scoring mechanism.
+    24h locking is no longer the core scoring mechanism.
 
     Note: This function does NOT filter by is_pre_match_locked or is_fallback_locked.
     A fallback-locked snapshot was still created before kickoff, so it IS eligible
@@ -780,7 +780,7 @@ def snapshot_prediction(session: Session, match_id: str) -> PredictionSnapshot |
 
     Called when a match transitions to 'final'.
     Uses the new scoring rule: latest pre-match user-visible snapshot.
-    T-30 locking is no longer the core scoring mechanism.
+    24h locking is no longer the core scoring mechanism.
     """
     import logging
 
@@ -1016,7 +1016,7 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
     """Return a detailed breakdown of match count categories for scoring.
 
     Under the new rule, a match with any pre-kickoff snapshot is scorable,
-    regardless of lock status. T-30 locking is for backward compatibility only.
+    regardless of lock status. 24h locking is for backward compatibility only.
     """
     from app.models import Team, MatchPrediction, AIPrediction, EnsemblePrediction
 

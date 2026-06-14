@@ -19,14 +19,14 @@ class LockStatus:
 def compute_match_lock_status(
     match,
     now: datetime | None = None,
-    lock_minutes: int = 30,
+    lock_hours: int = 24,
 ) -> LockStatus:
     """Compute lock status for a match prediction.
 
     Args:
         match: Match object with kickoff attribute
         now: Current time (defaults to UTC now)
-        lock_minutes: Minutes before kickoff to lock predictions
+        lock_hours: Hours before kickoff to lock predictions
 
     Returns:
         LockStatus with appropriate flags set
@@ -40,7 +40,7 @@ def compute_match_lock_status(
 
     status = LockStatus()
 
-    lock_start = kickoff - timedelta(minutes=lock_minutes)
+    lock_start = kickoff - timedelta(hours=lock_hours)
 
     if lock_start <= now < kickoff:
         status.is_pre_match_locked = True
@@ -85,7 +85,7 @@ def compute_decision_snapshot_status(
 
     Under the new rule, any pre-kickoff snapshot is a valid decision snapshot.
     The latest one before kickoff is used for scoring.
-    T-30 locking is no longer the core scoring mechanism.
+    24h locking is no longer the core scoring mechanism.
     """
     if now is None:
         now = datetime.now(timezone.utc)

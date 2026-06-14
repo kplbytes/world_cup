@@ -326,19 +326,22 @@ def test_pre_match_snapshot_promoted_to_fallback_and_scored(db_session):
     assert any(m.match_id == "m2_fallback" for m in report.per_match)
 
 
-def test_lock_status_only_locks_within_t30():
-    kickoff = datetime.now(timezone.utc) + timedelta(hours=2)
+def test_lock_status_only_locks_within_24h():
+    kickoff = datetime.now(timezone.utc) + timedelta(hours=25)
     match = type("MatchStub", (), {"kickoff": kickoff, "status": "scheduled"})()
 
-    early = compute_match_lock_status(match, now=kickoff - timedelta(minutes=90))
+    # Outside 24h window
+    early = compute_match_lock_status(match, now=kickoff - timedelta(hours=25))
     assert early.is_pre_match_locked is False
     assert early.is_fallback_locked is False
     assert early.real_time_only is False
 
-    within_t30 = compute_match_lock_status(match, now=kickoff - timedelta(minutes=15))
-    assert within_t30.is_pre_match_locked is True
-    assert within_t30.real_time_only is False
+    # Within 24h window
+    within_24h = compute_match_lock_status(match, now=kickoff - timedelta(hours=20))
+    assert within_24h.is_pre_match_locked is True
+    assert within_24h.real_time_only is False
 
+    # After kickoff
     after_kickoff = compute_match_lock_status(match, now=kickoff + timedelta(minutes=5))
     assert after_kickoff.is_pre_match_locked is False
     assert after_kickoff.is_fallback_locked is False

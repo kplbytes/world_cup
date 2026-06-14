@@ -265,8 +265,8 @@ class TestAIPredictionStorage:
         assert result.error_code == "parse_failed"
         assert result.parsed_home_win is None
 
-    def test_post_t30_not_scored(self, db_session):
-        """AI prediction generated after T-30 should not participate in scoring."""
+    def test_post_24h_window_not_scored(self, db_session):
+        """AI prediction generated after 24h lock window should not participate in scoring."""
         _seed_teams_and_match(db_session)
 
         # Pre-match locked prediction

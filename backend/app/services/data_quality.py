@@ -118,7 +118,7 @@ def check_data_quality(session: Session) -> dict[str, Any]:
         "note": f"降级快照占比 {fallback_ratio:.0%}，过高可能影响评分质量",
     })
 
-    # 7. Intelligence after T-30
+    # 7. Intelligence after 24h lock window
     now = datetime.now(timezone.utc)
     late_intel = []
     for snap in session.scalars(
@@ -128,16 +128,16 @@ def check_data_quality(session: Session) -> dict[str, Any]:
         intel_rows = session.execute(
             select(MatchIntelligence)
             .where(MatchIntelligence.match_id == snap.match_id)
-            .where(MatchIntelligence.fetched_at > snap.kickoff - timedelta(minutes=30))
+            .where(MatchIntelligence.fetched_at > snap.kickoff - timedelta(hours=24))
         ).scalars().all()
         if intel_rows:
             late_intel.append(snap.match_id)
     checks.append({
-        "check": "intelligence_after_t30",
+        "check": "intelligence_after_lock_window",
         "status": "pass" if not late_intel else "warn",
         "count": len(late_intel),
         "details": late_intel[:10],
-        "note": "T-30后情报不应进入赛后评分",
+        "note": "24h锁定窗口后情报不应进入赛后评分",
     })
 
     # 8. Unmatched market odds

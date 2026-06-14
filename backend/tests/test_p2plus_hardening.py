@@ -239,8 +239,8 @@ class TestAIPredictionChain:
         parsed, warnings = parse_ai_response(raw)
         assert parsed is None  # negative probs rejected
 
-    def test_ai_t30_lock_pre_match(self, session):
-        """Pre-T-30 AI predictions should be marked is_pre_match_locked."""
+    def test_ai_24h_lock_pre_match(self, session):
+        """Pre-24h-lock AI predictions should be marked is_pre_match_locked."""
         _make_team(session, "T1", "Team1", "A", 1600)
         _make_team(session, "T2", "Team2", "A", 1500)
         # Match 48 hours from now
@@ -539,10 +539,10 @@ class TestAccuracyCommandCenter:
 class TestDataPollution:
     """Test data pollution prevention rules."""
 
-    def test_t30_locked_only_scoring_basis(self, session):
+    def test_24h_locked_only_scoring_basis(self, session):
         """Under the new rule, the latest pre-kickoff snapshot is used for scoring.
 
-        T-30 locking is no longer the core scoring mechanism. The scoring system
+        24h locking is no longer the core scoring mechanism. The scoring system
         uses the latest snapshot created before kickoff, regardless of lock status.
         """
         _make_team(session, "T_P1", "TeamP1", "Z", 1600)
@@ -565,8 +565,8 @@ class TestDataPollution:
                 if d.match_id == "M_POLL1":
                     assert d.predicted["home_win"] == 0.8  # latest before kickoff
 
-    def test_fallback_not_counted_as_t30(self, session):
-        """Fallback-locked snapshots should be distinguishable from T-30 locked."""
+    def test_fallback_not_counted_as_24h_locked(self, session):
+        """Fallback-locked snapshots should be distinguishable from 24h locked."""
         _make_team(session, "T_P3", "TeamP3", "Y", 1600)
         _make_team(session, "T_P4", "TeamP4", "Y", 1500)
         _make_match(session, "M_POLL2", "T_P3", "T_P4", status="final",

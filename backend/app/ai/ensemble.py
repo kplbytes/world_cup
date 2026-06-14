@@ -161,7 +161,7 @@ def compute_ensemble(
         reasons.append(f"AI({version})")
     reason = " + ".join(reasons) if reasons else "System only"
 
-    # 9. Check if match is past T-30 for locking
+    # 9. Check if match is within 24h lock window
     match = session.get(Match, match_id)
     is_locked = False
     locked_at = None

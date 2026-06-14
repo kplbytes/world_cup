@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     workflow_default_hours: int = 48
     workflow_default_since_hours: int = 24
     workflow_default_limit: int = 10
-    workflow_default_lock_window_minutes: int = 45
+    workflow_default_lock_window_hours: int = 24
 
     @field_validator("database_path")
     @classmethod

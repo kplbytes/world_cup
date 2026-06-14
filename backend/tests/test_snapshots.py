@@ -70,7 +70,7 @@ def test_t30_snapshot_is_idempotent(db_session: Session):
     db_session.add(rev)
     db_session.flush()
 
-    # 2. Match kicks off in 20 mins (so it is within T-30)
+    # 2. Match kicks off in 20 mins (so it is within 24h lock window)
     now = datetime.now(timezone.utc)
     match_id = "test_match_1"
     kickoff = now + timedelta(minutes=20)
@@ -97,35 +97,35 @@ def test_t30_snapshot_is_idempotent(db_session: Session):
     write_snapshots(db_session, rev2, now=now + timedelta(minutes=5))
     db_session.flush()
 
-    # There should NOT be a second locked snapshot for the same match
+    # There should still be only 1 locked snapshot (updated in place)
     locked_count = db_session.scalar(
         select(func.count(PredictionSnapshot.revision_id))
         .where(PredictionSnapshot.match_id == match_id, PredictionSnapshot.is_pre_match_locked.is_(True))
     )
     assert locked_count == 1
 
-    # The new write_snapshots creates a new row for the latest prediction, but it's not locked.
+    # The new write_snapshots updates the existing locked snapshot in place
     snapshots = list(db_session.scalars(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)))
-    assert len(snapshots) == 2
+    assert len(snapshots) == 1
 
     locked_snap = [s for s in snapshots if s.is_pre_match_locked][0]
-    assert locked_snap.revision_id == rev.id
+    assert locked_snap.revision_id == rev2.id  # Updated to latest revision
 
-def test_fallback_locked_created_if_t30_missed(db_session: Session):
-    # 1. Create a snapshot 10 hours before kickoff
+def test_fallback_locked_created_if_lock_window_missed(db_session: Session):
+    # 1. Create a snapshot 30 hours before kickoff (outside 24h lock window)
     rev1 = DashboardRevision(active=True, model_version="test", simulation_iterations=1, simulation_seed=1)
     db_session.add(rev1)
     db_session.flush()
 
     now = datetime.now(timezone.utc)
     match_id = "test_match_fallback"
-    kickoff = now + timedelta(hours=10)
+    kickoff = now + timedelta(hours=30)
 
     _create_match_and_prediction(db_session, match_id, kickoff, rev1)
     write_snapshots(db_session, rev1, now=now)
     db_session.flush()
 
-    # Snapshot should not be locked
+    # Snapshot should not be locked (outside 24h window)
     snap1 = db_session.scalar(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id))
     assert snap1.is_pre_match_locked is False
     assert snap1.is_fallback_locked is False
@@ -181,7 +181,7 @@ def test_post_kickoff_recompute_does_not_overwrite_locked(db_session: Session):
 
     now = datetime.now(timezone.utc)
     match_id = "test_match_started"
-    kickoff = now + timedelta(minutes=10) # within T-30
+    kickoff = now + timedelta(minutes=10) # within 24h lock window
     _create_match_and_prediction(db_session, match_id, kickoff, rev1)
 
     write_snapshots(db_session, rev1, now=now)
@@ -204,9 +204,9 @@ def test_post_kickoff_recompute_does_not_overwrite_locked(db_session: Session):
 
 
 def test_periodic_lock_uses_only_latest_pre_match_predictions(db_session: Session):
-    kickoff = datetime.now(timezone.utc) + timedelta(hours=3)
-    first_time = kickoff - timedelta(hours=2)
-    second_time = kickoff - timedelta(hours=1)
+    kickoff = datetime.now(timezone.utc) + timedelta(hours=25)
+    first_time = kickoff - timedelta(hours=26)
+    second_time = kickoff - timedelta(hours=25)
 
     rev1 = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
     db_session.add(rev1)
@@ -243,7 +243,8 @@ def test_periodic_lock_uses_only_latest_pre_match_predictions(db_session: Sessio
     db_session.add_all([older_ai, latest_ai, older_ensemble, latest_ensemble])
     db_session.flush()
 
-    counts = lock_due_predictions(db_session, now=kickoff - timedelta(minutes=15))
+    # Now lock from within the 24h window
+    counts = lock_due_predictions(db_session, now=kickoff - timedelta(hours=20))
 
     snapshots = list(db_session.scalars(
         select(PredictionSnapshot)
@@ -259,15 +260,15 @@ def test_periodic_lock_uses_only_latest_pre_match_predictions(db_session: Sessio
     assert latest_ensemble.is_pre_match_locked is True
 
 
-def test_periodic_lock_does_not_lock_before_t30(db_session: Session):
-    kickoff = datetime.now(timezone.utc) + timedelta(hours=2)
+def test_periodic_lock_does_not_lock_outside_24h_window(db_session: Session):
+    kickoff = datetime.now(timezone.utc) + timedelta(hours=30)
     rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
     db_session.add(rev)
     db_session.flush()
     _create_match_and_prediction(db_session, "outside_lock_window", kickoff, rev)
-    write_snapshots(db_session, rev, now=kickoff - timedelta(hours=3))
+    write_snapshots(db_session, rev, now=kickoff - timedelta(hours=26))
 
-    counts = lock_due_predictions(db_session, now=kickoff - timedelta(minutes=31), window_minutes=45)
+    counts = lock_due_predictions(db_session, now=kickoff - timedelta(hours=25), window_hours=24)
 
     snapshot = db_session.scalar(
         select(PredictionSnapshot).where(PredictionSnapshot.match_id == "outside_lock_window")
@@ -276,14 +277,14 @@ def test_periodic_lock_does_not_lock_before_t30(db_session: Session):
     assert snapshot.is_pre_match_locked is False
 
 
-def test_repair_removes_locks_created_outside_t30(db_session: Session):
+def test_repair_removes_locks_created_outside_24h_window(db_session: Session):
     kickoff = datetime.now(timezone.utc) + timedelta(hours=4)
     rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
     db_session.add(rev)
     db_session.flush()
     _create_match_and_prediction(db_session, "bad_historical_lock", kickoff, rev)
 
-    invalid_time = kickoff - timedelta(hours=3)
+    invalid_time = kickoff - timedelta(hours=25)  # Outside 24h lock window
     ai = AIPrediction(
         match_id="bad_historical_lock", provider="test", model_id="flash", model_version="flash-v1",
         prompt_version="v1", parsed_home_win=0.5, parsed_draw=0.3, parsed_away_win=0.2,
@@ -318,7 +319,7 @@ def test_match_result_update_does_not_change_pre_match_snapshot(db_session: Sess
     db_session.flush()
 
     now = datetime.now(timezone.utc)
-    kickoff = now + timedelta(minutes=20)  # within T-30
+    kickoff = now + timedelta(minutes=20)  # within 24h lock window
     match_id = "p05_result_pollution_test"
     match, pred = _create_match_and_prediction(db_session, match_id, kickoff, rev)
 

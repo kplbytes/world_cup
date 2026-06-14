@@ -193,13 +193,13 @@ def _get_yesterday_matches_info() -> dict:
 
 
 def _get_lock_status_info() -> dict:
-    """Get info about T-30 lock status.
+    """Get info about 24h lock status.
 
-    Note: T-30 locking is for backward compatibility only, not core scoring.
+    Note: 24h locking is for backward compatibility only, not core scoring.
     The scoring system uses the latest pre-match snapshot before kickoff.
     """
     now = datetime.now(timezone.utc)
-    window_end = now + timedelta(minutes=45)
+    window_end = now + timedelta(hours=24)
     with session_scope() as session:
         near_kickoff = list(session.scalars(
             select(Match)
@@ -802,13 +802,13 @@ def _run_ensemble_step(run_id: int):
         _update_step(run_id, "ensemble_generation", "failed", error=str(e))
 
 
-def _run_lock_step(run_id: int, window_minutes: int = 45):
-    """Step: lock predictions for matches near kickoff."""
+def _run_lock_step(run_id: int, window_hours: int = 24):
+    """Step: lock predictions for matches within 24h of kickoff."""
     _update_step(run_id, "lock_predictions", "running")
     try:
         from app.services.snapshots import lock_due_predictions
         with session_scope() as session:
-            counts = lock_due_predictions(session, window_minutes=window_minutes)
+            counts = lock_due_predictions(session, window_hours=window_hours)
 
         _update_step(
             run_id,
@@ -940,7 +940,7 @@ def run_daily_open_workflow(
             _update_step(run_id, "ensemble_generation", "skipped", {"reason": "with_ensemble=false"})
 
         if auto_lock:
-            _run_lock_step(run_id, settings.workflow_default_lock_window_minutes)
+            _run_lock_step(run_id, settings.workflow_default_lock_window_hours)
         else:
             _update_step(run_id, "lock_predictions", "skipped", {"reason": "auto_lock=false"})
 
@@ -1028,11 +1028,11 @@ def run_post_match_workflow(
 
 
 def run_lock_workflow(
-    window_minutes: int = 45,
+    window_hours: int = 24,
     trigger_source: str = "manual_button",
 ) -> int:
     """Run the lock workflow."""
-    run_id = _create_run("lock", trigger_source, {"window_minutes": window_minutes})
+    run_id = _create_run("lock", trigger_source, {"window_hours": window_hours})
     if not try_start_workflow(run_id):
         return -1
 
@@ -1041,7 +1041,7 @@ def run_lock_workflow(
                       "pre_match_recompute", "ai_prediction", "ensemble_generation"]:
             _update_step(run_id, step, "skipped", {"reason": "not_in_lock"})
 
-        _run_lock_step(run_id, window_minutes)
+        _run_lock_step(run_id, window_hours)
         _update_step(run_id, "accuracy_command_update", "skipped", {"reason": "not_in_lock"})
         _run_artifact_step(run_id)
 
@@ -1089,7 +1089,7 @@ def run_full_workflow(
             _update_step(run_id, "ensemble_generation", "skipped", {"reason": "with_ensemble=false"})
 
         if auto_lock:
-            _run_lock_step(run_id, settings.workflow_default_lock_window_minutes)
+            _run_lock_step(run_id, settings.workflow_default_lock_window_hours)
         else:
             _update_step(run_id, "lock_predictions", "skipped", {"reason": "auto_lock=false"})
 
@@ -1144,7 +1144,7 @@ async def run_daily_open_workflow_async(
             _update_step(run_id, "ensemble_generation", "skipped", {"reason": "with_ensemble=false"})
 
         if auto_lock:
-            _run_lock_step(run_id, settings.workflow_default_lock_window_minutes)
+            _run_lock_step(run_id, settings.workflow_default_lock_window_hours)
         else:
             _update_step(run_id, "lock_predictions", "skipped", {"reason": "auto_lock=false"})
 
@@ -1241,7 +1241,7 @@ async def run_full_workflow_async(
             _update_step(run_id, "ensemble_generation", "skipped", {"reason": "with_ensemble=false"})
 
         if auto_lock:
-            _run_lock_step(run_id, settings.workflow_default_lock_window_minutes)
+            _run_lock_step(run_id, settings.workflow_default_lock_window_hours)
         else:
             _update_step(run_id, "lock_predictions", "skipped", {"reason": "auto_lock=false"})
 

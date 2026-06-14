@@ -113,10 +113,10 @@ class TestProbabilityValidation:
 class TestLockStatus:
     """Test the compute_match_lock_status utility."""
 
-    def test_not_locked_31_min_before_kickoff(self):
-        """T-31 is outside the standard T-30 lock window."""
+    def test_not_locked_25h_before_kickoff(self):
+        """25h before kickoff is outside the 24h lock window."""
         kickoff = datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc)
-        now = kickoff - timedelta(minutes=31)
+        now = kickoff - timedelta(hours=25)
         match = MockMatch(kickoff=kickoff, status="upcoming")
 
         lock = compute_match_lock_status(match, now=now)
@@ -125,10 +125,10 @@ class TestLockStatus:
         assert lock.participates_in_model_score is False
         assert lock.locked_at is None
 
-    def test_pre_match_locked_29_min_before_kickoff(self):
-        """T-29 is a normal pre-match lock, not a fallback."""
+    def test_pre_match_locked_23h_before_kickoff(self):
+        """23h before kickoff is within the 24h lock window."""
         kickoff = datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc)
-        now = kickoff - timedelta(minutes=29)
+        now = kickoff - timedelta(hours=23)
         match = MockMatch(kickoff=kickoff, status="upcoming")
 
         lock = compute_match_lock_status(match, now=now)
@@ -152,14 +152,15 @@ class TestLockStatus:
         assert lock.is_fallback_locked is False
 
     def test_final_match_not_participate_in_model_score(self):
-        """Match status='final': participates_in_model_score=False."""
+        """Match status='final': participates_in_model_score=False even within lock window."""
         kickoff = datetime(2026, 7, 1, 18, 0, tzinfo=timezone.utc)
-        now = kickoff - timedelta(minutes=60)
+        now = kickoff - timedelta(hours=1)
         match = MockMatch(kickoff=kickoff, status="final")
 
         lock = compute_match_lock_status(match, now=now)
 
-        assert lock.is_pre_match_locked is False
+        # Within 24h window but match is final, so doesn't participate
+        assert lock.is_pre_match_locked is True
         assert lock.participates_in_model_score is False
 
     def test_naive_kickoff_treated_as_utc(self):
@@ -170,8 +171,8 @@ class TestLockStatus:
 
         lock = compute_match_lock_status(match, now=now)
 
-        # T-40 minutes is outside the T-30 lock window.
-        assert lock.is_pre_match_locked is False
+        # 40 minutes before kickoff is within the 24h lock window.
+        assert lock.is_pre_match_locked is True
 
 
 # ===================================================================

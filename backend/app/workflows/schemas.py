@@ -31,7 +31,7 @@ class PostMatchRequest(BaseModel):
 
 
 class LockRequest(BaseModel):
-    window_minutes: int = 45
+    window_hours: int = 24
 
 
 class FullWorkflowRequest(BaseModel):

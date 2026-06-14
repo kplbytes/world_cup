@@ -24,7 +24,7 @@ def test_e2e_sporttery_odds_pipeline(db_session):
 
     match = db_session.scalars(select(Match).where(Match.status != "final").limit(1)).first()
 
-    # We will pretend the kickoff is exactly 30 minutes away so recompute_all locks the snapshot
+    # We will pretend the kickoff is within 24h so recompute_all locks the snapshot
     match.kickoff = datetime.now(timezone.utc) + timedelta(minutes=30)
     db_session.flush()
 
