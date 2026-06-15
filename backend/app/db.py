@@ -608,8 +608,9 @@ def _upgrade_schema(engine: Engine) -> None:
                         data_version VARCHAR(40) NOT NULL,
                         model_name VARCHAR(80) NOT NULL,
                         split_name VARCHAR(20) NOT NULL,
-                        brier_score FLOAT NOT NULL,
-                        brier_score_avg FLOAT NOT NULL,
+                        brier_sum FLOAT NOT NULL,
+                        brier_mean FLOAT NOT NULL,
+                        canonical_brier FLOAT,
                         log_loss FLOAT NOT NULL,
                         ece FLOAT NOT NULL,
                         top1_hit_rate FLOAT NOT NULL,
@@ -626,6 +627,26 @@ def _upgrade_schema(engine: Engine) -> None:
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_backtest_results_split_name ON backtest_results(split_name)"))
 
                 conn.execute(text("PRAGMA user_version = 12"))
+
+            if version < 13:
+                logger.info("Upgrading database schema to version 13 (brier terminology rename)...")
+                br_exists = conn.scalar(text(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='backtest_results'"
+                ))
+                if br_exists:
+                    br_info = conn.execute(text("PRAGMA table_info(backtest_results)")).mappings().all()
+                    br_cols = {row["name"] for row in br_info}
+
+                    if "brier_score" in br_cols and "brier_sum" not in br_cols:
+                        conn.execute(text("ALTER TABLE backtest_results RENAME COLUMN brier_score TO brier_sum"))
+                    if "brier_score_avg" in br_cols and "brier_mean" not in br_cols:
+                        conn.execute(text("ALTER TABLE backtest_results RENAME COLUMN brier_score_avg TO brier_mean"))
+                    if "canonical_brier" not in br_cols:
+                        conn.execute(text("ALTER TABLE backtest_results ADD COLUMN canonical_brier FLOAT"))
+                        # Backfill canonical_brier = brier_sum
+                        conn.execute(text("UPDATE backtest_results SET canonical_brier = brier_sum WHERE canonical_brier IS NULL"))
+
+                conn.execute(text("PRAGMA user_version = 13"))
 
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")

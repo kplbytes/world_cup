@@ -578,13 +578,40 @@ export interface BacktestModelResult {
   draw_recall: number;
   match_count: number;
   admission_status: string;
+  admission_reason?: string;
   parameters?: Record<string, unknown>;
+  draw_metrics?: DrawMetricsResult;
+  bootstrap_ci?: BootstrapCIResult;
+}
+
+export interface BootstrapCIResult {
+  metric_name: string;
+  observed_diff: number;
+  ci_lower_95: number;
+  ci_upper_95: number;
+  p_better: number;
+  conclusion: string;
+  n_matches?: number;
 }
 
 export interface BacktestResultsResponse {
   data_version: string;
   models: BacktestModelResult[];
   created_at: string;
+  audit_test_seen?: AuditTestSeenResult;
+}
+
+export interface AuditTestSeenResult {
+  models: Record<string, {
+    brier_sum: number;
+    log_loss: number;
+    ece: number;
+    top1_hit_rate: number;
+    draw_recall: number;
+    match_count: number;
+    draw_metrics?: DrawMetricsResult;
+    match_id_hash: string;
+  }>;
 }
 
 export interface DatasetSplitInfo {
@@ -605,4 +632,50 @@ export interface DatasetInfo {
     validation: DatasetSplitInfo;
     test: DatasetSplitInfo;
   };
+}
+
+export interface RollingFoldResult {
+  fold_name: string;
+  train_count: number;
+  val_count: number;
+  eval_count: number;
+  model_metrics: Record<string, { eval: Record<string, number> }>;
+  draw_metrics?: Record<string, DrawMetricsResult>;
+  bootstrap_results?: Record<string, Record<string, BootstrapCIResult>>;
+  match_ids?: string[];
+  match_id_hash?: string;
+}
+
+export interface RollingResultsResponse {
+  folds: RollingFoldResult[];
+  cross_fold_summary: Record<string, Record<string, number>>;
+  oof_bootstrap?: Record<string, Record<string, BootstrapCIResult>>;
+  admission_decisions?: Record<string, string>;
+  data_version?: string;
+  dataset_hash?: string;
+}
+
+export interface BootstrapResult {
+  model_a: string;
+  model_b: string;
+  metric_name: string;
+  observed_diff: number;
+  ci_lower_95: number;
+  ci_upper_95: number;
+  p_better: number;
+  conclusion: string;
+  n_matches: number;
+}
+
+export interface DrawMetricsResult {
+  draw_brier: number;
+  draw_log_loss: number;
+  draw_ece: number;
+  draw_roc_auc: number;
+  draw_pr_auc: number;
+  avg_draw_prob_when_draw: number;
+  avg_draw_prob_when_not_draw: number;
+  top1_draw_recall: number;
+  n_draws: number;
+  n_non_draws: number;
 }

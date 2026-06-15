@@ -6,6 +6,15 @@ from datetime import datetime, timezone
 
 DATASET_VERSION = "international-history-v1"
 
+
+def _ensure_utc(dt: datetime) -> datetime:
+    """Ensure datetime is UTC-aware. SQLite returns naive datetimes."""
+    if dt is None:
+        return dt
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
 # Fixed time splits
 TRAIN_START = datetime(2018, 1, 1, tzinfo=timezone.utc)
 TRAIN_END = datetime(2022, 1, 1, tzinfo=timezone.utc)  # exclusive
@@ -95,6 +104,11 @@ def _build_split(name: str, start: datetime, end: datetime, session) -> DatasetS
         )
         .order_by(HistoricalMatch.available_at)
     ))
+
+    # Normalize SQLite naive datetimes to UTC-aware
+    for m in matches:
+        if m.available_at and m.available_at.tzinfo is None:
+            m.available_at = m.available_at.replace(tzinfo=timezone.utc)
 
     match_ids = [m.source_match_id for m in matches]
 

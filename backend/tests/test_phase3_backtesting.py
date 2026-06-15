@@ -683,8 +683,9 @@ class TestDataVersionTraceability:
             data_version=DATASET_VERSION,
             model_name="legacy-elo-poisson",
             split_name="test",
-            brier_score=0.25,
-            brier_score_avg=0.0833,
+            brier_sum=0.25,
+            brier_mean=0.0833,
+            canonical_brier=0.25,
             log_loss=0.65,
             ece=0.05,
             top1_hit_rate=0.55,
@@ -713,8 +714,9 @@ class TestDataVersionTraceability:
             data_version=DATASET_VERSION,
             model_name="refitted-elo-poisson",
             split_name="test",
-            brier_score=0.24,
-            brier_score_avg=0.08,
+            brier_sum=0.24,
+            brier_mean=0.08,
+            canonical_brier=0.24,
             log_loss=0.63,
             ece=0.04,
             top1_hit_rate=0.56,
@@ -748,7 +750,7 @@ class TestAdmissionRules:
             model_name="test-model",
             split_name="test",
             data_version=DATASET_VERSION,
-            brier_score=0.30,  # worse
+            brier_sum=0.30,  # worse
             log_loss=0.60,
             ece=0.04,
             draw_recall=0.30,
@@ -757,7 +759,7 @@ class TestAdmissionRules:
             model_name="legacy-elo-poisson",
             split_name="test",
             data_version=DATASET_VERSION,
-            brier_score=0.25,  # better
+            brier_sum=0.25,  # better
             log_loss=0.65,
             ece=0.05,
             draw_recall=0.20,
@@ -770,13 +772,13 @@ class TestAdmissionRules:
         )
         assert result == "rejected"
 
-    def test_model_with_better_brier_but_no_draw_recall_rejected(self):
-        """Better Brier but draw_recall=0 is rejected (draw_recall improvement <= 0.05)."""
+    def test_model_with_better_brier_but_no_draw_recall_is_research(self):
+        """Better Brier but draw_recall=0 is 'research' (not rejected, since draw is diagnostic)."""
         model_metrics = ModelMetrics(
             model_name="test-model",
             split_name="test",
             data_version=DATASET_VERSION,
-            brier_score=0.20,  # better
+            brier_sum=0.20,  # better
             log_loss=0.60,     # not worse
             ece=0.04,          # not worse
             draw_recall=0.0,   # no draw recall at all
@@ -785,7 +787,7 @@ class TestAdmissionRules:
             model_name="legacy-elo-poisson",
             split_name="test",
             data_version=DATASET_VERSION,
-            brier_score=0.25,
+            brier_sum=0.25,
             log_loss=0.65,
             ece=0.05,
             draw_recall=0.20,
@@ -796,8 +798,9 @@ class TestAdmissionRules:
             {"test": model_metrics},
             {"test": legacy_metrics},
         )
-        # draw_recall improvement = 0.0 - 0.20 = -0.20, which is <= 0.05
-        assert result == "rejected"
+        # draw_recall is now diagnostic only, so model with better Brier
+        # but no draw recall improvement gets "research" (with warnings)
+        assert result == "research"
 
     def test_legacy_always_shadow(self):
         """Legacy baseline is always admitted as shadow."""
@@ -809,7 +812,7 @@ class TestAdmissionRules:
             model_name="good-model",
             split_name="test",
             data_version=DATASET_VERSION,
-            brier_score=0.20,  # better than legacy
+            brier_sum=0.20,  # better than legacy
             log_loss=0.60,     # not worse
             ece=0.04,          # not worse
             draw_recall=0.30,  # clearly improved (>0.05 over legacy's 0.20)
@@ -818,7 +821,7 @@ class TestAdmissionRules:
             model_name="legacy-elo-poisson",
             split_name="test",
             data_version=DATASET_VERSION,
-            brier_score=0.25,
+            brier_sum=0.25,
             log_loss=0.65,
             ece=0.05,
             draw_recall=0.20,

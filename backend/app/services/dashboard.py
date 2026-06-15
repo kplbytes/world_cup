@@ -99,7 +99,7 @@ def _snapshot_status(snapshot: PredictionSnapshot | None, match: Match) -> dict:
     )
     return {
         "locked": is_pre_kickoff,
-        "locked_at": snapshot.snapshotted_at.isoformat() if snapshot else None,
+        "locked_at": _as_utc(snapshot.snapshotted_at).isoformat() if snapshot else None,
         "is_fallback": snapshot.is_fallback_locked if snapshot else False,
         "participates_in_model_score": is_pre_kickoff,
         "real_time_only": bool(snapshot and not is_pre_kickoff),
@@ -420,7 +420,7 @@ def build_dashboard(session: Session) -> dict:
                 **_china_time_fields(match.kickoff),
                 "id": match.id,
                 "group_code": match.group_code,
-                "kickoff": match.kickoff.isoformat(),
+                "kickoff": _as_utc(match.kickoff).isoformat(),
                 "venue": match.venue,
                 "status": match.status,
                 "home_team": _team_ref(teams_by_id[match.home_team_id], display_names),
@@ -433,7 +433,7 @@ def build_dashboard(session: Session) -> dict:
                         "type": intel.intelligence_type,
                         "provider": intel.provider,
                         "confidence": intel.source_confidence,
-                        "fetched_at": intel.fetched_at.isoformat(),
+                        "fetched_at": _as_utc(intel.fetched_at).isoformat(),
                         "payload": intel.normalized_payload,
                     }
                     for intel in intelligences_by_match[match.id]
@@ -474,12 +474,12 @@ def build_dashboard(session: Session) -> dict:
                 "market": market_data,
                 "source": match.source,
                 "source_updated_at": (
-                    match.source_updated_at.isoformat() if match.source_updated_at else None
+                    _as_utc(match.source_updated_at).isoformat() if match.source_updated_at else None
                 ),
                 # P0-4: Result sync metadata for finished matches
                 "result_source": match.source if match.status == "final" else None,
                 "result_synced_at": (
-                    match.source_updated_at.isoformat() if match.source_updated_at and match.status == "final" else None
+                    _as_utc(match.source_updated_at).isoformat() if match.source_updated_at and match.status == "final" else None
                 ),
                 "revision_id": revision.id,
                 # AI prediction summary (for MatchCard / P0-3 fix)
@@ -494,10 +494,19 @@ def build_dashboard(session: Session) -> dict:
             }
         )
 
+    # Compute next_match: the earliest scheduled match with kickoff > now
+    now_utc = datetime.now(timezone.utc)
+    scheduled_matches = [
+        m for m in matches
+        if m.status == "scheduled" and m.kickoff and _as_utc(m.kickoff) > now_utc
+    ]
+    scheduled_matches.sort(key=lambda m: (_as_utc(m.kickoff), m.id))
+    next_match = scheduled_matches[0] if scheduled_matches else None
+
     return {
         "revision": {
             "id": revision.id,
-            "created_at": revision.created_at.isoformat(),
+            "created_at": _as_utc(revision.created_at).isoformat(),
             "model_version": revision.model_version,
             "simulation_iterations": revision.simulation_iterations,
             "simulation_seed": revision.simulation_seed,
@@ -514,6 +523,18 @@ def build_dashboard(session: Session) -> dict:
             for group in "ABCDEFGHIJKL"
         ],
         "data_sources": list_data_sources(session) + list_intelligence_providers(session),
+        "next_match": {
+            "id": next_match.id,
+            "home_team": _team_ref(teams_by_id[next_match.home_team_id], display_names),
+            "away_team": _team_ref(teams_by_id[next_match.away_team_id], display_names),
+            "kickoff": _as_utc(next_match.kickoff).isoformat() if next_match.kickoff else None,
+            "kickoff_china": _china_time_fields(next_match.kickoff)["kickoff_china"] if next_match and next_match.kickoff else None,
+            "venue": next_match.venue,
+        } if next_match else None,
+        "last_updated": _as_utc(revision.created_at).isoformat() if revision and revision.created_at else None,
+        "data_age_minutes": round((now_utc - _as_utc(revision.created_at)).total_seconds() / 60) if revision and revision.created_at else None,
+        "current_time_utc": now_utc.isoformat(),
+        "current_time_china": now_utc.astimezone(SHANGHAI).strftime("%Y-%m-%d %H:%M"),
     }
 
 
@@ -620,7 +641,7 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
         **_china_time_fields(match.kickoff),
         "id": match.id,
         "group_code": match.group_code,
-        "kickoff": match.kickoff.isoformat(),
+        "kickoff": _as_utc(match.kickoff).isoformat(),
         "venue": match.venue,
         "status": match.status,
         "home_team": _team_ref(teams_by_id[match.home_team_id], display_names) if match.home_team_id in teams_by_id else None,
@@ -633,7 +654,7 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
                 "type": intel.intelligence_type,
                 "provider": intel.provider,
                 "confidence": intel.source_confidence,
-                "fetched_at": intel.fetched_at.isoformat(),
+                "fetched_at": _as_utc(intel.fetched_at).isoformat(),
                 "payload": intel.normalized_payload,
             }
             for intel in intelligences
@@ -674,12 +695,12 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
         "market": market_data,
         "source": match.source,
         "source_updated_at": (
-            match.source_updated_at.isoformat() if match.source_updated_at else None
+            _as_utc(match.source_updated_at).isoformat() if match.source_updated_at else None
         ),
         # P0-4: Result sync metadata for finished matches
         "result_source": match.source if match.status == "final" else None,
         "result_synced_at": (
-            match.source_updated_at.isoformat() if match.source_updated_at and match.status == "final" else None
+            _as_utc(match.source_updated_at).isoformat() if match.source_updated_at and match.status == "final" else None
         ),
         "revision_id": revision.id,
         "team_profiles": {
@@ -689,7 +710,7 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
         "profile_prediction": ({
             "model_version": profile_prediction.model_version,
             "profile_version": profile_prediction.profile_version,
-            "profile_as_of": profile_prediction.profile_as_of.isoformat(),
+            "profile_as_of": _as_utc(profile_prediction.profile_as_of).isoformat(),
             "home_win": profile_prediction.home_win,
             "draw": profile_prediction.draw,
             "away_win": profile_prediction.away_win,
@@ -894,7 +915,7 @@ def build_team_detail(session: Session, team_id: str) -> dict | None:
             **_china_time_fields(m.kickoff),
             "id": m.id,
             "group_code": m.group_code,
-            "kickoff": m.kickoff.isoformat(),
+            "kickoff": _as_utc(m.kickoff).isoformat(),
             "venue": m.venue,
             "status": m.status,
             "home_team": _team_ref(teams_by_id[m.home_team_id], display_names) if m.home_team_id in teams_by_id else None,
@@ -907,7 +928,7 @@ def build_team_detail(session: Session, team_id: str) -> dict | None:
                     "type": intel.intelligence_type,
                     "provider": intel.provider,
                     "confidence": intel.source_confidence,
-                    "fetched_at": intel.fetched_at.isoformat(),
+                    "fetched_at": _as_utc(intel.fetched_at).isoformat(),
                     "payload": intel.normalized_payload,
                 }
                 for intel in intelligences_by_match[m.id]
@@ -948,7 +969,7 @@ def build_team_detail(session: Session, team_id: str) -> dict | None:
             "market": market_data,
             "source": m.source,
             "source_updated_at": (
-                m.source_updated_at.isoformat() if m.source_updated_at else None
+                _as_utc(m.source_updated_at).isoformat() if m.source_updated_at else None
             ),
         })
 
@@ -973,7 +994,7 @@ def list_data_sources(session: Session) -> list[dict]:
         {
             "provider": snapshot.provider,
             "source_url": snapshot.source_url,
-            "fetched_at": snapshot.fetched_at.isoformat(),
+            "fetched_at": _as_utc(snapshot.fetched_at).isoformat(),
             "status": snapshot.status,
             "coverage": snapshot.coverage,
             "error": snapshot.error,
@@ -993,7 +1014,7 @@ def list_intelligence_providers(session: Session) -> list[dict]:
         "status": "enabled",
         "daily_limit": sporttery_state.daily_limit if sporttery_state else 5000,
         "used_today": sporttery_state.used_today if sporttery_state else 0,
-        "last_success_at": sporttery_state.updated_at.isoformat() if sporttery_state else None,
+        "last_success_at": _as_utc(sporttery_state.updated_at).isoformat() if sporttery_state else None,
         "error": None
     })
 
@@ -1012,7 +1033,7 @@ def list_intelligence_providers(session: Session) -> list[dict]:
         "status": status,
         "daily_limit": api_football_state.daily_limit if api_football_state else 100,
         "used_today": api_football_state.used_today if api_football_state else 0,
-        "last_success_at": api_football_state.updated_at.isoformat() if api_football_state else None,
+        "last_success_at": _as_utc(api_football_state.updated_at).isoformat() if api_football_state else None,
         "error": error
     })
 
@@ -1031,7 +1052,7 @@ def list_intelligence_providers(session: Session) -> list[dict]:
         "status": status,
         "daily_limit": sportmonks_state.daily_limit if sportmonks_state else 500,
         "used_today": sportmonks_state.used_today if sportmonks_state else 0,
-        "last_success_at": sportmonks_state.updated_at.isoformat() if sportmonks_state else None,
+        "last_success_at": _as_utc(sportmonks_state.updated_at).isoformat() if sportmonks_state else None,
         "error": error
     })
 
@@ -1043,8 +1064,8 @@ def list_sync_runs(session: Session, limit: int = 20) -> list[dict]:
     return [
         {
             "id": row.id,
-            "started_at": row.started_at.isoformat(),
-            "finished_at": row.finished_at.isoformat() if row.finished_at else None,
+            "started_at": _as_utc(row.started_at).isoformat(),
+            "finished_at": _as_utc(row.finished_at).isoformat() if row.finished_at else None,
             "status": row.status,
             "updated_count": row.updated_count,
             "finalized_matches": row.finalized_matches,
@@ -1281,7 +1302,7 @@ def build_decision(session: Session) -> dict:
             **_china_time_fields(match.kickoff),
             "id": match.id,
             "group_code": match.group_code,
-            "kickoff": match.kickoff.isoformat(),
+            "kickoff": _as_utc(match.kickoff).isoformat(),
             "home_team": _team_ref(teams_by_id[match.home_team_id], display_names),
             "away_team": _team_ref(teams_by_id[match.away_team_id], display_names),
             "status": match.status,
@@ -1454,7 +1475,7 @@ def build_decision(session: Session) -> dict:
                     "match_id": m.id,
                     "home_team": _team_ref(teams_by_id[m.home_team_id], display_names),
                     "away_team": _team_ref(teams_by_id[m.away_team_id], display_names),
-                    "kickoff": m.kickoff.isoformat(),
+                    "kickoff": _as_utc(m.kickoff).isoformat(),
                     "risk_type": adj.adjustment_type,
                     "level": level,
                     "provider": provider,

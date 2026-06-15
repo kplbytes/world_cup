@@ -9,6 +9,7 @@ Model D: Negative Binomial - overdispersed count model
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -205,37 +206,19 @@ class RefittedModel:
 
     @staticmethod
     def _compute_all_elos(steps: list[ReplayStep]) -> list[list[float]]:
-        """For each step, collect all Elo values known at that point.
+        """For each step, collect all Elo values from the training set for normalization.
 
-        This tracks the running set of Elo ratings as the replay progresses.
+        All steps are from the training set, so using all their Elo values is fine.
+        Uses the pre-computed Elo values from ReplayStep (which already have
+        correct same-timestamp grouping from replay_elo_history).
         """
-        from app.prediction.elo import update_elo
-
-        ratings: dict[str, float] = {}
-        all_elos_list: list[list[float]] = []
-        initial = 1500.0
-
+        all_elo_values: set[float] = set()
         for step in steps:
-            # Record all known Elo values before this match
-            if ratings:
-                all_elos_list.append(list(ratings.values()))
-            else:
-                all_elos_list.append([initial])
+            all_elo_values.add(step.pre_match_home_elo)
+            all_elo_values.add(step.pre_match_away_elo)
 
-            # Update Elo after this match
-            home_elo = ratings.get(step.home_team_id, initial)
-            away_elo = ratings.get(step.away_team_id, initial)
-            ha = 0.0 if step.neutral_venue else 60.0  # Use default for replay
-            result = update_elo(
-                home_elo, away_elo,
-                step.home_score, step.away_score,
-                weight=step.update_weight,
-                home_advantage=ha,
-            )
-            ratings[step.home_team_id] = result.home
-            ratings[step.away_team_id] = result.away
-
-        return all_elos_list
+        shared_elos = sorted(all_elo_values) if all_elo_values else [1500.0]
+        return [shared_elos] * len(steps)
 
 
 # ---------------------------------------------------------------------------
@@ -727,6 +710,254 @@ def _nb_params(mu: float, alpha: float) -> tuple[float, float]:
 
 
 # ---------------------------------------------------------------------------
+# Dixon-Coles Audit
+# ---------------------------------------------------------------------------
+
+def audit_dixon_coles(
+    dc_model: DixonColesModel,
+    refitted_model: RefittedModel,
+    steps: list[ReplayStep],
+    all_elos: list[float],
+) -> dict[str, Any]:
+    """Audit Dixon-Coles adjustment impact vs Refitted model.
+
+    Returns:
+        Dict with:
+        - mean_abs_delta: mean absolute probability difference
+        - max_abs_delta: max absolute probability difference
+        - affected_ratio: fraction of matches with non-zero delta
+        - low_xg_deltas: deltas for low-xG matches specifically
+        - cell_deltas: average change in 0-0, 1-0, 0-1, 1-1 probabilities
+    """
+    total_delta = 0.0
+    max_delta = 0.0
+    affected = 0
+    n = len(steps)
+
+    # Track specific score cell changes
+    cell_deltas = {"0-0": [], "1-0": [], "0-1": [], "1-1": []}
+
+    for step in steps:
+        dc_probs = dc_model.predict(step, all_elos)
+        ref_probs = refitted_model.predict(step, all_elos)
+
+        abs_delta = sum(abs(a - b) for a, b in zip(dc_probs, ref_probs))
+        total_delta += abs_delta
+        max_delta = max(max_delta, abs_delta)
+
+        if abs_delta > 1e-8:
+            affected += 1
+
+        # Compute individual cell probabilities for low scores
+        rho = dc_model.parameters.get("rho", 0.0)
+        if rho != 0.0:
+            p = dc_model.parameters
+            home_s, away_s = elo_to_strength(
+                step.pre_match_home_elo, step.pre_match_away_elo, all_elos
+            )
+            ha_norm = p["home_advantage"] / 400.0 / max(1.0, max(all_elos) - min(all_elos) + 1e-9)
+            strength_delta = home_s - away_s + (0.0 if step.neutral_venue else ha_norm)
+            home_xg = float(np.clip(
+                p["base_goal_home"] + p["strength_coeff_home"] * strength_delta,
+                p["min_xg"], p["max_xg"],
+            ))
+            away_xg = float(np.clip(
+                p["base_goal_away"] - p["strength_coeff_away"] * strength_delta,
+                p["min_xg"], p["max_xg"],
+            ))
+
+            # Poisson cell probabilities (before DC adjustment)
+            from scipy.stats import poisson as sp_poisson
+            p00_poisson = float(sp_poisson.pmf(0, home_xg) * sp_poisson.pmf(0, away_xg))
+            p01_poisson = float(sp_poisson.pmf(0, home_xg) * sp_poisson.pmf(1, away_xg))
+            p10_poisson = float(sp_poisson.pmf(1, home_xg) * sp_poisson.pmf(0, away_xg))
+            p11_poisson = float(sp_poisson.pmf(1, home_xg) * sp_poisson.pmf(1, away_xg))
+
+            # After DC adjustment
+            p00_dc = p00_poisson * (1.0 - home_xg * away_xg * rho)
+            p01_dc = p01_poisson * (1.0 + home_xg * rho)
+            p10_dc = p10_poisson * (1.0 + away_xg * rho)
+            p11_dc = p11_poisson * (1.0 - rho)
+
+            cell_deltas["0-0"].append(p00_dc - p00_poisson)
+            cell_deltas["1-0"].append(p10_dc - p10_poisson)
+            cell_deltas["0-1"].append(p01_dc - p01_poisson)
+            cell_deltas["1-1"].append(p11_dc - p11_poisson)
+
+    result = {
+        "mean_abs_delta": total_delta / n if n > 0 else 0.0,
+        "max_abs_delta": max_delta,
+        "affected_ratio": affected / n if n > 0 else 0.0,
+        "rho": dc_model.parameters.get("rho", 0.0),
+        "cell_deltas": {
+            k: {
+                "mean_delta": float(np.mean(v)) if v else 0.0,
+                "max_delta": float(max(v)) if v else 0.0,
+                "min_delta": float(min(v)) if v else 0.0,
+            }
+            for k, v in cell_deltas.items()
+        },
+    }
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Model E: Multinomial Logistic Regression
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LogisticModel:
+    """Direct three-class logistic regression using pre-match features.
+
+    Features (all available before kickoff):
+    - elo_diff: pre-match Elo difference (home - away)
+    - neutral_venue: 1 if neutral, 0 otherwise
+    - is_friendly: 1 if friendly, 0 otherwise
+    - is_qualifier: 1 if qualifier, 0 otherwise
+    - is_continental: 1 if continental tournament, 0 otherwise
+    - is_world_cup: 1 if World Cup, 0 otherwise
+    - home_advantage: Elo home advantage points
+    - data_completeness: 1.0 (placeholder for future data quality)
+
+    NO future data, NO odds, NO LLM probabilities.
+    """
+
+    name: str = "multinomial-logistic"
+    parameters: dict[str, Any] = field(default_factory=dict)
+
+    # Coefficients: [home_win, draw, away_win] x [intercept, elo_diff, neutral, friendly, qualifier, continental, world_cup, home_adv]
+    _n_classes = 3
+    _n_features = 8
+    coefficients: np.ndarray | None = None  # shape (3, 8)
+
+    def fit(self, steps: list[ReplayStep]) -> None:
+        """Fit multinomial logistic regression on training set."""
+        from scipy.optimize import minimize as sp_minimize
+
+        X, y = self._build_features(steps)
+        n = len(steps)
+
+        if n < 10:
+            logger.warning("Too few samples (%d) for logistic regression", n)
+            return
+
+        # Flatten coefficients for optimization
+        # Reference class = away_win (class 2), so we only optimize classes 0 and 1
+        x0 = np.zeros((self._n_classes - 1) * self._n_features)
+
+        def objective(flat_coefs: np.ndarray) -> float:
+            coefs = flat_coefs.reshape(self._n_classes - 1, self._n_features)
+            total_ll = 0.0
+            for i in range(n):
+                probs = self._softmax_with_coefs(X[i], coefs)
+                # y[i] is the class index
+                eps = 1e-15
+                total_ll -= math.log(max(probs[y[i]], eps))
+            return total_ll
+
+        result = sp_minimize(
+            objective,
+            x0=x0,
+            method="L-BFGS-B",
+            options={"maxiter": 1000, "ftol": 1e-10},
+        )
+
+        self.coefficients = np.zeros((self._n_classes, self._n_features))
+        fitted = result.x.reshape(self._n_classes - 1, self._n_features)
+        self.coefficients[:self._n_classes - 1] = fitted
+        # Class 2 (away_win) is the reference with all zeros
+
+        self.parameters = {
+            "coefficients": self.coefficients.tolist(),
+            "feature_names": self._feature_names(),
+        }
+        logger.info("Logistic model fitted: %d samples, loss=%.4f", n, result.fun)
+
+    def predict(
+        self,
+        step: ReplayStep,
+        all_elos: list[float],
+    ) -> tuple[float, float, float]:
+        """Predict using fitted logistic regression."""
+        if self.coefficients is None:
+            # Unfitted: use Elo-based heuristic
+            elo_diff = step.pre_match_home_elo - step.pre_match_away_elo
+            ha = 0.0 if step.neutral_venue else 60.0
+            adjusted_diff = elo_diff + ha
+            # Simple sigmoid-based heuristic
+            p_home = 1.0 / (1.0 + math.exp(-adjusted_diff / 400.0))
+            p_away = 1.0 - p_home
+            draw_base = 0.26  # historical average
+            # Adjust draw probability by closeness
+            closeness = 1.0 - abs(adjusted_diff) / 600.0
+            draw_prob = draw_base * max(0.3, min(1.0, closeness))
+            # Normalize
+            total = p_home * (1 - draw_prob) + draw_prob + p_away * (1 - draw_prob)
+            return (
+                p_home * (1 - draw_prob) / total,
+                draw_prob / total,
+                p_away * (1 - draw_prob) / total,
+            )
+
+        features = self._step_to_features(step)
+        probs = self._softmax_with_coefs(features, self.coefficients[:self._n_classes - 1])
+        return (probs[0], probs[1], probs[2])
+
+    def get_parameters(self) -> dict[str, Any]:
+        return dict(self.parameters) if self.parameters else {}
+
+    def _build_features(self, steps: list[ReplayStep]) -> tuple[np.ndarray, list[int]]:
+        """Build feature matrix and labels from replay steps."""
+        X = np.array([self._step_to_features(s) for s in steps])
+        y = []
+        for step in steps:
+            if step.home_score > step.away_score:
+                y.append(0)
+            elif step.home_score == step.away_score:
+                y.append(1)
+            else:
+                y.append(2)
+        return X, y
+
+    def _step_to_features(self, step: ReplayStep) -> np.ndarray:
+        """Convert a ReplayStep to feature vector."""
+        ha = 0.0 if step.neutral_venue else 60.0
+        return np.array([
+            1.0,  # intercept
+            (step.pre_match_home_elo - step.pre_match_away_elo) / 400.0,  # normalized elo_diff
+            float(step.neutral_venue),
+            float(step.competition_type == "friendly"),
+            float(step.competition_type in ("qualifier", "continental_qualifier")),
+            float(step.competition_type == "continental"),
+            float(step.competition_type == "world_cup"),
+            ha / 100.0,  # normalized home advantage
+        ])
+
+    def _softmax_with_coefs(self, x: np.ndarray, coefs: np.ndarray) -> np.ndarray:
+        """Compute softmax probabilities given features and coefficients.
+
+        coefs shape: (n_classes - 1, n_features)
+        Reference class (away_win) has implicit score 0.
+        """
+        scores = np.zeros(self._n_classes)
+        for k in range(self._n_classes - 1):
+            scores[k] = float(np.dot(coefs[k], x))
+        # scores[2] = 0 (reference)
+
+        # Numerically stable softmax
+        max_score = max(scores)
+        exp_scores = np.exp(scores - max_score)
+        probs = exp_scores / exp_scores.sum()
+        return probs
+
+    @staticmethod
+    def _feature_names() -> list[str]:
+        return ["intercept", "elo_diff", "neutral_venue", "is_friendly",
+                "is_qualifier", "is_continental", "is_world_cup", "home_advantage"]
+
+
+# ---------------------------------------------------------------------------
 # Model registry
 # ---------------------------------------------------------------------------
 
@@ -735,4 +966,5 @@ MODEL_REGISTRY: dict[str, type] = {
     "refitted-elo-poisson": RefittedModel,
     "dixon-coles": DixonColesModel,
     "neg-binomial": NegBinomialModel,
+    "multinomial-logistic": LogisticModel,
 }

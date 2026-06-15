@@ -109,7 +109,7 @@ def test_dashboard_uses_latest_pre_kickoff_snapshot_for_finished_match(tmp_path)
 
     assert match_payload["snapshot_status"] == {
         "locked": True,
-        "locked_at": "2026-06-13T18:00:00",
+        "locked_at": "2026-06-13T18:00:00+00:00",
         "is_fallback": False,
         "participates_in_model_score": True,
         "real_time_only": False,

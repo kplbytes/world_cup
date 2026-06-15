@@ -10,6 +10,7 @@ import type {
   DecisionSnapshotStatus, ModelComparisonItem,
   DataHealthReport,
   BacktestResultsResponse, DatasetInfo,
+  RollingFoldResult, RollingResultsResponse,
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -274,5 +275,11 @@ export async function getBacktestResults(): Promise<BacktestResultsResponse> {
 export async function getBacktestDataset(): Promise<DatasetInfo> {
   const res = await fetchWithTimeout("/api/backtest/dataset");
   if (!res.ok) throw new Error("Failed to fetch dataset info");
+  return res.json();
+}
+
+export async function getRollingResults(): Promise<RollingResultsResponse> {
+  const res = await fetchWithTimeout("/api/backtest/rolling");
+  if (!res.ok) throw new Error("Failed to fetch rolling results");
   return res.json();
 }

@@ -3,16 +3,32 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy import select, func, desc
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.db import session_scope
+from app.db import session_scope, get_engine
 from app.models import BacktestResultRecord
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
+
+
+def _get_session():
+    engine = get_engine()
+    from sqlalchemy.orm import sessionmaker
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session = factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 @router.get("/results")
@@ -36,8 +52,9 @@ def get_backtest_results():
             {
                 "model_name": r.model_name,
                 "split_name": r.split_name,
-                "brier_score": r.brier_score,
-                "brier_score_avg": r.brier_score_avg,
+                "brier_sum": r.brier_sum,
+                "brier_mean": r.brier_mean,
+                "canonical_brier": r.canonical_brier,
                 "log_loss": r.log_loss,
                 "ece": r.ece,
                 "top1_hit_rate": r.top1_hit_rate,
@@ -82,8 +99,9 @@ def trigger_backtest_run():
             "models": {
                 model_name: {
                     split_name: {
-                        "brier_score": m.brier_score,
-                        "brier_score_avg": m.brier_score_avg,
+                        "brier_sum": m.brier_sum,
+                        "brier_mean": m.brier_mean,
+                        "canonical_brier": m.canonical_brier,
                         "log_loss": m.log_loss,
                         "ece": m.ece,
                         "top1_hit_rate": m.top1_hit_rate,
@@ -137,3 +155,50 @@ def get_dataset_info():
             },
         },
     }
+
+
+@router.get("/rolling")
+def get_rolling_results(session: Session = Depends(_get_session)):
+    """Get rolling-origin backtest results."""
+    records = list(session.scalars(
+        select(BacktestResultRecord)
+        .where(BacktestResultRecord.split_name.like("fold_%"))
+        .order_by(BacktestResultRecord.split_name, BacktestResultRecord.model_name)
+    ))
+    # Group by fold
+    folds = {}
+    for r in records:
+        fold_name = r.split_name
+        if fold_name not in folds:
+            folds[fold_name] = {"fold_name": fold_name, "train_count": 0, "val_count": 0, "eval_count": 0, "model_metrics": {}}
+        folds[fold_name]["model_metrics"][r.model_name] = {
+            "eval": {
+                "brier_sum": r.brier_sum,
+                "brier_mean": r.brier_mean,
+                "log_loss": r.log_loss,
+                "ece": r.ece,
+                "top1_hit_rate": r.top1_hit_rate,
+                "draw_recall": r.draw_recall,
+                "match_count": r.match_count,
+            }
+        }
+
+    # Compute cross-fold summary
+    cross_fold = {}
+    for fold_data in folds.values():
+        for model_name, metrics in fold_data["model_metrics"].items():
+            if model_name not in cross_fold:
+                cross_fold[model_name] = {"brier_sum": 0.0, "log_loss": 0.0, "total": 0.0}
+            weight = metrics["eval"].get("match_count", 0)
+            if weight > 0:
+                cross_fold[model_name]["brier_sum"] += metrics["eval"]["brier_sum"] * weight
+                cross_fold[model_name]["log_loss"] += metrics["eval"]["log_loss"] * weight
+                cross_fold[model_name]["total"] += weight
+
+    for model_name in cross_fold:
+        total = cross_fold[model_name]["total"]
+        if total > 0:
+            cross_fold[model_name]["brier_sum"] /= total
+            cross_fold[model_name]["log_loss"] /= total
+
+    return {"folds": list(folds.values()), "cross_fold_summary": cross_fold}

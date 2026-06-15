@@ -19,12 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def _sync_tracker(session: Session, match_id: str, model_version: str, lock_type: str, ensemble_id: int) -> None:
-    """Insert into ensemble_lock_tracker, handling IntegrityError.
-
-    Uses a check-then-insert pattern instead of try-insert-catch-rollback
-    to avoid rolling back ALL pending changes in the session (which would
-    cause data loss for other flushed objects).
-    """
+    """Insert into ensemble_lock_tracker using savepoint for safe error handling."""
     from sqlalchemy.exc import IntegrityError
 
     # Check if tracker already exists
@@ -43,18 +38,19 @@ def _sync_tracker(session: Session, match_id: str, model_version: str, lock_type
             )
         return
 
+    # Use savepoint (nested transaction) so IntegrityError doesn't roll back outer session
     try:
-        tracker = EnsembleLockTracker(
-            match_id=match_id,
-            model_version=model_version,
-            lock_type=lock_type,
-            ensemble_id=ensemble_id,
-        )
-        session.add(tracker)
-        session.flush()
+        with session.begin_nested():
+            tracker = EnsembleLockTracker(
+                match_id=match_id,
+                model_version=model_version,
+                lock_type=lock_type,
+                ensemble_id=ensemble_id,
+            )
+            session.add(tracker)
     except IntegrityError:
-        # Another session inserted first - just log and continue
-        logger.info("Tracker row already exists for %s/%s/%s", match_id, model_version, lock_type)
+        # Another session inserted first - safe to ignore
+        logger.info("Tracker row already exists for %s/%s/%s (concurrent insert)", match_id, model_version, lock_type)
 
 
 def _verify_tracker(session: Session, match_id: str, model_version: str) -> None:

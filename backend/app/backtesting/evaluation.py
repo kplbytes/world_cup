@@ -38,8 +38,9 @@ class ModelMetrics:
     match_count: int = 0
 
     # Core metrics
-    brier_score: float = 0.0  # Mean of sum((p-o)^2) per match (3-class sum)
-    brier_score_avg: float = 0.0  # Mean of avg((p-o)^2) per match (3-class average)
+    brier_sum: float = 0.0  # Mean of sum((p-o)^2) per match (3-class sum)
+    brier_mean: float = 0.0  # Mean of avg((p-o)^2) per match (3-class average = brier_sum / 3)
+    canonical_brier: float = 0.0  # Same as brier_sum (matches production scoring.py formula)
     log_loss: float = 0.0
     ece: float = 0.0  # Expected Calibration Error
     top1_hit_rate: float = 0.0
@@ -54,6 +55,34 @@ class ModelMetrics:
     home_win_ece: float = 0.0
     draw_ece: float = 0.0
     away_win_ece: float = 0.0
+
+
+@dataclass
+class DrawMetrics:
+    """Comprehensive draw evaluation metrics."""
+    # Proper scoring rules
+    draw_brier: float = 0.0  # one-vs-rest Brier for draw
+    draw_log_loss: float = 0.0  # one-vs-rest log loss for draw
+    draw_ece: float = 0.0  # ECE for draw class
+
+    # Discrimination
+    draw_roc_auc: float = 0.0  # ROC-AUC for draw vs non-draw
+    draw_pr_auc: float = 0.0  # PR-AUC for draw vs non-draw
+
+    # Calibration detail
+    draw_reliability: dict[str, dict] = field(default_factory=dict)  # bucket -> {mean_pred, actual_rate, count}
+
+    # Average predicted draw probability
+    avg_draw_prob_when_draw: float = 0.0  # avg P(draw) for actual draws
+    avg_draw_prob_when_not_draw: float = 0.0  # avg P(draw) for non-draws
+
+    # Top-1 draw recall (diagnostic only)
+    top1_draw_recall: float = 0.0
+
+    # Sample info
+    n_draws: int = 0
+    n_non_draws: int = 0
+    n_total: int = 0
 
 
 @dataclass
@@ -76,8 +105,8 @@ def compute_metrics(
     """Compute all metrics for a set of predictions.
 
     Brier Score calculation:
-    - brier_score: mean of sum((p_i - o_i)^2) for i in {home, draw, away} per match
-    - brier_score_avg: mean of mean((p_i - o_i)^2) for i in {home, draw, away} per match
+    - brier_sum: mean of sum((p_i - o_i)^2) for i in {home, draw, away} per match
+    - brier_mean: mean of mean((p_i - o_i)^2) for i in {home, draw, away} per match
 
     These differ by a factor of 3. All reports must specify which is used.
     """
@@ -150,13 +179,17 @@ def compute_metrics(
     draw_ece = _compute_single_ece(predictions, "draw")
     away_ece = _compute_single_ece(predictions, "away_win")
 
+    brier_sum_val = brier_sum_total / n
+    brier_mean_val = brier_sum_total / (3 * n)
+
     return ModelMetrics(
         model_name=model_name,
         split_name=split_name,
         data_version=data_version,
         match_count=n,
-        brier_score=brier_sum_total / n,
-        brier_score_avg=brier_sum_total / (3 * n),
+        brier_sum=brier_sum_val,
+        brier_mean=brier_mean_val,
+        canonical_brier=brier_sum_val,
         log_loss=log_loss_total / n,
         ece=ece,
         top1_hit_rate=top1_hits / n,
@@ -342,5 +375,172 @@ def stratify_and_compute(
         k: compute_metrics(v, model_name, split_name, data_version)
         for k, v in by_conf.items() if v
     }
+
+    return result
+
+
+def compute_draw_metrics(predictions: list[MatchPrediction]) -> DrawMetrics:
+    """Compute comprehensive draw evaluation metrics."""
+    if not predictions:
+        return DrawMetrics()
+
+    n = len(predictions)
+    draw_probs = []
+    is_draw = []
+
+    for pred in predictions:
+        draw_probs.append(pred.predicted_draw)
+        is_draw.append(pred.home_score == pred.away_score)
+
+    draw_probs = np.array(draw_probs)
+    is_draw = np.array(is_draw)
+
+    n_draws = int(is_draw.sum())
+    n_non_draws = n - n_draws
+
+    # One-vs-rest Brier
+    draw_brier = float(np.mean((draw_probs - is_draw.astype(float)) ** 2))
+
+    # One-vs-rest Log Loss
+    eps = 1e-15
+    draw_log_loss = float(np.mean(
+        -(is_draw.astype(float) * np.log(np.maximum(draw_probs, eps))
+          + (1 - is_draw.astype(float)) * np.log(np.maximum(1 - draw_probs, eps)))
+    ))
+
+    # Draw ECE
+    draw_ece = _ece_from_points(
+        list(zip(draw_probs.tolist(), is_draw.tolist())),
+        n_bins=10,
+    )
+
+    # ROC-AUC
+    draw_roc_auc = _compute_auc(draw_probs, is_draw, "roc")
+
+    # PR-AUC
+    draw_pr_auc = _compute_auc(draw_probs, is_draw, "pr")
+
+    # Average draw probability
+    if n_draws > 0:
+        avg_draw_prob_when_draw = float(draw_probs[is_draw].mean())
+    else:
+        avg_draw_prob_when_draw = 0.0
+    if n_non_draws > 0:
+        avg_draw_prob_when_not_draw = float(draw_probs[~is_draw].mean())
+    else:
+        avg_draw_prob_when_not_draw = 0.0
+
+    # Top-1 draw recall (diagnostic)
+    top1_draw_recall = 0.0
+    if n_draws > 0:
+        for pred in predictions:
+            if pred.home_score == pred.away_score:
+                if pred.predicted_draw >= pred.predicted_home_win and pred.predicted_draw >= pred.predicted_away_win:
+                    top1_draw_recall += 1
+        top1_draw_recall /= n_draws
+
+    # Reliability buckets
+    reliability = _compute_reliability(draw_probs, is_draw, n_bins=10)
+
+    return DrawMetrics(
+        draw_brier=draw_brier,
+        draw_log_loss=draw_log_loss,
+        draw_ece=draw_ece,
+        draw_roc_auc=draw_roc_auc,
+        draw_pr_auc=draw_pr_auc,
+        draw_reliability=reliability,
+        avg_draw_prob_when_draw=avg_draw_prob_when_draw,
+        avg_draw_prob_when_not_draw=avg_draw_prob_when_not_draw,
+        top1_draw_recall=top1_draw_recall,
+        n_draws=n_draws,
+        n_non_draws=n_non_draws,
+        n_total=n,
+    )
+
+
+def _compute_auc(scores: np.ndarray, labels: np.ndarray, mode: str = "roc") -> float:
+    """Compute AUC (ROC or PR) without sklearn."""
+    # Sort by score descending
+    order = np.argsort(-scores)
+    sorted_labels = labels[order]
+    sorted_scores = scores[order]
+
+    n_pos = int(labels.sum())
+    n_neg = len(labels) - n_pos
+
+    if n_pos == 0 or n_neg == 0:
+        return 0.0
+
+    if mode == "roc":
+        # ROC-AUC using trapezoidal rule
+        tpr_list = [0.0]
+        fpr_list = [0.0]
+        tp = 0
+        fp = 0
+        prev_score = None
+        for i in range(len(sorted_labels)):
+            if prev_score is not None and sorted_scores[i] != prev_score:
+                tpr_list.append(tp / n_pos)
+                fpr_list.append(fp / n_neg)
+            if sorted_labels[i]:
+                tp += 1
+            else:
+                fp += 1
+            prev_score = sorted_scores[i]
+        tpr_list.append(tp / n_pos)
+        fpr_list.append(fp / n_neg)
+
+        # Trapezoidal integration
+        auc = 0.0
+        for i in range(1, len(tpr_list)):
+            auc += (fpr_list[i] - fpr_list[i-1]) * (tpr_list[i] + tpr_list[i-1]) / 2
+        return float(auc)
+
+    elif mode == "pr":
+        # PR-AUC
+        precision_list = []
+        recall_list = [0.0]
+        tp = 0
+        fp = 0
+        for i in range(len(sorted_labels)):
+            if sorted_labels[i]:
+                tp += 1
+            else:
+                fp += 1
+            precision_list.append(tp / (tp + fp))
+            recall_list.append(tp / n_pos)
+
+        # Interpolated PR-AUC
+        auc = 0.0
+        for i in range(1, len(recall_list)):
+            auc += (recall_list[i] - recall_list[i-1]) * precision_list[i-1]
+        return float(auc)
+
+    return 0.0
+
+
+def _compute_reliability(
+    probs: np.ndarray,
+    labels: np.ndarray,
+    n_bins: int = 10,
+) -> dict[str, dict]:
+    """Compute reliability diagram data for draw predictions."""
+    result = {}
+    bin_size = 1.0 / n_bins
+
+    for i in range(n_bins):
+        low = i * bin_size
+        high = (i + 1) * bin_size if i < n_bins - 1 else 1.0 + 1e-9
+        mask = (probs >= low) & (probs < high)
+        count = int(mask.sum())
+        if count > 0:
+            mean_pred = float(probs[mask].mean())
+            actual_rate = float(labels[mask].mean())
+            result[f"bucket_{i}"] = {
+                "range": f"[{low:.1f}, {high:.1f})",
+                "mean_predicted": round(mean_pred, 4),
+                "actual_rate": round(actual_rate, 4),
+                "count": count,
+            }
 
     return result

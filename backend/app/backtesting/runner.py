@@ -35,6 +35,15 @@ from app.backtesting.models import (
 logger = logging.getLogger(__name__)
 
 
+def _ensure_utc(dt: datetime) -> datetime:
+    """Ensure datetime is UTC-aware. SQLite returns naive datetimes."""
+    if dt is None:
+        return dt
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 @dataclass
 class BacktestResult:
     """Complete result of a backtest run."""
@@ -45,6 +54,7 @@ class BacktestResult:
     best_parameters: dict[str, dict[str, Any]]  # model_name -> params
     admission_results: dict[str, str]  # model_name -> "shadow" or "rejected"
     dataset_info: dict[str, Any]
+    all_predictions: list[MatchPrediction] = field(default_factory=list)  # flat list of all test predictions
 
 
 def run_backtest(session) -> BacktestResult:
@@ -81,6 +91,12 @@ def run_backtest(session) -> BacktestResult:
         )
         .order_by(HistoricalMatch.available_at)
     ))
+
+    # Normalize SQLite naive datetimes to UTC-aware
+    for m in all_matches:
+        if m.available_at and m.available_at.tzinfo is None:
+            m.available_at = m.available_at.replace(tzinfo=timezone.utc)
+
     replay_result = replay_elo_history(all_matches)
     logger.info("Replayed %d matches", len(replay_result.steps))
 
@@ -122,6 +138,20 @@ def run_backtest(session) -> BacktestResult:
         nb.fit(train_steps)
     models[nb.name] = nb
 
+    # Model E: Multinomial Logistic
+    from app.backtesting.models import LogisticModel
+    logistic = LogisticModel()
+    if train_steps:
+        logistic.fit(train_steps)
+    models[logistic.name] = logistic
+
+    # Compute training-period Elo values for leak-free normalization
+    train_elo_values = set()
+    for step in train_steps:
+        train_elo_values.add(step.pre_match_home_elo)
+        train_elo_values.add(step.pre_match_away_elo)
+    train_elos = sorted(train_elo_values) if train_elo_values else [1500.0]
+
     # Step 4: Generate predictions for each model on each split
     logger.info("Step 4: Generating predictions...")
     split_steps = {
@@ -134,7 +164,7 @@ def run_backtest(session) -> BacktestResult:
     for model_name, model in models.items():
         model_predictions[model_name] = {}
         for split_name, steps in split_steps.items():
-            preds = _generate_predictions(model, steps, data_version, replay_result)
+            preds = _generate_predictions(model, steps, data_version, replay_result, train_elos=train_elos)
             model_predictions[model_name][split_name] = preds
             logger.info("  %s/%s: %d predictions", model_name, split_name, len(preds))
 
@@ -147,7 +177,7 @@ def run_backtest(session) -> BacktestResult:
             metrics = compute_metrics(preds, model_name, split_name, data_version)
             model_results[model_name][split_name] = metrics
             logger.info("  %s/%s: brier=%.4f, log_loss=%.4f, draw_recall=%.4f",
-                        model_name, split_name, metrics.brier_score,
+                        model_name, split_name, metrics.brier_sum,
                         metrics.log_loss, metrics.draw_recall)
 
     # Step 6: Fit calibrators on validation set, evaluate on test set
@@ -176,7 +206,7 @@ def run_backtest(session) -> BacktestResult:
             calibration_results[cal_model_name] = {"test": cal_metrics}
 
             logger.info("  %s: brier=%.4f, log_loss=%.4f",
-                        cal_model_name, cal_metrics.brier_score, cal_metrics.log_loss)
+                        cal_model_name, cal_metrics.brier_sum, cal_metrics.log_loss)
 
     # Step 7: Compute stratified metrics (on test set)
     logger.info("Step 7: Computing stratified metrics...")
@@ -230,6 +260,12 @@ def run_backtest(session) -> BacktestResult:
         "test_competition_types": dataset.test.competition_types,
     }
 
+    # Collect all test predictions for bootstrap/draw analysis
+    all_test_preds: list[MatchPrediction] = []
+    for model_name in models:
+        test_preds = model_predictions[model_name].get("test", [])
+        all_test_preds.extend(test_preds)
+
     result = BacktestResult(
         data_version=data_version,
         model_results=model_results,
@@ -238,6 +274,7 @@ def run_backtest(session) -> BacktestResult:
         best_parameters=best_parameters,
         admission_results=admission_results,
         dataset_info=dataset_info,
+        all_predictions=all_test_preds,
     )
 
     logger.info("Backtest complete!")
@@ -249,20 +286,35 @@ def _generate_predictions(
     steps: list[ReplayStep],
     data_version: str,
     replay_result: Any,
+    train_elos: list[float] | None = None,
 ) -> list[MatchPrediction]:
-    """Generate predictions for a model on a set of replay steps."""
+    """Generate predictions for a model on a set of replay steps.
+
+    Uses only Elo values from the training period for normalization
+    to prevent data leakage from evaluation period.
+    """
     predictions: list[MatchPrediction] = []
 
-    # Track running Elo ratings for normalization
-    from app.prediction.elo import update_elo
-    ratings: dict[str, float] = {}
-    initial = 1500.0
+    # Use only training-period Elo values for normalization
+    # This prevents future Elo values from affecting normalization
+    if train_elos is not None:
+        all_elos = train_elos
+    else:
+        # Fallback: collect Elo values only from steps at or before the earliest prediction
+        if steps:
+            earliest = min(s.available_at for s in steps)
+            all_elo_values = set()
+            for step in replay_result.steps:
+                if step.available_at <= earliest:
+                    all_elo_values.add(step.pre_match_home_elo)
+                    all_elo_values.add(step.pre_match_away_elo)
+            all_elos = sorted(all_elo_values) if all_elo_values else [1500.0]
+        else:
+            all_elos = [1500.0]
 
-    for step in steps:
-        # Collect all known Elo values at this point
-        all_elos = list(ratings.values()) if ratings else [initial]
+    sorted_steps = sorted(steps, key=lambda s: s.available_at)
 
-        # Generate prediction
+    for step in sorted_steps:
         try:
             home_win, draw, away_win = model.predict(step, all_elos)
         except Exception as e:
@@ -286,19 +338,6 @@ def _generate_predictions(
             data_version=data_version,
         )
         predictions.append(pred)
-
-        # Update Elo after this match (for next prediction)
-        home_elo = ratings.get(step.home_team_id, initial)
-        away_elo = ratings.get(step.away_team_id, initial)
-        ha = 0.0 if step.neutral_venue else 60.0
-        result = update_elo(
-            home_elo, away_elo,
-            step.home_score, step.away_score,
-            weight=step.update_weight,
-            home_advantage=ha,
-        )
-        ratings[step.home_team_id] = result.home
-        ratings[step.away_team_id] = result.away
 
     return predictions
 
@@ -335,20 +374,26 @@ def check_admission(
     model_name: str,
     results: dict[str, ModelMetrics],
     legacy_results: dict[str, ModelMetrics],
+    draw_metrics: dict[str, Any] | None = None,
+    legacy_draw_metrics: dict[str, Any] | None = None,
+    bootstrap_result: Any | None = None,
 ) -> str:
     """Check if a model meets admission criteria for Shadow.
 
-    Rules:
-    1. Test set Brier better than Legacy
-    2. Log Loss not worse than Legacy (within 0.01)
-    3. Draw recall clearly improved (>0.05 improvement)
-    4. ECE not worse (within 0.01)
-    5. Majority of years not worse than Legacy
-    6. Improvement not dependent on single competition or team
-    7. No future data leakage (verified by design)
-    8. Parameters and data version reproducible
+    Rules (revised Phase 3B):
+    1. canonical Brier not significantly worse than Legacy
+    2. Log Loss not significantly worse (within 0.01)
+    3. ECE not significantly worse (within 0.01)
+    4. Draw-specific Brier/Log Loss not significantly worse (if available)
+    5. Results direction stable across rolling folds (checked externally)
+    6. No future data leakage (verified by design)
+    7. Probabilities sum to 1 (verified by design)
+    8. Parameters, data version, code version reproducible (verified by design)
 
-    Returns: "shadow" or "rejected"
+    Draw Recall is a diagnostic indicator, NOT a hard admission gate.
+    Admission is based on proper scoring rules, calibration, and stability.
+
+    Returns: "shadow", "research", or "rejected"
     """
     model_test = results.get("test")
     legacy_test = legacy_results.get("test")
@@ -357,34 +402,51 @@ def check_admission(
         return "rejected"
 
     failures: list[str] = []
+    warnings: list[str] = []
 
-    # Rule 1: Test set Brier better than Legacy
-    if model_test.brier_score >= legacy_test.brier_score:
-        failures.append(f"Brier score not better: {model_test.brier_score:.4f} >= {legacy_test.brier_score:.4f}")
+    # Rule 1: canonical Brier not worse (allow small degradation within 0.005)
+    if model_test.brier_sum > legacy_test.brier_sum + 0.005:
+        failures.append(f"Brier significantly worse: {model_test.brier_sum:.4f} > {legacy_test.brier_sum:.4f} + 0.005")
+    elif model_test.brier_sum >= legacy_test.brier_sum:
+        warnings.append(f"Brier not improved: {model_test.brier_sum:.4f} >= {legacy_test.brier_sum:.4f}")
 
     # Rule 2: Log Loss not worse (within 0.01)
     if model_test.log_loss > legacy_test.log_loss + 0.01:
         failures.append(f"Log loss worse: {model_test.log_loss:.4f} > {legacy_test.log_loss:.4f} + 0.01")
 
-    # Rule 3: Draw recall clearly improved (>0.05 improvement)
-    draw_improvement = model_test.draw_recall - legacy_test.draw_recall
-    if draw_improvement <= 0.05:
-        failures.append(f"Draw recall not clearly improved: {model_test.draw_recall:.4f} vs {legacy_test.draw_recall:.4f} (delta={draw_improvement:.4f})")
-
-    # Rule 4: ECE not worse (within 0.01)
+    # Rule 3: ECE not worse (within 0.01)
     if model_test.ece > legacy_test.ece + 0.01:
         failures.append(f"ECE worse: {model_test.ece:.4f} > {legacy_test.ece:.4f} + 0.01")
 
-    # Rules 5-6: Checked via stratified metrics (would need to pass those in)
-    # For now, we just check the core rules above
+    # Rule 4: Draw-specific metrics not significantly worse
+    if draw_metrics and legacy_draw_metrics:
+        draw_brier = draw_metrics.get("draw_brier", 0.0)
+        legacy_draw_brier = legacy_draw_metrics.get("draw_brier", 0.0)
+        if draw_brier > legacy_draw_brier + 0.005:
+            failures.append(f"Draw Brier worse: {draw_brier:.4f} > {legacy_draw_brier:.4f} + 0.005")
 
-    # Rule 7: No future data leakage - verified by design (always pass)
+        draw_ll = draw_metrics.get("draw_log_loss", 0.0)
+        legacy_draw_ll = legacy_draw_metrics.get("draw_log_loss", 0.0)
+        if draw_ll > legacy_draw_ll + 0.01:
+            failures.append(f"Draw Log Loss worse: {draw_ll:.4f} > {legacy_draw_ll:.4f} + 0.01")
 
-    # Rule 8: Parameters and data version reproducible - verified by design (always pass)
+    # Rule 5: Bootstrap significance check (if available)
+    if bootstrap_result is not None:
+        if hasattr(bootstrap_result, 'conclusion') and 'significantly worse' in bootstrap_result.conclusion:
+            failures.append(f"Bootstrap: {bootstrap_result.conclusion}")
+
+    # Diagnostic: Draw Recall (informational only)
+    draw_improvement = model_test.draw_recall - legacy_test.draw_recall
+    if draw_improvement <= 0:
+        warnings.append(f"Draw recall not improved: {model_test.draw_recall:.4f} vs {legacy_test.draw_recall:.4f}")
 
     if failures:
         logger.info("Model %s rejected: %s", model_name, "; ".join(failures))
         return "rejected"
+
+    if warnings:
+        logger.info("Model %s admitted as research (warnings: %s)", model_name, "; ".join(warnings))
+        return "research"
 
     logger.info("Model %s admitted as shadow", model_name)
     return "shadow"
@@ -411,8 +473,9 @@ def _save_results(
                 data_version=data_version,
                 model_name=model_name,
                 split_name=split_name,
-                brier_score=metrics.brier_score,
-                brier_score_avg=metrics.brier_score_avg,
+                brier_sum=metrics.brier_sum,
+                brier_mean=metrics.brier_mean,
+                canonical_brier=metrics.canonical_brier,
                 log_loss=metrics.log_loss,
                 ece=metrics.ece,
                 top1_hit_rate=metrics.top1_hit_rate,
@@ -431,8 +494,9 @@ def _stratified_to_dict(strat: StratifiedMetrics) -> dict[str, Any]:
     """Convert StratifiedMetrics to a serializable dict."""
     def _metrics_to_dict(m: ModelMetrics) -> dict[str, Any]:
         return {
-            "brier_score": m.brier_score,
-            "brier_score_avg": m.brier_score_avg,
+            "brier_sum": m.brier_sum,
+            "brier_mean": m.brier_mean,
+            "canonical_brier": m.canonical_brier,
             "log_loss": m.log_loss,
             "ece": m.ece,
             "top1_hit_rate": m.top1_hit_rate,

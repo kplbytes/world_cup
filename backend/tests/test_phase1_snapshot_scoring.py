@@ -1116,6 +1116,74 @@ class TestDualSessionLockContention:
             session1.close()
             session2.close()
 
+    def test_sync_tracker_uses_savepoint(self):
+        """IntegrityError in _sync_tracker must not roll back other session changes."""
+        from sqlalchemy import create_engine, func, select
+        from sqlalchemy.orm import sessionmaker
+        from app.ai.ensemble import _sync_tracker
+        from app.models import EnsemblePrediction, EnsembleLockTracker
+        from app.db import _upgrade_schema, _configure_sqlite
+        from app.models import Base
+
+        engine = create_engine("sqlite:///:memory:")
+        _configure_sqlite(engine)
+        _upgrade_schema(engine)
+        Base.metadata.create_all(engine)
+
+        Session = sessionmaker(bind=engine)
+        sess = Session()
+
+        # Seed minimal data (Team + Match) for FK constraints
+        from app.models import Team as TeamModel, Match as MatchModel
+        sess.add(TeamModel(id="T1", name="Team1", short_name="T1", code="T1", group_code="A"))
+        sess.add(TeamModel(id="T2", name="Team2", short_name="T2", code="T2", group_code="A"))
+        sess.flush()
+        sess.add(MatchModel(
+            id="test_savepoint",
+            kickoff=datetime(2026, 6, 15, 19, 0, 0, tzinfo=timezone.utc),
+            status="scheduled", source="test", group_code="A",
+            home_team_id="T1", away_team_id="T2",
+        ))
+        sess.commit()
+
+        # Create an ensemble first
+        ens = EnsemblePrediction(
+            match_id="test_savepoint",
+            model_version="v1",
+            system_model_version="elo-poisson-v1",
+            system_weight=0.5,
+            market_weight=0.2,
+            ensemble_home_win=0.5,
+            ensemble_draw=0.25,
+            ensemble_away_win=0.25,
+            confidence=0.7,
+            reason="test",
+            is_pre_match_locked=True,
+        )
+        sess.add(ens)
+        sess.commit()
+
+        # Sync tracker
+        _sync_tracker(sess, "test_savepoint", "v1", "official", ens.id)
+        sess.commit()
+
+        # Verify tracker exists
+        tracker = sess.scalar(select(EnsembleLockTracker).where(
+            EnsembleLockTracker.match_id == "test_savepoint",
+        ))
+        assert tracker is not None
+        assert tracker.ensemble_id == ens.id
+
+        # Try syncing again (should be idempotent)
+        _sync_tracker(sess, "test_savepoint", "v1", "official", ens.id)
+        sess.commit()
+
+        # Session should still be usable
+        count = sess.scalar(select(func.count(EnsembleLockTracker.match_id)))
+        assert count == 1
+
+        sess.close()
+
 
 class TestLockedEnsembleNotOverwrittenConcurrent:
     """Simulate the lock check that compute_ensemble() performs."""
