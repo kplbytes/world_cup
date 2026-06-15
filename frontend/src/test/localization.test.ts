@@ -31,7 +31,10 @@ describe("Time utilities", () => {
     expect(isWithinNextHoursChina("2026-06-14T04:00:00Z", 24, now)).toBe(true);
     expect(isWithinNextHoursChina("2026-06-15T03:59:59Z", 24, now)).toBe(true);
     expect(isWithinNextHoursChina("2026-06-15T04:00:00Z", 24, now)).toBe(false);
-    expect(isWithinNextHoursChina("2026-06-14T03:59:59Z", 24, now)).toBe(false);
+    // Matches within 3 hours ago are included (may be in progress)
+    expect(isWithinNextHoursChina("2026-06-14T03:59:59Z", 24, now)).toBe(true);
+    // Matches more than 3 hours ago are excluded
+    expect(isWithinNextHoursChina("2026-06-14T00:59:59Z", 24, now)).toBe(false);
   });
 
   it("treats final-like statuses or a complete score as finished", () => {
@@ -49,7 +52,7 @@ describe("Time utilities", () => {
     expect(isFinishedMatch(match({ home_score: 2, away_score: null }))).toBe(false);
   });
 
-  it("only treats future, unfinished matches as upcoming", () => {
+  it("only treats unfinished matches as upcoming", () => {
     const now = new Date("2026-06-14T04:00:00Z");
     const match = (overrides: Partial<Match>) => ({
       kickoff: "2026-06-14T05:00:00Z",
@@ -62,7 +65,10 @@ describe("Time utilities", () => {
     expect(isUpcomingMatch(match({}), now)).toBe(true);
     expect(isUpcomingMatch(match({ status: "final" }), now)).toBe(false);
     expect(isUpcomingMatch(match({ home_score: 1, away_score: 0 }), now)).toBe(false);
-    expect(isUpcomingMatch(match({ kickoff: "2026-06-14T03:59:59Z" }), now)).toBe(false);
+    // A match with past kickoff but not finished is still "upcoming" (may be in progress)
+    expect(isUpcomingMatch(match({ kickoff: "2026-06-14T03:59:59Z" }), now)).toBe(true);
+    // A live match is upcoming (not finished)
+    expect(isUpcomingMatch(match({ status: "live", kickoff: "2026-06-14T03:00:00Z" }), now)).toBe(true);
   });
 
   it("shows 时间待确认 for null", () => {
