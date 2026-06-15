@@ -9,6 +9,7 @@
 3. 看今天和接下来 48 小时比赛的预测与风险；
 4. 在需要时手动补跑 AI、生成 ensemble、检查 24h 锁定；
 5. 让复盘继续服务赛前预测，而不是污染赛前口径。
+6. 通过结构化日志快速定位问题、还原操作场景。
 
 ## AI 协作入口
 
@@ -42,7 +43,7 @@
 
 ### 赛前决策闭环
 
-- 24h 赛前锁定
+- 24h 赛前锁定：距开赛 ≤24h 时生成 locked snapshot，开赛前新预测到来时原地更新，开赛后冻结
 - fallback 快照逻辑
 - 决策快照状态检查
 - 今日工作台中的下一步建议、昨晚复盘、今日比赛、未来 48 小时比赛
@@ -53,6 +54,7 @@
 - 按版本、按阶段、按比赛明细查看评分
 - 错误归因、校准、市场对照、模型推荐
 - Accuracy Command Center 汇总当前模型表现
+- 赛后复盘展示 Brier score、实际概率、方向命中、最佳模型
 
 ### AI 与 Ensemble
 
@@ -137,6 +139,8 @@
   - `scoring.py`：赛后评分、排除原因、评分明细
   - `snapshots.py`：24h 锁定与 fallback 相关逻辑
   - `accuracy_command.py`：准确率指挥中心
+- `backend/app/logging_config.py`：集中式日志配置（JSON 结构化、轮转、分级）
+- `backend/app/middleware.py`：Request ID 追踪与 Access Log 中间件
 - `backend/app/ai/`
   - AI provider、prompt、parser、ensemble、evaluation
 - `backend/app/team_profiles/`
@@ -157,6 +161,13 @@
 ### 赛前锁定优先于赛后解释
 
 系统核心是赛前预测。赛后复盘必须基于赛前有效快照，不允许把开赛后的实时预测混成赛前决策样本。
+
+24h 锁定规则：
+
+1. 距离比赛开始 ≤24h 时，开始生成 locked snapshot
+2. 比赛正式开赛前，如果预测数据更新，locked snapshot 原地更新，始终保持赛前最新版本
+3. 比赛开始或完赛后，locked snapshot 最终冻结，不允许再被赛后数据覆盖
+4. 距离开赛 >24h 的比赛，不提前生成 locked snapshot
 
 ### 评分样本口径
 
@@ -442,7 +453,30 @@ PYTHONPATH=backend backend/.venv/bin/python backend/scripts/build_team_profiles.
 ```bash
 PYTHONPATH=backend backend/.venv/bin/python backend/scripts/run_pre_match_workflow.py
 PYTHONPATH=backend backend/.venv/bin/python backend/scripts/run_post_match_workflow.py
-PYTHONPATH=backend backend/.venv/bin/python backend/scripts/lock_pre_match_predictions.py
+PYTHONPATH=backend backend/.venv/bin/python backend/scripts/lock_pre_match_predictions.py --window-hours 24
+```
+
+### 日志查询
+
+日志文件位于 `data/logs/`，包含 `app.jsonl`（全量）和 `error.jsonl`（ERROR+）。
+
+```bash
+# 查看错误
+cat data/logs/error.jsonl | python3 -m json.tool
+
+# 按请求 ID 追踪完整链路
+grep "REQUEST_ID" data/logs/app.jsonl | python3 -m json.tool
+
+# 慢请求（>1s）
+grep "duration_ms" data/logs/app.jsonl | python3 -c "
+import sys, json
+for line in sys.stdin:
+    d = json.loads(line)
+    if d.get('duration_ms', 0) > 1000:
+        print(f'{d[\"duration_ms\"]:.0f}ms {d[\"message\"]}')"
+
+# 按模块过滤
+grep '"app.ai.service"' data/logs/app.jsonl | python3 -m json.tool
 ```
 
 ## 当前已知限制

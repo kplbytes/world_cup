@@ -112,6 +112,12 @@
 
 24h 锁定如保留字段，只作为兼容或辅助信息，不作为核心评分依据。
 
+24h 锁定的业务规则：
+1. 距离开赛 ≤24h 时，生成 locked snapshot
+2. 开赛前新预测到来时，locked snapshot 原地更新（始终保持赛前最新版本）
+3. 开赛后 locked snapshot 冻结，不允许赛后数据覆盖
+4. 距离开赛 >24h 的比赛，不提前锁定
+
 ### 6.2 当前评分选择逻辑
 
 当前 `scoring.py` 的 scorable snapshot 选择规则是：
@@ -408,7 +414,44 @@ daily-open 工作流应自动为符合条件的比赛补跑 AI 预测：
 
 目标不是机械全读，而是先确认这次改动会不会碰到赛前锁定、评分口径、AI 真实调用、Team Profile 数据边界。
 
-## 13. 今日比赛与赛程筛选约束
+## 13. 日志系统约束
+
+### 13.1 日志架构
+
+当前系统使用集中式日志配置（`backend/app/logging_config.py`），不再允许各模块自行配置 handler。
+
+日志输出三通道：
+- Console：人类可读格式，含 request_id / workflow_run_id 上下文
+- `data/logs/app.jsonl`：JSON Lines 结构化日志，10MB 轮转，保留 30 个备份
+- `data/logs/error.jsonl`：仅 ERROR+，5MB 轮转，保留 10 个备份
+
+### 13.2 日志级别规范
+
+- `DEBUG`：开发调试信息，仅文件输出
+- `INFO`：正常业务流程（请求、workflow 步骤、预测生成）
+- `WARNING`：可恢复的异常（API 降级、缓存过期、fallback 触发）
+- `ERROR`：需要关注的错误（API 失败、数据异常、评分错误）
+
+当前分级配置：
+- 核心服务（recompute/snapshots/scoring/dashboard/workflows）：INFO
+- AI providers：INFO
+- Tournament bracket/qualification：WARNING（小组赛期间第三名分配噪音大）
+- 第三方库（httpx/apscheduler/openai）：WARNING
+
+### 13.3 链路追踪
+
+- 每个 HTTP 请求自动分配 `request_id`（支持 `X-Request-ID` header 传入）
+- 每个 workflow 运行自动设置 `workflow_run_id`
+- 日志中包含 `request_id` 和 `workflow_run_id` 字段，用于关联同一操作链路的所有日志
+
+### 13.4 修改约束
+
+- 不允许在模块中自行添加 `logging.FileHandler` 或 `logging.StreamHandler`
+- 新增模块使用 `logger = logging.getLogger(__name__)` 即可，由 `logging_config.py` 统一管理
+- 如需调整模块日志级别，修改 `logging_config.py` 中的 `MODULE_LOG_LEVELS`
+- 不允许使用 `print()` 替代日志输出
+
+## 19. 今日比赛与赛程筛选约束
 
 这是高优先级约束。此前系统出现过“北京时间 6 月 14 日今日比赛中显示北京时间 6 月 15 日比赛”的问题，后续不得再出现。
 
@@ -458,7 +501,7 @@ daily-open 工作流应自动为符合条件的比赛补跑 AI 预测：
 
 前端“今日比赛”页面必须只展示 `included_in_today=true` 的比赛。
 
-## 14. 前端 UI 稳定性约束
+## 20. 前端 UI 稳定性约束
 
 此前前端出现过比赛卡片横向溢出、长队名撑爆、概率条跑出容器、卡片互相遮挡的问题。后续任何前端改动不得破坏 UI 稳定性。
 
@@ -502,7 +545,7 @@ daily-open 工作流应自动为符合条件的比赛补跑 AI 预测：
 4. Drawer / Modal 能正常打开；
 5. 页面无横向滚动条。
 
-## 15. 真实数据与接口验收约束
+## 21. 真实数据与接口验收约束
 
 任何涉及数据链路、AI、评分、workflow、Team Profile 的任务，不能只说“已实现”，必须给出真实接口或数据库验证证据。
 
@@ -535,7 +578,7 @@ daily-open 工作流应自动为符合条件的比赛补跑 AI 预测：
 5. 是否存在 mock、fallback、seed 数据；
 6. 用户侧是否有明确提示。
 
-## 16. 测试与真实运行约束
+## 22. 测试与真实运行约束
 
 ### 16.1 后端测试
 
@@ -579,7 +622,7 @@ npm run dev
 
 并在浏览器中完成真实操作验证。
 
-## 17. 每次任务开始与结束的强制流程
+## 23. 每次任务开始与结束的强制流程
 
 ### 17.1 开始前
 
@@ -626,7 +669,7 @@ cat FRONTEND_UI_RULES.md
 
 本次未产生新的前端长期约束，因此未修改 `FRONTEND_UI_RULES.md`。
 
-## 18. 新增长期约束的同步规则
+## 24. 新增长期约束的同步规则
 
 如果本次任务过程中发现新的长期规则，例如：
 
