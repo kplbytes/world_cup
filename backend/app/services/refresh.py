@@ -116,6 +116,17 @@ def refresh_tournament(
             else:
                 if payload.source.provider in _SCORE_ONLY_PROVIDERS:
                     continue
+                # Update status to "live" if the incoming data says so
+                if incoming.status == "live" and stored.status == "scheduled":
+                    stored.status = "live"
+                    if incoming.home_score is not None:
+                        stored.home_score = incoming.home_score
+                    if incoming.away_score is not None:
+                        stored.away_score = incoming.away_score
+                    stored.source = payload.source.provider
+                    stored.source_updated_at = payload.source.fetched_at
+                    updated += 1
+                    continue
                 kickoff_changed = not _same_instant(incoming.kickoff, stored.kickoff)
                 venue_changed = incoming.venue is not None and incoming.venue != stored.venue
                 if not kickoff_changed and not venue_changed:

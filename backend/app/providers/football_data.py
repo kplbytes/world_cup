@@ -128,8 +128,8 @@ class FootballDataProvider:
             kickoff=kickoff,
             venue=raw.get("venue"),
             status=match_status,
-            home_score=home_goals if match_status == "final" else None,
-            away_score=away_goals if match_status == "final" else None,
+            home_score=home_goals if match_status in ("final", "live") else None,
+            away_score=away_goals if match_status in ("final", "live") else None,
             source_match_id=str(raw.get("id", "")),
         )
 
