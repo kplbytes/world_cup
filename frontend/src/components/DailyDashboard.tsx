@@ -22,6 +22,7 @@ import type { StatusItem } from "./ui/StatusStrip";
 import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
 import EmptyState from "./ui/EmptyState";
+import DataHealthBadge from "./DataHealthBadge";
 
 const AUTO_DAILY_OPEN_PARAMS = {
   with_ai: true,
@@ -391,6 +392,9 @@ export default function DailyDashboard() {
       {/* A. Status Summary Strip */}
       <SectionCard title="今日状态" badge={status ? formatChinaTimeShort(status.last_run_at ?? new Date().toISOString()) : "加载中"}>
         <StatusStrip items={statusItems} />
+        <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+          <DataHealthBadge />
+        </div>
       </SectionCard>
 
       {/* B. Next Step Suggestion */}

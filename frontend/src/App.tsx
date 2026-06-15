@@ -10,13 +10,15 @@ import "./styles.css";
 
 const ModelReviewCenter = lazy(() => import("./components/ModelReviewCenter"));
 const TournamentCenter = lazy(() => import("./components/TournamentCenter"));
+const ModelResearch = lazy(() => import("./components/ModelResearch"));
 
-type ViewType = "daily" | "matches" | "models" | "tournament";
+type ViewType = "daily" | "matches" | "models" | "tournament" | "research";
 
 const NAV_ITEMS: { key: ViewType; label: string }[] = [
   { key: "daily", label: "今日工作台" },
   { key: "matches", label: "比赛中心" },
   { key: "models", label: "模型复盘" },
+  { key: "research", label: "模型研究" },
   { key: "tournament", label: "冠军与赛程" },
 ];
 
@@ -87,6 +89,7 @@ export default function App() {
           {view === "daily" ? <DailyDashboard />
            : view === "matches" ? <MatchCenter groups={dashboard.data.groups} onTeamSelect={setSelectedTeam} />
            : view === "models" ? <ModelReviewCenter />
+           : view === "research" ? <ModelResearch />
            : <TournamentCenter />
           }
         </Suspense>

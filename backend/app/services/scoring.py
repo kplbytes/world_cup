@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DashboardRevision, MarketSnapshot, Match, ModelScore, PredictionSnapshot
+from app.models import DashboardRevision, EnsemblePrediction, MarketSnapshot, Match, ModelScore, PredictionSnapshot
 from app.services.error_attribution import ErrorAttribution, classify_error
 
 _CLIP = 1e-6
@@ -110,6 +110,76 @@ def _scorable_snapshot_rows_by_version(session: Session) -> list[tuple[Predictio
         chosen = _select_scorable_snapshot(snapshots, match)
         if chosen is not None:
             deduped.append((chosen, match))
+    return deduped
+
+
+def _select_scorable_ensemble(
+    predictions: list[EnsemblePrediction],
+    match: Match,
+) -> tuple[EnsemblePrediction | None, str]:
+    """Choose the best scorable ensemble prediction for a finished match.
+
+    Priority: is_pre_match_locked > is_fallback_locked > latest pre-kickoff.
+    No pre-kickoff record = not scorable.
+
+    Returns (prediction, selection_type) where selection_type is one of:
+    - "official_locked": is_pre_match_locked=True
+    - "fallback_pre_match": is_fallback_locked=True
+    - "unlocked_pre_match": created_at < kickoff, not locked
+    - "unscorable": no valid pre-match prediction
+    """
+    if not predictions:
+        return None, "unscorable"
+
+    kickoff = _ensure_utc(match.kickoff)
+    if not kickoff:
+        return None, "unscorable"
+
+    # Priority 1: pre-match locked
+    locked = [p for p in predictions if p.is_pre_match_locked]
+    if locked:
+        return locked[0], "official_locked"
+
+    # Priority 2: fallback locked
+    fallback = [p for p in predictions if p.is_fallback_locked]
+    if fallback:
+        return fallback[0], "fallback_pre_match"
+
+    # Priority 3: latest pre-kickoff (created_at < kickoff), exclude real_time_only
+    pre_kickoff = [
+        p for p in predictions
+        if _ensure_utc(p.created_at) < kickoff
+        and not p.real_time_only
+    ]
+    if pre_kickoff:
+        return max(pre_kickoff, key=lambda p: _ensure_utc(p.created_at)), "unlocked_pre_match"
+
+    return None, "unscorable"
+
+
+def _scorable_ensemble_rows(session: Session) -> list[tuple[EnsemblePrediction, Match, str]]:
+    """Return one scorable ensemble prediction per final match with selection_type."""
+    rows = session.execute(
+        select(EnsemblePrediction, Match)
+        .join(Match, EnsemblePrediction.match_id == Match.id)
+        .where(Match.status == "final")
+        .where(EnsemblePrediction.real_time_only.is_(False))
+        .order_by(
+            EnsemblePrediction.match_id,
+            EnsemblePrediction.created_at.desc(),
+        )
+    ).all()
+
+    grouped: dict[str, tuple[Match, list[EnsemblePrediction]]] = {}
+    for pred, match in rows:
+        state = grouped.setdefault(match.id, (match, []))
+        state[1].append(pred)
+
+    deduped: list[tuple[EnsemblePrediction, Match, str]] = []
+    for match, predictions in grouped.values():
+        chosen, sel_type = _select_scorable_ensemble(predictions, match)
+        if chosen is not None:
+            deduped.append((chosen, match, sel_type))
     return deduped
 
 
@@ -407,6 +477,82 @@ def model_score_details(session: Session) -> list[dict[str, Any]]:
             "market_away_prob": market_away,
         })
 
+    # Add ensemble predictions to scoring details
+    ensemble_rows = _scorable_ensemble_rows(session)
+    for ens_pred, match, selection_type in ensemble_rows:
+        actual_home = match.home_score or 0
+        actual_away = match.away_score or 0
+
+        if actual_home > actual_away:
+            actual_result = "home"
+        elif actual_home == actual_away:
+            actual_result = "draw"
+        else:
+            actual_result = "away"
+
+        p_home = ens_pred.ensemble_home_win
+        p_draw = ens_pred.ensemble_draw
+        p_away = ens_pred.ensemble_away_win
+        max_prob = max(p_home, p_draw, p_away)
+
+        o_home = 1.0 if actual_result == "home" else 0.0
+        o_draw = 1.0 if actual_result == "draw" else 0.0
+        o_away = 1.0 if actual_result == "away" else 0.0
+        brier = (p_home - o_home) ** 2 + (p_draw - o_draw) ** 2 + (p_away - o_away) ** 2
+
+        cp_home = max(_CLIP, min(1 - _CLIP, p_home))
+        cp_draw = max(_CLIP, min(1 - _CLIP, p_draw))
+        cp_away = max(_CLIP, min(1 - _CLIP, p_away))
+        ll = -(o_home * math.log(cp_home) + o_draw * math.log(cp_draw) + o_away * math.log(cp_away))
+
+        predicted_outcome = max([("home", p_home), ("draw", p_draw), ("away", p_away)], key=lambda x: x[1])[0]
+        outcome_hit = predicted_outcome == actual_result
+
+        ens_at = _ensure_utc(ens_pred.created_at)
+        kickoff_utc = _ensure_utc(match.kickoff)
+        hours_before_kickoff = (kickoff_utc - ens_at).total_seconds() / 3600 if ens_at and kickoff_utc else None
+
+        market_snap = market_snaps.get(match.id)
+        market_home = market_snap.home_probability if market_snap else None
+        market_draw = market_snap.draw_probability if market_snap else None
+        market_away = market_snap.away_probability if market_snap else None
+
+        details.append({
+            "match_id": match.id,
+            "kickoff": match.kickoff.isoformat() if match.kickoff else "",
+            "home_team": team_names.get(match.home_team_id, match.home_team_id),
+            "away_team": team_names.get(match.away_team_id, match.away_team_id),
+            "model_version": "ensemble-v1",
+            "locked_at": ens_pred.locked_at.isoformat() if ens_pred.locked_at else "",
+            "scoring_snapshot_rule": "ensemble_locked_or_pre_kickoff",
+            "snapshot_at": ens_pred.created_at.isoformat() if ens_pred.created_at else "",
+            "hours_before_kickoff": hours_before_kickoff,
+            "is_real_time_only": ens_pred.real_time_only,
+            "selection_type": selection_type,
+            "is_pre_match_locked": ens_pred.is_pre_match_locked,
+            "is_fallback_locked": ens_pred.is_fallback_locked,
+            "source_ids": ens_pred.source_ids_json or {},
+            "traceability_status": "complete" if (ens_pred.source_ids_json and (ens_pred.source_ids_json.get("baseline_snapshot_id") or ens_pred.source_ids_json.get("ai_prediction_ids"))) else "legacy_unavailable",
+            "home_win_prob": p_home,
+            "draw_prob": p_draw,
+            "away_win_prob": p_away,
+            "max_prob": max_prob,
+            "actual_result": actual_result,
+            "outcome_hit": outcome_hit,
+            "brier": brier,
+            "logloss": ll,
+            "xg_error": None,
+            "error_types": [],
+            "error_reasons": [],
+            "suggested_fixes": [],
+            "warning_effect": "neutral",
+            "numerical_effect": "neutral",
+            "probability_effect": 0.0,
+            "market_home_prob": market_home,
+            "market_draw_prob": market_draw,
+            "market_away_prob": market_away,
+        })
+
     details.sort(key=lambda d: d["kickoff"])
     return details
 
@@ -520,6 +666,65 @@ def model_score_by_version(session: Session) -> list[dict[str, Any]]:
                 v["numerical_helped_count"] += 1
             elif brier > base_brier + 0.01:
                 v["numerical_hurt_count"] += 1
+
+    # Add ensemble predictions to version aggregation
+    ensemble_rows = _scorable_ensemble_rows(session)
+    ens_version = "ensemble-v1"
+    for ens_pred, match, _selection_type in ensemble_rows:
+        if ens_version not in by_version:
+            by_version[ens_version] = {
+                "model_version": ens_version,
+                "sample_count": 0,
+                "brier_sum": 0.0,
+                "logloss_sum": 0.0,
+                "hit_count": 0,
+                "avg_confidence": 0.0,
+                "upset_miss_count": 0,
+                "draw_miss_count": 0,
+                "favorite_overestimated_count": 0,
+                "underdog_underestimated_count": 0,
+                "overconfident_wrong_count": 0,
+                "warning_helped_count": 0,
+                "warning_hurt_count": 0,
+                "numerical_helped_count": 0,
+                "numerical_hurt_count": 0,
+            }
+        v = by_version[ens_version]
+
+        actual_home = match.home_score or 0
+        actual_away = match.away_score or 0
+        if actual_home > actual_away:
+            actual_result = "home"
+        elif actual_home == actual_away:
+            actual_result = "draw"
+        else:
+            actual_result = "away"
+
+        p_home = ens_pred.ensemble_home_win
+        p_draw = ens_pred.ensemble_draw
+        p_away = ens_pred.ensemble_away_win
+        o_home = 1.0 if actual_result == "home" else 0.0
+        o_draw = 1.0 if actual_result == "draw" else 0.0
+        o_away = 1.0 if actual_result == "away" else 0.0
+
+        brier = (p_home - o_home) ** 2 + (p_draw - o_draw) ** 2 + (p_away - o_away) ** 2
+        cp_home = max(_CLIP, min(1 - _CLIP, p_home))
+        cp_draw = max(_CLIP, min(1 - _CLIP, p_draw))
+        cp_away = max(_CLIP, min(1 - _CLIP, p_away))
+        ll = -(o_home * math.log(cp_home) + o_draw * math.log(cp_draw) + o_away * math.log(cp_away))
+
+        predicted_outcome = max([("home", p_home), ("draw", p_draw), ("away", p_away)], key=lambda x: x[1])[0]
+        outcome_correct = predicted_outcome == actual_result
+
+        v["sample_count"] += 1
+        v["brier_sum"] += brier
+        v["logloss_sum"] += ll
+        v["hit_count"] += int(outcome_correct)
+        v["avg_confidence"] += max(p_home, p_draw, p_away)
+        if not outcome_correct and actual_result != "draw" and max(p_home, p_away) < 0.50:
+            v["upset_miss_count"] += 1
+        if actual_result == "draw" and predicted_outcome != "draw":
+            v["draw_miss_count"] += 1
 
     result = []
     for version, v in by_version.items():
@@ -811,6 +1016,22 @@ def snapshot_prediction(session: Session, match_id: str) -> PredictionSnapshot |
     if not latest_pre_match.is_pre_match_locked and not latest_pre_match.is_fallback_locked:
         latest_pre_match.is_fallback_locked = True
         session.add(latest_pre_match)
+        session.flush()
+
+    # Also mark the latest pre-match ensemble as fallback if not already locked
+    latest_pre_match_ens = session.scalar(
+        select(EnsemblePrediction)
+        .where(
+            EnsemblePrediction.match_id == match_id,
+            EnsemblePrediction.created_at < kickoff,
+            EnsemblePrediction.real_time_only.is_(False),
+        )
+        .order_by(EnsemblePrediction.created_at.desc())
+        .limit(1)
+    )
+    if latest_pre_match_ens and not latest_pre_match_ens.is_pre_match_locked and not latest_pre_match_ens.is_fallback_locked:
+        latest_pre_match_ens.is_fallback_locked = True
+        session.add(latest_pre_match_ens)
         session.flush()
 
     return latest_pre_match

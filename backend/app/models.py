@@ -77,18 +77,62 @@ class TeamRating(Base):
     source: Mapped[str] = mapped_column(String(80))
 
 
+class HistoricalTeam(Base):
+    """Non-World-Cup national teams that appear in historical match data."""
+    __tablename__ = "historical_teams"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_team_id", name="uq_historical_team_provider_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # e.g., "ht_ARG"
+    name: Mapped[str] = mapped_column(String(120), index=True)
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    provider_team_id: Mapped[str] = mapped_column(String(120), index=True)
+    team_category: Mapped[str] = mapped_column(String(40), index=True)  # fifa_member, non_fifa_representative, historical_renamed, regional, unknown
+    current_team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id"), index=True)  # link to WC team if applicable
+    former_name_of: Mapped[str | None] = mapped_column(String(32), index=True)  # if this is a former name of another team
+    aliases: Mapped[list[str]] = mapped_column(JSON, default=list)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class HistoricalMatch(Base):
     __tablename__ = "historical_matches"
+    __table_args__ = (
+        UniqueConstraint("provider", "source_match_id", name="uq_historical_match_provider_source"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    played_on: Mapped[date] = mapped_column(Date, index=True)
-    home_team: Mapped[str] = mapped_column(String(120), index=True)
-    away_team: Mapped[str] = mapped_column(String(120), index=True)
+    source_match_id: Mapped[str] = mapped_column(String(120), index=True)
+    provider: Mapped[str] = mapped_column(String(40), index=True)
+    kickoff: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    home_team_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    away_team_id: Mapped[str | None] = mapped_column(String(32), index=True)
+    home_team_source: Mapped[str] = mapped_column(String(20), default="world_cup")  # world_cup or historical
+    away_team_source: Mapped[str] = mapped_column(String(20), default="world_cup")  # world_cup or historical
+    home_team_raw: Mapped[str] = mapped_column(String(120), index=True)
+    away_team_raw: Mapped[str] = mapped_column(String(120), index=True)
     home_score: Mapped[int] = mapped_column(Integer)
     away_score: Mapped[int] = mapped_column(Integer)
-    tournament: Mapped[str] = mapped_column(String(160))
-    neutral: Mapped[bool] = mapped_column(Boolean, default=True)
-    source: Mapped[str] = mapped_column(String(80))
+    home_score_90min: Mapped[int | None] = mapped_column(Integer)
+    away_score_90min: Mapped[int | None] = mapped_column(Integer)
+    neutral_venue: Mapped[bool] = mapped_column(Boolean, default=True)
+    competition: Mapped[str] = mapped_column(String(160), index=True)
+    competition_type: Mapped[str] = mapped_column(String(40), index=True)
+    match_importance: Mapped[float] = mapped_column(Float, default=1.0)
+    went_to_extra_time: Mapped[bool] = mapped_column(Boolean, default=False)
+    went_to_penalties: Mapped[bool] = mapped_column(Boolean, default=False)
+    penalty_winner: Mapped[str | None] = mapped_column(String(120))
+    city: Mapped[str | None] = mapped_column(String(120))
+    country: Mapped[str | None] = mapped_column(String(120))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    data_version: Mapped[int] = mapped_column(Integer, default=1)
+    is_unmapped: Mapped[bool] = mapped_column(Boolean, default=False)
+    time_precision: Mapped[str] = mapped_column(String(20), default="exact")  # "exact" or "date_only"
+    available_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)  # when this record becomes visible for as_of queries
+    score_scope: Mapped[str] = mapped_column(String(40), default="full_90min")  # "full_90min", "after_extra_time_or_unknown", or "unknown_score_scope"
 
 
 class TeamProfileMatchHistory(Base):
@@ -469,6 +513,7 @@ class EnsemblePrediction(Base):
     market_weight: Mapped[float] = mapped_column(Float)
     ai_weights_json: Mapped[dict[str, float] | None] = mapped_column(JSON)
     source_probabilities_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    source_ids_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     ensemble_home_win: Mapped[float] = mapped_column(Float)
     ensemble_draw: Mapped[float] = mapped_column(Float)
     ensemble_away_win: Mapped[float] = mapped_column(Float)
@@ -477,6 +522,8 @@ class EnsemblePrediction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_pre_match_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_fallback_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    real_time_only: Mapped[bool] = mapped_column(Boolean, default=False)
     source_status_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
@@ -507,3 +554,34 @@ class WorkflowStep(Base):
     duration_seconds: Mapped[float | None] = mapped_column(Float)
     summary_json: Mapped[dict | None] = mapped_column(JSON)
     error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class EnsembleLockTracker(Base):
+    """Tracks locked ensemble predictions to prevent duplicate locks."""
+    __tablename__ = "ensemble_lock_tracker"
+
+    match_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    model_version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    lock_type: Mapped[str] = mapped_column(String(20), primary_key=True)  # "official" or "fallback"
+    ensemble_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BacktestResultRecord(Base):
+    """Persisted backtest result."""
+    __tablename__ = "backtest_results"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data_version: Mapped[str] = mapped_column(String(40), index=True)
+    model_name: Mapped[str] = mapped_column(String(80), index=True)
+    split_name: Mapped[str] = mapped_column(String(20), index=True)
+    brier_score: Mapped[float] = mapped_column(Float)
+    brier_score_avg: Mapped[float] = mapped_column(Float)
+    log_loss: Mapped[float] = mapped_column(Float)
+    ece: Mapped[float] = mapped_column(Float)
+    top1_hit_rate: Mapped[float] = mapped_column(Float)
+    draw_recall: Mapped[float] = mapped_column(Float)
+    match_count: Mapped[int] = mapped_column(Integer)
+    parameters_json: Mapped[dict | None] = mapped_column(JSON)
+    stratified_json: Mapped[dict | None] = mapped_column(JSON)
+    admission_status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

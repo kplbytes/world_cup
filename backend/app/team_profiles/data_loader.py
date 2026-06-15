@@ -1,17 +1,39 @@
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from hashlib import sha256
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import Team, TeamProfileMatchHistory, TeamRating
 from app.team_profiles.feature_engineering import classify_opponent_tier
 
+logger = logging.getLogger(__name__)
 
-def seed_mock_history(session: Session) -> int:
-    """Create deterministic, clearly-labelled profile history for local development."""
+
+def seed_mock_history(session: Session, use_seed: bool = False) -> int:
+    """Create deterministic, clearly-labelled profile history for local development.
+
+    This function is guarded: it only runs when settings.environment == "development"
+    or use_seed=True is explicitly passed. This prevents mock data from leaking
+    into production or official predictions.
+    """
+    if not use_seed and getattr(settings, "environment", "production") != "development":
+        logger.warning(
+            "seed_mock_history() called outside development mode without use_seed=True. "
+            "Skipping mock data generation to prevent contamination of real data."
+        )
+        return 0
+
+    if use_seed:
+        logger.warning(
+            "⚠️  Generating MOCK historical data (source='seed_mock_v1'). "
+            "This data should NOT be used for official predictions."
+        )
+
     teams = list(session.scalars(select(Team).order_by(Team.id)))
     ratings = {}
     for team in teams:

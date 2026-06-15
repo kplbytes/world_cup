@@ -64,23 +64,39 @@ def _select_ai_prediction(
     )
 
 
-def _select_ensemble_prediction(session: Session, match: Match) -> EnsemblePrediction | None:
+def _select_ensemble_prediction(session: Session, match: Match) -> tuple[EnsemblePrediction | None, str]:
+    """Select ensemble prediction and return (prediction, selection_type).
+
+    selection_type values:
+    - "official_locked": is_pre_match_locked=True
+    - "fallback_pre_match": is_fallback_locked=True
+    - "unlocked_pre_match": created_at < kickoff, not locked
+    - "unscorable": no valid pre-match prediction
+    """
     predictions = list(session.scalars(
         select(EnsemblePrediction)
         .where(EnsemblePrediction.match_id == match.id)
         .order_by(EnsemblePrediction.created_at.desc())
     ))
-    locked = [prediction for prediction in predictions if prediction.is_pre_match_locked]
+    # Priority: is_pre_match_locked > is_fallback_locked > latest pre-kickoff
+    locked = [p for p in predictions if p.is_pre_match_locked]
     if locked:
-        return locked[0]
-    return next(
+        return locked[0], "official_locked"
+    fallback = [p for p in predictions if p.is_fallback_locked]
+    if fallback:
+        return fallback[0], "fallback_pre_match"
+    pre_match = next(
         (
-            prediction
-            for prediction in predictions
-            if _ensure_utc(prediction.created_at) < _ensure_utc(match.kickoff)
+            p
+            for p in predictions
+            if _ensure_utc(p.created_at) < _ensure_utc(match.kickoff)
+            and not p.real_time_only
         ),
         None,
     )
+    if pre_match:
+        return pre_match, "unlocked_pre_match"
+    return None, "unscorable"
 
 
 def evaluate_ai_predictions(session: Session) -> dict[str, Any]:
@@ -228,7 +244,7 @@ def _evaluate_ensemble(
     for match in matches:
         actual_result = _get_actual_result(match)
 
-        ens_pred = _select_ensemble_prediction(session, match)
+        ens_pred, selection_type = _select_ensemble_prediction(session, match)
         if not ens_pred:
             continue
 

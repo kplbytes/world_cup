@@ -8,6 +8,8 @@ import type {
   Match, ProfileEvaluation, TeamProfileEnvelope,
   MatchCountBreakdown, ErrorAttributionSummary,
   DecisionSnapshotStatus, ModelComparisonItem,
+  DataHealthReport,
+  BacktestResultsResponse, DatasetInfo,
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -253,5 +255,24 @@ export async function getDecisionSnapshotStatus(): Promise<DecisionSnapshotStatu
 export async function getModelComparison(): Promise<{ comparison: ModelComparisonItem[]; sample_sufficient: boolean; sample_count: number }> {
   const res = await fetchWithTimeout("/api/model-comparison");
   if (!res.ok) throw new Error("Failed to fetch model comparison");
+  return res.json();
+}
+
+export async function getDataHealth(): Promise<DataHealthReport> {
+  const res = await fetchWithTimeout("/api/historical/health");
+  if (!res.ok) throw new Error("Failed to fetch data health");
+  return res.json();
+}
+
+// Backtest APIs
+export async function getBacktestResults(): Promise<BacktestResultsResponse> {
+  const res = await fetchWithTimeout("/api/backtest/results");
+  if (!res.ok) throw new Error("Failed to fetch backtest results");
+  return res.json();
+}
+
+export async function getBacktestDataset(): Promise<DatasetInfo> {
+  const res = await fetchWithTimeout("/api/backtest/dataset");
+  if (!res.ok) throw new Error("Failed to fetch dataset info");
   return res.json();
 }

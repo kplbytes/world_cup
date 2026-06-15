@@ -13,9 +13,92 @@ from sqlalchemy.orm import Session
 
 from app.ai.lock_status import compute_match_lock_status
 from app.ai.model_registry import get_ensemble_defaults, list_enabled_models
-from app.models import AIPrediction, EnsemblePrediction, MarketSnapshot, Match, PredictionSnapshot
+from app.models import AIPrediction, EnsembleLockTracker, EnsemblePrediction, MarketSnapshot, Match, PredictionSnapshot
 
 logger = logging.getLogger(__name__)
+
+
+def _sync_tracker(session: Session, match_id: str, model_version: str, lock_type: str, ensemble_id: int) -> None:
+    """Insert into ensemble_lock_tracker, handling IntegrityError.
+
+    Uses a check-then-insert pattern instead of try-insert-catch-rollback
+    to avoid rolling back ALL pending changes in the session (which would
+    cause data loss for other flushed objects).
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    # Check if tracker already exists
+    existing = session.scalar(
+        select(EnsembleLockTracker).where(
+            EnsembleLockTracker.match_id == match_id,
+            EnsembleLockTracker.model_version == model_version,
+            EnsembleLockTracker.lock_type == lock_type,
+        )
+    )
+    if existing:
+        if existing.ensemble_id != ensemble_id:
+            logger.warning(
+                "Tracker inconsistency: match=%s ver=%s type=%s tracker_ens=%d actual_ens=%d",
+                match_id, model_version, lock_type, existing.ensemble_id, ensemble_id,
+            )
+        return
+
+    try:
+        tracker = EnsembleLockTracker(
+            match_id=match_id,
+            model_version=model_version,
+            lock_type=lock_type,
+            ensemble_id=ensemble_id,
+        )
+        session.add(tracker)
+        session.flush()
+    except IntegrityError:
+        # Another session inserted first - just log and continue
+        logger.info("Tracker row already exists for %s/%s/%s", match_id, model_version, lock_type)
+
+
+def _verify_tracker(session: Session, match_id: str, model_version: str) -> None:
+    """Verify tracker rows match actual locked ensembles. Rebuild if missing."""
+    locked = list(session.scalars(
+        select(EnsemblePrediction).where(
+            EnsemblePrediction.match_id == match_id,
+            EnsemblePrediction.model_version == model_version,
+        )
+    ))
+
+    official = [e for e in locked if e.is_pre_match_locked]
+    fallback = [e for e in locked if e.is_fallback_locked]
+
+    # Check/rebuild official tracker
+    if official:
+        ens = official[0]
+        tracker = session.scalar(
+            select(EnsembleLockTracker).where(
+                EnsembleLockTracker.match_id == match_id,
+                EnsembleLockTracker.model_version == model_version,
+                EnsembleLockTracker.lock_type == "official",
+            )
+        )
+        if not tracker:
+            _sync_tracker(session, match_id, model_version, "official", ens.id)
+        elif tracker.ensemble_id != ens.id:
+            logger.warning(
+                "Tracker points to non-existent ensemble %d for %s/%s/official",
+                tracker.ensemble_id, match_id, model_version,
+            )
+
+    # Check/rebuild fallback tracker
+    if fallback:
+        ens = fallback[0]
+        tracker = session.scalar(
+            select(EnsembleLockTracker).where(
+                EnsembleLockTracker.match_id == match_id,
+                EnsembleLockTracker.model_version == model_version,
+                EnsembleLockTracker.lock_type == "fallback",
+            )
+        )
+        if not tracker:
+            _sync_tracker(session, match_id, model_version, "fallback", ens.id)
 
 
 def compute_ensemble(
@@ -163,18 +246,138 @@ def compute_ensemble(
 
     # 9. Check if match is within 24h lock window
     match = session.get(Match, match_id)
+    if not match:
+        return {
+            "status": "error",
+            "error": f"Match {match_id} not found",
+            "match_id": match_id,
+        }
+
+    # Check if a locked ensemble already exists for this match + model_version
+    existing_locked = session.scalar(
+        select(EnsemblePrediction)
+        .where(
+            EnsemblePrediction.match_id == match_id,
+            EnsemblePrediction.model_version == "ensemble-v1",
+            (EnsemblePrediction.is_pre_match_locked.is_(True))
+            | (EnsemblePrediction.is_fallback_locked.is_(True)),
+        )
+        .limit(1)
+    )
+    if existing_locked:
+        # Locked ensemble is immutable - return existing
+        # Verify tracker consistency before returning
+        _verify_tracker(session, match_id, "ensemble-v1")
+        selection_type = "official_locked" if existing_locked.is_pre_match_locked else "fallback_pre_match"
+        return {
+            "status": "skipped_locked",
+            "ensemble_id": existing_locked.id,
+            "match_id": match_id,
+            "home_win": existing_locked.ensemble_home_win,
+            "draw": existing_locked.ensemble_draw,
+            "away_win": existing_locked.ensemble_away_win,
+            "confidence": existing_locked.confidence,
+            "reason": existing_locked.reason,
+            "is_locked": True,
+            "real_time_only": False,
+            "selection_type": selection_type,
+        }
+
     is_locked = False
     locked_at = None
     real_time_only = False
     now = datetime.now(timezone.utc)
 
-    if match:
-        lock = compute_match_lock_status(match, now)
-        is_locked = lock.is_pre_match_locked
-        locked_at = lock.locked_at
-        real_time_only = lock.real_time_only
+    lock = compute_match_lock_status(match, now)
+    is_locked = lock.is_pre_match_locked
+    locked_at = lock.locked_at
+    real_time_only = lock.real_time_only
 
-    # 10. Save ensemble prediction
+    # After kickoff, do NOT save as a pre-match locked record
+    if real_time_only:
+        is_locked = False
+        locked_at = None
+
+        # Fallback: mark the latest pre-match ensemble as is_fallback_locked=True
+        # This ensures the pre-match ensemble is properly tagged for scoring
+        kickoff = match.kickoff
+        if kickoff.tzinfo is None:
+            kickoff = kickoff.replace(tzinfo=timezone.utc)
+        latest_pre_match = session.scalar(
+            select(EnsemblePrediction)
+            .where(
+                EnsemblePrediction.match_id == match_id,
+                EnsemblePrediction.created_at < kickoff,
+                EnsemblePrediction.is_pre_match_locked.is_(False),
+                EnsemblePrediction.is_fallback_locked.is_(False),
+                EnsemblePrediction.real_time_only.is_(False),
+            )
+            .order_by(EnsemblePrediction.created_at.desc())
+            .limit(1)
+        )
+        if latest_pre_match:
+            # Guard: official-to-fallback transition must be atomic
+            # An officially locked ensemble should never be demoted to fallback
+            if latest_pre_match.is_pre_match_locked:
+                logger.warning(
+                    "Attempted official-to-fallback transition for match=%s ens=%d - skipped",
+                    match_id, latest_pre_match.id,
+                )
+            else:
+                latest_pre_match.is_fallback_locked = True
+                session.add(latest_pre_match)
+                session.flush()
+                _sync_tracker(session, match_id, "ensemble-v1", "fallback", latest_pre_match.id)
+
+    # Idempotency: for non-locked, non-realtime predictions,
+    # check if the latest unlocked ensemble has identical probabilities
+    # If inputs haven't changed, skip creating a duplicate
+    if not is_locked and not real_time_only:
+        latest_ens = session.scalar(
+            select(EnsemblePrediction)
+            .where(
+                EnsemblePrediction.match_id == match_id,
+                EnsemblePrediction.model_version == "ensemble-v1",
+                EnsemblePrediction.is_pre_match_locked.is_(False),
+                EnsemblePrediction.is_fallback_locked.is_(False),
+                EnsemblePrediction.real_time_only.is_(False),
+            )
+            .order_by(EnsemblePrediction.created_at.desc())
+            .limit(1)
+        )
+        if latest_ens:
+            hw_diff = abs(latest_ens.ensemble_home_win - ensemble_probs["home_win"])
+            d_diff = abs(latest_ens.ensemble_draw - ensemble_probs["draw"])
+            aw_diff = abs(latest_ens.ensemble_away_win - ensemble_probs["away_win"])
+            if hw_diff < 0.001 and d_diff < 0.001 and aw_diff < 0.001:
+                selection_type = "unlocked_pre_match"
+                return {
+                    "status": "skipped_unchanged",
+                    "ensemble_id": latest_ens.id,
+                    "match_id": match_id,
+                    "home_win": latest_ens.ensemble_home_win,
+                    "draw": latest_ens.ensemble_draw,
+                    "away_win": latest_ens.ensemble_away_win,
+                    "confidence": latest_ens.confidence,
+                    "reason": latest_ens.reason,
+                    "is_locked": False,
+                    "real_time_only": False,
+                    "selection_type": selection_type,
+                }
+
+    # 10. Build source IDs for traceability
+    source_ids = {}
+    if sys_snap:
+        source_ids["baseline_snapshot_id"] = sys_snap.id
+        source_ids["baseline_model_version"] = sys_version
+    if market_snap:
+        source_ids["market_snapshot_id"] = market_snap.id
+        source_ids["market_provider"] = market_snap.provider
+    ai_ids = {version: pred.id for version, pred in ai_by_version.items()}
+    if ai_ids:
+        source_ids["ai_prediction_ids"] = ai_ids
+
+    # 11. Save ensemble prediction
     ensemble = EnsemblePrediction(
         match_id=match_id,
         model_version="ensemble-v1",
@@ -183,6 +386,7 @@ def compute_ensemble(
         market_weight=weights.get("market", 0),
         ai_weights_json={k: v for k, v in weights.items() if k.startswith("ai_")},
         source_probabilities_json=source_probs,
+        source_ids_json=source_ids,
         ensemble_home_win=ensemble_probs["home_win"],
         ensemble_draw=ensemble_probs["draw"],
         ensemble_away_win=ensemble_probs["away_win"],
@@ -191,6 +395,8 @@ def compute_ensemble(
         created_at=now,
         locked_at=locked_at,
         is_pre_match_locked=is_locked,
+        is_fallback_locked=False,
+        real_time_only=real_time_only,
         source_status_json={
             "system": has_system,
             "market": has_market,
@@ -202,6 +408,12 @@ def compute_ensemble(
 
     session.add(ensemble)
     session.flush()
+
+    # Sync tracker for locked ensembles
+    if is_locked:
+        _sync_tracker(session, match_id, "ensemble-v1", "official", ensemble.id)
+
+    selection_type = "official_locked" if is_locked else ("real_time_only" if real_time_only else "unlocked_pre_match")
 
     return {
         "status": "success",
@@ -216,8 +428,10 @@ def compute_ensemble(
         "reason": reason,
         "weights": weights,
         "source_probabilities": source_probs,
+        "source_ids": source_ids,
         "is_locked": is_locked,
         "real_time_only": real_time_only,
+        "selection_type": selection_type,
     }
 
 
@@ -378,6 +592,22 @@ def _get_ai_weight(version: str, overrides: dict[str, float] | None) -> float:
 def _serialize_ensemble(row: EnsemblePrediction) -> dict[str, Any]:
     """Serialize an EnsemblePrediction row for API output."""
     source_status = row.source_status_json or {}
+
+    # Determine selection_type from lock status
+    if row.is_pre_match_locked:
+        selection_type = "official_locked"
+    elif row.is_fallback_locked:
+        selection_type = "fallback_pre_match"
+    elif row.real_time_only:
+        selection_type = "real_time_only"
+    else:
+        selection_type = "unlocked_pre_match"
+
+    # Determine traceability status
+    source_ids = row.source_ids_json or {}
+    has_source_ids = bool(source_ids.get("baseline_snapshot_id") or source_ids.get("ai_prediction_ids"))
+    traceability_status = "complete" if has_source_ids else "legacy_unavailable"
+
     return {
         "id": row.id,
         "match_id": row.match_id,
@@ -387,6 +617,7 @@ def _serialize_ensemble(row: EnsemblePrediction) -> dict[str, Any]:
         "market_weight": row.market_weight,
         "ai_weights": row.ai_weights_json or {},
         "source_probabilities": row.source_probabilities_json or {},
+        "source_ids": source_ids,
         "home_win": row.ensemble_home_win,
         "draw": row.ensemble_draw,
         "away_win": row.ensemble_away_win,
@@ -397,5 +628,9 @@ def _serialize_ensemble(row: EnsemblePrediction) -> dict[str, Any]:
         "created_at": row.created_at.isoformat() if row.created_at else "",
         "locked_at": row.locked_at.isoformat() if row.locked_at else None,
         "is_pre_match_locked": row.is_pre_match_locked,
+        "is_fallback_locked": row.is_fallback_locked,
+        "real_time_only": row.real_time_only,
+        "selection_type": selection_type,
+        "traceability_status": traceability_status,
         "source_status": source_status,
     }

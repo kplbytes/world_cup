@@ -20,3 +20,21 @@ frontend/vite.config.d.ts
 data/logs/
 *.log
 *.jsonl
+
+# Workbuddy memory
+.workbuddy/
+
+# Artifacts (reports, screenshots)
+artifacts/
+frontend/screenshots/
+
+# Backend runtime data
+backend/sqlite
+backend/dashboard.json
+backend/decision.json
+backend/model-score.json
+
+# Factor research demo outputs
+research/factor_demo/outputs/
+research/factor_demo/.pytest_cache/
+research/factor_demo/__pycache__/

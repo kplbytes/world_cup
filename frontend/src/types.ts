@@ -479,6 +479,30 @@ export interface ButtonState {
   needs_ai?: number;
 }
 
+// Data health report from /api/historical/health
+export interface DataHealthReport {
+  total_historical_matches: number;
+  time_coverage: {
+    earliest: string | null;
+    latest: string | null;
+  };
+  national_team_coverage: {
+    total_teams: number;
+    teams_with_data: number;
+    coverage_rate: number;
+  };
+  last_update: string | null;
+  unmapped_team_count: number;
+  mock_record_count: number;
+  real_profile_count: number;
+  mock_profile_count: number;
+  uses_real_data: boolean;
+  date_only_count: number;
+  exact_count: number;
+  excluded_extra_time_count: number;
+  checked_at: string;
+}
+
 export interface WorkflowStatus {
   today_status: string;
   last_run_at: string | null;
@@ -539,5 +563,46 @@ export interface WorkflowStatus {
     post_match: ButtonState;
     lock: ButtonState;
     full: ButtonState;
+  };
+}
+
+// Backtest model research types
+export interface BacktestModelResult {
+  model_name: string;
+  split_name: string;
+  brier_score: number;
+  brier_score_avg: number;
+  log_loss: number;
+  ece: number;
+  top1_hit_rate: number;
+  draw_recall: number;
+  match_count: number;
+  admission_status: string;
+  parameters?: Record<string, unknown>;
+}
+
+export interface BacktestResultsResponse {
+  data_version: string;
+  models: BacktestModelResult[];
+  created_at: string;
+}
+
+export interface DatasetSplitInfo {
+  match_count: number;
+  team_count: number;
+  competition_types: Record<string, number>;
+  start: string;
+  end: string;
+}
+
+export interface DatasetInfo {
+  version: string;
+  created_at: string;
+  total_matches: number;
+  excluded_wc_2026: number;
+  splits: {
+    train: DatasetSplitInfo;
+    validation: DatasetSplitInfo;
+    test: DatasetSplitInfo;
   };
 }
