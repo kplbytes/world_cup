@@ -224,7 +224,7 @@ def _allocate_third_placed_teams(
         # Fallback: pick the highest-ranked remaining team
         if chosen_idx is None and available:
             chosen_idx = 0
-            _logger.warning(
+            _logger.debug(
                 "No candidate-group match for slot 3%s; assigning highest-ranked remaining 3rd-placed team %s",
                 "/".join(sorted(candidate_groups)),
                 available[0][1].get("team_id", "?"),

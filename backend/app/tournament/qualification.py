@@ -139,14 +139,14 @@ def _allocate_third_placed_teams(
 
         if not matched:
             if remaining:
-                logger.warning(
+                logger.debug(
                     "No candidate-group match for slot %s; "
                     "assigning highest-ranked remaining 3rd-placed team %s",
                     slot, remaining[0],
                 )
                 allocation[slot] = remaining.pop(0)
             else:
-                logger.warning(
+                logger.debug(
                     "No third-placed team available for slot %s", slot,
                 )
 

@@ -2,7 +2,7 @@
 
 import logging
 import httpx
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -61,6 +61,22 @@ class ApiFootballIntelligenceProvider(IntelligenceProvider):
             logger.error(f"Unexpected error fetching {url}: {e}")
             return None
 
+    @staticmethod
+    def _is_date_accessible(target_date: str) -> bool:
+        """Check if target_date is within the API-Football free plan accessible range.
+
+        Free plans only allow access to dates from (today - 2 days) to (today + 2 days).
+        """
+        try:
+            target = datetime.strptime(target_date, "%Y-%m-%d").replace(tzinfo=timezone.utc).date()
+        except ValueError:
+            return False
+        today = datetime.now(timezone.utc).date()
+        # Free plan allows today ± 2 days (conservative estimate)
+        min_date = today - timedelta(days=2)
+        max_date = today + timedelta(days=2)
+        return min_date <= target <= max_date
+
     def fetch_intelligence(
         self, session: Session, match_id: str, kickoff: Any, home_team_id: str, away_team_id: str
     ) -> list[int]:
@@ -75,6 +91,11 @@ class ApiFootballIntelligenceProvider(IntelligenceProvider):
         # Let's search by date if we don't have it cached.
 
         target_date = kickoff.strftime("%Y-%m-%d") if kickoff else datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+        # Skip if date is outside free plan accessible range
+        if not self._is_date_accessible(target_date):
+            logger.debug(f"Skipping {self.name} fetch for {match_id}: date {target_date} outside free plan range")
+            return []
 
         # Check cache for fixtures first to get the fixture ID
         cached_fixture = get_cached_intelligence(session, match_id, self.name, "fixtures", max_age_minutes=self._cache_ttl)
