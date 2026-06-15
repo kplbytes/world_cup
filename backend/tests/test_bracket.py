@@ -82,7 +82,7 @@ class TestAllocateThirdPlacedTeams:
             _make_third_team("N3rd", "N"),  # fictional group, no candidate
         ]
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.DEBUG, logger="app.tournament.bracket"):
             allocation = _allocate_third_placed_teams(qualified)
 
         # M74 should still get a team (fallback)
@@ -90,7 +90,7 @@ class TestAllocateThirdPlacedTeams:
         # It should be the highest-ranked remaining team (G3rd)
         assert allocation[74]["team_id"] == "G3rd"
 
-        # A warning should have been logged about no candidate-group match
+        # A debug message should have been logged about no candidate-group match
         assert any("No candidate-group match" in record.message for record in caplog.records)
 
     def test_same_team_not_in_two_matches(self):

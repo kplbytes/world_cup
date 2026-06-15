@@ -12,6 +12,7 @@ from sqlalchemy import select, func
 
 from app.config import settings, PROJECT_ROOT
 from app.db import session_scope
+from app.logging_config import set_workflow_context, clear_workflow_context
 from app.models import Match, PredictionSnapshot, AIPrediction, EnsemblePrediction, WorkflowRun, WorkflowStep
 from app.ai.lock_status import compute_match_lock_status
 from app.workflows.state import set_current_run, is_workflow_running, try_start_workflow
@@ -57,6 +58,7 @@ def _create_run(workflow_type: str, trigger_source: str, options: dict | None = 
             step = WorkflowStep(workflow_run_id=run_id, step_name=step_name, status="pending")
             session.add(step)
         session.commit()
+    set_workflow_context(run_id)
     return run_id
 
 
@@ -87,6 +89,7 @@ def _update_step(run_id: int, step_name: str, status: str, summary: dict | None 
 def _finish_run(run_id: int, status: str, summary: dict | None = None, error: str | None = None):
     """Finish a workflow run."""
     set_current_run(None)
+    clear_workflow_context()
     with session_scope() as session:
         run = session.get(WorkflowRun, run_id)
         if run:

@@ -15,3 +15,8 @@ frontend/dist/
 frontend/*.tsbuildinfo
 frontend/vite.config.js
 frontend/vite.config.d.ts
+
+# Logs
+data/logs/
+*.log
+*.jsonl
