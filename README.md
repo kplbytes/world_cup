@@ -1,492 +1,276 @@
-# 2026 世界杯预测系统
+# 2026 FIFA World Cup Prediction Workbench
 
-本项目是一个纯本地运行的 2026 世界杯预测工作台。当前覆盖 48 支球队、12 个小组、72 场小组赛，并在现有实现上继续向淘汰赛路径、赛前锁定、赛后复盘、AI 融合和球队画像方向扩展。
+A local-first, multi-layer prediction system for the 2026 FIFA World Cup. Covers 48 teams, 12 groups, 72 group-stage matches, with expanding knockout-stage paths, pre-match locking, post-match review, AI fusion, and team profiling.
 
-它的核心不是“做一个漂亮的数据页”，而是围绕这条业务链路工作：
+## Architecture
 
-1. 白天打开系统，看昨晚哪些比赛已经结束；
-2. 用赛前有效快照做赛后复盘；
-3. 看今天和接下来 48 小时比赛的预测与风险；
-4. 在需要时手动补跑 AI、生成 ensemble、检查 24h 锁定；
-5. 让复盘继续服务赛前预测，而不是污染赛前口径。
-6. 通过结构化日志快速定位问题、还原操作场景。
-
-## AI 协作入口
-
-任何 AI 代理在开始修改本项目之前，都应先阅读项目根目录的 [AI_PROJECT_CONSTRAINTS.md](/Users/liudapeng/Documents/code/others/world_cup/AI_PROJECT_CONSTRAINTS.md)。
-
-涉及前端页面、布局、组件或交互时，还应同时阅读 [FRONTEND_UI_RULES.md](/Users/liudapeng/Documents/code/others/world_cup/FRONTEND_UI_RULES.md)。
-
-如果本次工作新增了长期有效的业务约束，也必须同步更新对应文件。
-
-## 当前系统定位
-
-当前代码已经不是最初的单一 Elo + Poisson 看板，而是一个本地化、可审计的多层预测系统。当前真实业务链路是：
-
-1. baseline `elo-poisson-v1`
-2. shadow / calibrated / numerical experiment versions
-3. AI prediction
-4. ensemble
-5. 24h 赛前锁定
-6. 赛后评分与复盘
-7. Team Profile 独立候选模型
-8. 前端四个主入口：今日工作台、比赛中心、模型复盘、冠军与赛程
-
-## 主要能力
-
-### 预测与模拟
-
-- baseline Elo + Poisson 胜平负预测、xG、最可能比分
-- 小组赛蒙特卡洛模拟与晋级概率
-- 多个实验型 `model_version` 配置，通过 `backend/app/model_configs/model_configs.yaml` 管理
-- 市场赔率对照与轻量 market blend / calibration 评估
-
-### 赛前决策闭环
-
-- 24h 赛前锁定：距开赛 ≤24h 时生成 locked snapshot，开赛前新预测到来时原地更新，开赛后冻结
-- fallback 快照逻辑
-- 决策快照状态检查
-- 今日工作台中的下一步建议、昨晚复盘、今日比赛、未来 48 小时比赛
-
-### 赛后复盘
-
-- `/api/model-score` 统一评分
-- 按版本、按阶段、按比赛明细查看评分
-- 错误归因、校准、市场对照、模型推荐
-- Accuracy Command Center 汇总当前模型表现
-- 赛后复盘展示 Brier score、实际概率、方向命中、最佳模型
-
-### AI 与 Ensemble
-
-- 多模型 AI 预测，当前配置文件中包含 DeepSeek 和 Xiaomi MiMo
-- AI 真实状态区分 `ready`、`disabled_no_key`、`provider_error` 等
-- AI 手动补跑、批量运行、only-missing、防重复调用
-- Ensemble 结合 baseline、market、AI 权重生成集成预测
-
-### Team Profile
-
-- 已接入独立的 Team Profile 模块
-- 独立模型版本：`elo-poisson-v1-team-profile`
-- 支持 profile as-of 时间切片、独立评分和前端展示
-- 当前历史画像数据模式是 `seed_mock_v1`
-
-说明：`seed_mock_v1` 仅用于功能验证，不代表真实历史表现。
-
-## 当前前端结构
-
-前端顶层只保留四个固定入口：
-
-1. 今日工作台
-2. 比赛中心
-3. 模型复盘
-4. 冠军与赛程
-
-### 今日工作台
-
-当前首页是运营工作台，不是开发调试面板。主要承载：
-
-- workflow 今日状态
-- 自动触发结果与下一步建议
-- 昨晚比赛复盘
-- 今日比赛（按北京时间自然日）
-- 未来 48 小时比赛
-- 模型性能概览
-- 最近运行记录
-
-### 比赛中心
-
-当前比赛中心包含：
-
-- 今日比赛
-- 全部比赛
-- 分组视图
-- 淘汰赛路径
-
-比赛详情通过共享抽屉 `MatchDetailDrawer` 展示，不再在卡片内部纵向展开长详情。
-
-### 模型复盘
-
-模型复盘页当前聚合：
-
-- 当前结论
-- 模型版本对比
-- AI 对比
-- 错误归因
-- 历史比赛复盘
-- 球队画像模型表现
-- 未参与评分比赛的排除原因
-
-### 冠军与赛程
-
-当前冠军与赛程页聚合：
-
-- 当前对阵路径
-- 晋级概率
-- 团队路径与阶段概率
-
-说明：当前淘汰赛路径仍带有“简化模拟”提示，不能当作最终正式赛制参考。
-
-## 后端模块结构
-
-当前后端主要按下面几层组织：
-
-- `backend/app/api/routes/`
-  - 看板、数据、评分、AI、workflow、tournament、team profile 路由
-- `backend/app/services/`
-  - `dashboard.py`：统一看板与详情数据组装
-  - `refresh.py`：赛果刷新与重算触发
-  - `recompute.py`：全量重算、revision 发布、profile candidate 生成
-  - `scoring.py`：赛后评分、排除原因、评分明细
-  - `snapshots.py`：24h 锁定与 fallback 相关逻辑
-  - `accuracy_command.py`：准确率指挥中心
-- `backend/app/logging_config.py`：集中式日志配置（JSON 结构化、轮转、分级）
-- `backend/app/middleware.py`：Request ID 追踪与 Access Log 中间件
-- `backend/app/ai/`
-  - AI provider、prompt、parser、ensemble、evaluation
-- `backend/app/team_profiles/`
-  - 数据加载、特征工程、画像服务、画像评分
-- `backend/app/workflows/`
-  - 自动工作流状态、调度和执行
-- `backend/app/tournament/`
-  - standings、bracket、tournament simulation
-
-## 关键业务规则
-
-### 时间与展示
-
-- 存储、比较、锁定、评分以 UTC 为准
-- 用户展示以北京时间为准
-- 今日 / 昨日 / 明日等业务概念按 `Asia/Shanghai` 自然日解释
-
-### 赛前锁定优先于赛后解释
-
-系统核心是赛前预测。赛后复盘必须基于赛前有效快照，不允许把开赛后的实时预测混成赛前决策样本。
-
-24h 锁定规则：
-
-1. 距离比赛开始 ≤24h 时，开始生成 locked snapshot
-2. 比赛正式开赛前，如果预测数据更新，locked snapshot 原地更新，始终保持赛前最新版本
-3. 比赛开始或完赛后，locked snapshot 最终冻结，不允许再被赛后数据覆盖
-4. 距离开赛 >24h 的比赛，不提前生成 locked snapshot
-
-### 评分样本口径
-
-评分必须区分：
-
-- 已完赛比赛数
-- 有赛前预测比赛数
-- 有 pre-kickoff snapshot 的比赛数
-- 有 locked / fallback 快照的比赛数
-- 实际进入评分的比赛数
-
-不能把“已完赛场次”直接当成“评分样本数”。
-
-### 首页自动 workflow
-
-页面打开后，前端会先请求 `/api/workflows/status`。当后端返回 `recommended_action=run_daily_open_workflow` 时，首页会自动触发 `POST /api/workflows/daily-open`。
-
-这个自动触发受以下条件限制：
-
-- 当前是否已有 workflow 在跑
-- 当日是否已运行
-- cooldown 是否有效
-- 是否允许 auto AI
-
-因此它不是“每次打开页面都必跑”，而是“第一次有效打开时按规则自动跑”。
-
-## 数据来源
-
-当前主链路和可选来源如下：
-
-| 来源 | 当前用途 |
-|------|------|
-| OpenFootball | 主赛程、基础比分、默认公开数据源 |
-| football-data.org | 可选赛果补充 |
-| 中国体彩网 / sporttery | 市场赔率对照 |
-| API-Football / SportMonks | 情报与阵容能力入口，取决于 token 与配置 |
-| World Football Elo Ratings | 初始 Elo |
-| `data/seed/` | 本地种子与回放基础数据 |
-| `seed_mock_v1` | Team Profile 功能验证用历史画像数据 |
-
-上游不可用时，系统尽量保留最后一次成功数据，不会因为单个来源失败而直接清空看板。
-
-## 安装与启动
-
-### 环境要求
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (React + Vite)               │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
+│  │  Daily    │ │  Match   │ │  Model   │ │ Tournament│  │
+│  │ Dashboard │ │  Center  │ │  Review  │ │ & Schedule│  │
+│  └──────────┘ └──────────┘ └──────────┘ └───────────┘  │
+└────────────────────────┬────────────────────────────────┘
+                         │ REST API
+┌────────────────────────▼────────────────────────────────┐
+│                   Backend (FastAPI + SQLite)             │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
+│  │  Elo +   │ │   AI     │ │ Ensemble │ │  Team     │  │
+│  │  Poisson │ │ Models   │ │          │ │  Profile  │  │
+│  └──────────┘ └──────────┘ └──────────┘ └───────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
+│  │  Market  │ │ Scoring  │ │ Snapshot │ │ Workflow  │  │
+│  │  Odds    │ │ Engine   │ │  Locking │ │  Engine   │  │
+│  └──────────┘ └──────────┘ └──────────┘ └───────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Prediction Pipeline
+
+The system follows a strict prediction pipeline to ensure pre-match integrity:
+
+```
+Data Sync → Baseline (Elo+Poisson) → AI Predictions → Ensemble → 24h Lock → Kickoff → Scoring
+```
+
+1. **Baseline**: `elo-poisson-v1` generates win/draw/loss probabilities, xG, and scorelines
+2. **AI**: Multiple AI models (DeepSeek V4 Flash/Pro, Xiaomi MiMo) produce independent predictions
+3. **Ensemble**: Weighted fusion of baseline + market + AI predictions
+4. **24h Lock**: Pre-match snapshots locked within 24h of kickoff, frozen at kickoff
+5. **Scoring**: Post-match Brier score, log loss, hit rate evaluation against locked snapshots
+
+## Key Features
+
+### Unified Recommendation Logic
+
+Every match card and detail drawer uses the same `getMatchRecommendation()` function with consistent priority:
+
+1. **Ensemble** (if valid) → display Ensemble recommendation
+2. **AI** (if valid, no Ensemble) → display AI recommendation
+3. **Baseline** (if no AI) → display Baseline recommendation
+4. **None** → display "pending generation"
+
+This ensures card and drawer always show the same recommendation direction.
+
+### Live Match Support
+
+- Real-time match status (`live`) synced from football-data.org
+- In-progress matches displayed with current scores
+- Frontend includes recently-started matches (within 3 hours) in upcoming lists
+
+### Pre-Match Decision Loop
+
+- **24h lock window**: Snapshots generated when match is within 24h of kickoff
+- **Frozen at kickoff**: No post-match data can overwrite pre-match predictions
+- **Fallback snapshots**: Graceful degradation when locked snapshot is unavailable
+- **Decision status**: Clear visibility into lock/fallback/scoring eligibility
+
+### Post-Match Review
+
+- Brier score, log loss, hit rate per model version
+- Error attribution (direction miss, calibration drift, market divergence)
+- Model comparison and recommendation with sample-size warnings
+- Scoring exclusion reasons for matches without pre-match snapshots
+
+### AI & Ensemble
+
+- Multi-model AI: DeepSeek V4 Flash/Pro (v1 + v2 prompts), Xiaomi MiMo V2/V2.5 Pro
+- **v2 prompt**: Independent judgment without baseline probability leakage
+- Ensemble: Weighted combination of baseline + market + AI
+- Deduplication: Skips models that already have predictions (unless forced)
+- Identical-to-baseline detection: Flags AI outputs that copy system predictions
+
+### Team Profiles
+
+- Independent model version: `elo-poisson-v1-team-profile`
+- Profile-as-of time slicing for historical accuracy
+- Risk flags and triggered traits per match
+- Pre-match lock support
+
+## Frontend
+
+Four main entry points:
+
+| Page | Purpose |
+|------|---------|
+| **Daily Dashboard** | Today's status, last night's review, upcoming matches, workflow actions |
+| **Match Center** | All matches by group, today, or knockout stage |
+| **Model Review** | Model comparison, AI evaluation, error attribution, calibration |
+| **Tournament** | Bracket, projections, team paths, standings |
+
+Match details are shown in a shared `MatchDetailDrawer` with tabs for predictions, profiles, risk, and lock status.
+
+## Backend Structure
+
+```
+backend/app/
+├── api/routes/          # FastAPI endpoints
+├── services/
+│   ├── dashboard.py     # Dashboard & match detail assembly
+│   ├── refresh.py       # Match result sync & recompute trigger
+│   ├── recompute.py     # Full recompute, revision, profile candidate
+│   ├── scoring.py       # Post-match scoring, exclusions, details
+│   ├── snapshots.py     # 24h lock & fallback logic
+│   └── accuracy_command.py  # Accuracy command center
+├── ai/                  # AI providers, prompts, parsers, ensemble, evaluation
+├── team_profiles/       # Data loading, feature engineering, profile service
+├── workflows/           # Automated workflow status & execution
+├── tournament/          # Standings, bracket, simulation
+├── logging_config.py    # Structured JSON logging with rotation
+└── middleware.py         # Request ID tracing & access logs
+```
+
+## Quick Start
+
+### Prerequisites
 
 - Python 3.12+
 - Node.js 20+
-- npm
 
-### 首次安装
+### Installation
 
 ```bash
 ./scripts/setup.sh
 ```
 
-这个脚本会：
-
-- 创建 `backend/.venv`
-- 安装后端依赖
-- 安装前端依赖
-- 预构建前端产物
-
-### 推荐的日常启动方式
-
-如果你是日常本地使用，推荐使用根目录脚本：
+### Daily Usage
 
 ```bash
-./start.sh
-./stop.sh
+./start.sh    # Start backend + frontend
+./stop.sh     # Stop all services
 ```
 
-它会：
+Access:
+- Frontend: http://127.0.0.1:5173
+- Backend: http://127.0.0.1:8000
+- API Docs: http://127.0.0.1:8000/docs
 
-- 自动清理已有 8000 / 5173 端口进程
-- 启动后端 `uvicorn`
-- 启动前端 Vite
-- 在终端中持续显示日志
-
-启动后访问：
-
-- 前端：<http://127.0.0.1:5173>
-- 后端：<http://127.0.0.1:8000>
-- API 文档：<http://127.0.0.1:8000/docs>
-
-### 开发模式
-
-如果你希望只用仓库内标准脚本：
+### Development Mode
 
 ```bash
-./scripts/dev.sh
+./scripts/dev.sh   # Hot-reload backend + frontend
 ```
 
-它会同时启动：
+## Configuration
 
-- 热重载后端 `uvicorn --reload`
-- 前端 Vite dev server
-
-### 仅后端服务已构建前端
-
-```bash
-./scripts/start.sh
-```
-
-这个脚本会在缺少 `frontend/dist` 时先构建前端，然后只启动后端，由后端直接托管前端静态文件。
-
-## 配置
-
-复制 `.env.example` 为 `.env` 后，常用配置如下：
+Copy `.env.example` to `.env` and configure:
 
 ```env
-# 数据库
+# Database
 DATABASE_PATH=backend/data/world-cup.sqlite3
 
-# 刷新与模拟
-REFRESH_INTERVAL_MINUTES=15
-LIVE_REFRESH_INTERVAL_MINUTES=2
-SNAPSHOT_LOCK_INTERVAL_MINUTES=1
+# Simulation
 SIMULATION_ITERATIONS=50000
 SIMULATION_SEED=20260613
 
-# AI
-ENABLE_AI_PREDICTION=true
-AI_RUN_MODE=manual
-AI_MAX_CONCURRENT_REQUESTS=2
-AI_RUN_ALL_MAX_LIMIT=20
+# AI (leave empty to disable)
 DEEPSEEK_API_KEY=
 XIAOMI_API_KEY=
+ENABLE_AI_PREDICTION=true
+AI_RUN_MODE=manual
 
-# 自动 workflow
+# Workflow
 AUTO_RUN_DAILY_WORKFLOW_ON_OPEN=true
-AUTO_RUN_AI_ON_OPEN=true
 WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES=60
-WORKFLOW_DEFAULT_HOURS=48
-WORKFLOW_DEFAULT_SINCE_HOURS=24
-WORKFLOW_DEFAULT_LIMIT=10
-WORKFLOW_DEFAULT_LOCK_WINDOW_HOURS=24
 ```
 
-说明：
+## Data Sources
 
-- `DATABASE_PATH` 在当前示例配置中指向 `backend/data/world-cup.sqlite3`
-- 如果未配置 AI key，前端必须显示真实不可用状态，而不是假装 ready
+| Source | Purpose |
+|--------|---------|
+| OpenFootball | Primary schedule & results |
+| football-data.org | Supplementary results + live status |
+| Sporttery (China) | Market odds comparison |
+| World Football Elo Ratings | Initial Elo ratings |
+| `data/seed/` | Local seed & replay data |
 
-## 每日使用方式
+When upstream sources are unavailable, the system retains the last successful data.
 
-### 1. 打开页面
+## Business Rules
 
-打开首页后，系统会先判断是否需要自动执行 daily-open workflow。
+### Time & Display
 
-### 2. 查看昨晚复盘
+- All storage, comparison, locking, and scoring use UTC
+- All user-facing display uses Beijing Time (UTC+8)
+- "Today" / "yesterday" / "tomorrow" follow `Asia/Shanghai` calendar
 
-重点看：
+### Pre-Match Lock Priority
 
-- 昨晚比赛复盘
-- 未参与评分原因
-- 当前模型性能概览
+Pre-match predictions take absolute priority. Post-match data must never overwrite pre-match decision samples.
 
-### 3. 查看今日比赛与未来 48 小时比赛
+24h lock rules:
+1. Locked snapshots generated when match is within 24h of kickoff
+2. Before kickoff: locked snapshot updated in-place with latest predictions
+3. At/after kickoff: locked snapshot frozen permanently
+4. Beyond 24h: no locked snapshot generated
 
-重点看：
+### Scoring Sample Criteria
 
-- 今日比赛：按北京时间自然日筛选
-- 未来 48 小时比赛：明确区别于“今日比赛”
-- 比赛卡片上的综合推荐、风险、快照状态
+Scoring must distinguish:
+- Total finished matches
+- Matches with pre-match predictions
+- Matches with pre-kickoff snapshots
+- Matches with locked/fallback snapshots
+- Matches actually entering scoring
 
-### 4. 打开详情抽屉
+"Finished matches" must never be equated with "scoring samples".
 
-比赛详情抽屉当前会展示：
+## API Overview
 
-- 综合结论
-- Baseline / AI / Ensemble 对比
-- Team Profile
-- 风险解释
-- 锁定 / fallback / 是否参与评分
-- AI 错误信息（如果有）
+| Group | Key Endpoints |
+|-------|--------------|
+| Dashboard | `/api/dashboard`, `/api/matches/{id}`, `/api/refresh` |
+| Scoring | `/api/model-score`, `/api/accuracy-command-center`, `/api/scoring-exclusions` |
+| AI | `/api/ai-models`, `/api/ai-predictions`, `/api/ensemble`, `/api/ai-prompt-preview` |
+| Workflow | `/api/workflows/status`, `/api/workflows/daily-open`, `/api/workflows/full` |
+| Profile | `/api/team-profiles`, `/api/team-profile-predictions/{match_id}` |
+| Tournament | `/api/tournament/bracket`, `/api/tournament/projections`, `/api/tournament/standings` |
 
-### 5. 需要时手动触发 workflow
+Full API documentation: http://127.0.0.1:8000/docs
 
-当前前端可以手动触发：
-
-- daily-open
-- pre-match
-- post-match
-- lock
-- full
-
-## API 分组
-
-README 不再维护逐条全量端点说明，避免再次落后于代码。当前按模块可分为：
-
-### Dashboard / Data
-
-- `/api/health`
-- `/api/dashboard`
-- `/api/groups/{group}`
-- `/api/matches`
-- `/api/matches/{match_id}`
-- `/api/teams/{team_id}`
-- `/api/data-sources`
-- `/api/sync-runs`
-- `/api/refresh`
-- `/api/decision`
-- `/api/manual-adjustments`
-- `/api/accuracy-command-center`
-
-### Scoring / Review
-
-- `/api/model-score`
-- `/api/model-score/details`
-- `/api/model-score/by-version`
-- `/api/model-score/by-stage`
-- `/api/scoring-exclusions`
-- `/api/match-count-breakdown`
-- `/api/error-attribution-summary`
-- `/api/model-calibration`
-- `/api/market-comparison`
-- `/api/model-recommendation`
-- `/api/data-quality`
-- `/api/model-configs`
-- `/api/decision-snapshot-status`
-
-### AI / Ensemble
-
-- `/api/ai-models`
-- `/api/ai-predictions`
-- `/api/ai-predictions/run`
-- `/api/ai-predictions/run-all`
-- `/api/ensemble`
-- `/api/ensemble/run`
-- `/api/ai-evaluation`
-
-### Workflow
-
-- `/api/workflows/status`
-- `/api/workflows/daily-open`
-- `/api/workflows/pre-match`
-- `/api/workflows/post-match`
-- `/api/workflows/lock`
-- `/api/workflows/full`
-- `/api/workflows/runs`
-
-### Team Profile
-
-- `/api/team-profiles`
-- `/api/team-profiles/{team_id}`
-- `/api/team-profiles/evaluation`
-- `/api/team-profiles/rebuild`
-- `/api/team-profile-predictions/{match_id}`
-
-### Tournament
-
-- `/api/tournament/bracket`
-- `/api/tournament/projections`
-- `/api/tournament/simulate`
-- `/api/tournament/team-path`
-- `/api/tournament/standings`
-
-完整定义以 FastAPI 文档为准：<http://127.0.0.1:8000/docs>
-
-## 常用命令
-
-### 测试
+## Testing
 
 ```bash
-cd backend
-.venv/bin/python -m pytest tests/ -q
+# Backend
+cd backend && .venv/bin/python -m pytest tests/ -q
 
-cd frontend
-npm test -- --run
-npm run typecheck
-npm run build
+# Frontend
+cd frontend && npm test -- --run && npm run typecheck && npm run build
 ```
 
-### Team Profile 重建
+## Logging
+
+Structured JSON logs in `data/logs/`:
 
 ```bash
-PYTHONPATH=backend backend/.venv/bin/python backend/scripts/build_team_profiles.py
-```
-
-### 赛前 / 赛后脚本
-
-```bash
-PYTHONPATH=backend backend/.venv/bin/python backend/scripts/run_pre_match_workflow.py
-PYTHONPATH=backend backend/.venv/bin/python backend/scripts/run_post_match_workflow.py
-PYTHONPATH=backend backend/.venv/bin/python backend/scripts/lock_pre_match_predictions.py --window-hours 24
-```
-
-### 日志查询
-
-日志文件位于 `data/logs/`，包含 `app.jsonl`（全量）和 `error.jsonl`（ERROR+）。
-
-```bash
-# 查看错误
+# Errors only
 cat data/logs/error.jsonl | python3 -m json.tool
 
-# 按请求 ID 追踪完整链路
+# Trace by request ID
 grep "REQUEST_ID" data/logs/app.jsonl | python3 -m json.tool
 
-# 慢请求（>1s）
+# Slow requests (>1s)
 grep "duration_ms" data/logs/app.jsonl | python3 -c "
 import sys, json
 for line in sys.stdin:
     d = json.loads(line)
     if d.get('duration_ms', 0) > 1000:
         print(f'{d[\"duration_ms\"]:.0f}ms {d[\"message\"]}')"
-
-# 按模块过滤
-grep '"app.ai.service"' data/logs/app.jsonl | python3 -m json.tool
 ```
 
-## 当前已知限制
+## Known Limitations
 
-1. Team Profile 当前仍是 `seed_mock_v1`，只能做功能验证，不能当作真实历史画像依据。
-2. 部分淘汰赛路径与冠军模拟仍带有“简化模拟”性质，不能当作正式赛制计算结果。
-3. 免费或公共数据源会有延迟、WAF、字段漂移和覆盖不完整问题。
-4. AI / 情报 /市场能力是否可用，强依赖本地 token 和配置状态。
-5. README 只维护“当前真实业务逻辑和入口”，不再承诺逐个组件、逐个测试数量、逐个实验版本都实时更新。
+1. Team Profile uses `seed_mock_v1` for functional verification only, not real historical data
+2. Knockout-stage simulations are simplified and should not be treated as official calculations
+3. Free/public data sources may have delays, WAF blocks, field drift, or incomplete coverage
+4. AI / intelligence / market features depend on local API token configuration
+5. OpenFootball and WorldCup26 providers do not support `live` match status; only football-data.org does
 
-## 免责声明
+## Disclaimer
 
-所有预测仅供信息参考，不构成投注建议。足球比赛始终存在不可建模的偶然性。
+All predictions are for informational purposes only and do not constitute betting advice. Football matches inherently involve unpredictability that cannot be fully modeled.
+
+## AI Collaboration
+
+AI agents modifying this project must first read `AI_PROJECT_CONSTRAINTS.md`. Frontend changes also require reading `FRONTEND_UI_RULES.md`. Any new long-term business constraints must be reflected in these files.
