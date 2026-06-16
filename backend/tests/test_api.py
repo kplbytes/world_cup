@@ -109,11 +109,34 @@ def test_dashboard_uses_latest_pre_kickoff_snapshot_for_finished_match(tmp_path)
 
     assert match_payload["snapshot_status"] == {
         "locked": True,
-        "locked_at": "2026-06-13T18:00:00",
+        "locked_at": "2026-06-13T18:00:00+00:00",
         "is_fallback": False,
         "participates_in_model_score": True,
         "real_time_only": False,
     }
+
+
+def test_dashboard_next_match_has_status_field(tmp_path):
+    """next_match object must include status field from database."""
+    client = api_client(tmp_path)
+
+    payload = client.get("/api/dashboard").json()
+
+    # Verify next_match exists and has status field
+    assert "next_match" in payload
+    nm = payload["next_match"]
+    if nm is not None:
+        assert "status" in nm, "next_match must include 'status' field"
+        assert nm["status"] in ("scheduled", "live", "final", "postponed"), \
+            f"next_match.status should be a valid match status, got '{nm['status']}'"
+        # next_match must be scheduled (it's filtered by status == "scheduled")
+        assert nm["status"] == "scheduled", \
+            f"next_match must be scheduled, got '{nm['status']}'"
+
+    # Verify time fields exist
+    assert "current_time_utc" in payload
+    assert "current_time_china" in payload
+    assert "data_age_minutes" in payload
 
 
 def test_dashboard_uses_chinese_team_names_everywhere(tmp_path):
