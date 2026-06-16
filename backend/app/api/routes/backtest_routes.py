@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.db import session_scope, get_engine
-from app.models import BacktestResultRecord, BacktestRun
+from app.models import BacktestResultRecord
 
 logger = logging.getLogger(__name__)
 
@@ -35,19 +35,16 @@ def _get_session():
 def get_backtest_results():
     """Get latest backtest results as a flat list of model-split records."""
     with session_scope() as session:
-        # Find the latest completed standard BacktestRun
-        latest_run = session.scalar(
-            select(BacktestRun)
-            .where(BacktestRun.run_type == "standard", BacktestRun.status == "completed")
-            .order_by(desc(BacktestRun.started_at))
-            .limit(1)
+        # Get the latest data_version
+        latest_version = session.scalar(
+            select(func.max(BacktestResultRecord.data_version))
         )
-        if not latest_run:
-            return {"data_version": None, "models": [], "created_at": None, "run_id": None}
+        if not latest_version:
+            return {"data_version": None, "models": [], "created_at": None}
 
         records = list(session.scalars(
             select(BacktestResultRecord)
-            .where(BacktestResultRecord.run_id == latest_run.id)
+            .where(BacktestResultRecord.data_version == latest_version)
             .order_by(BacktestResultRecord.model_name, BacktestResultRecord.split_name)
         ))
 
@@ -55,8 +52,6 @@ def get_backtest_results():
             {
                 "model_name": r.model_name,
                 "split_name": r.split_name,
-                "calibration_method": r.calibration_method,
-                "evaluation_hash": r.evaluation_hash,
                 "brier_sum": r.brier_sum,
                 "brier_mean": r.brier_mean,
                 "canonical_brier": r.canonical_brier,
@@ -74,12 +69,9 @@ def get_backtest_results():
         created_at = records[0].created_at.isoformat() if records else None
 
         return {
-            "data_version": latest_run.data_version,
+            "data_version": latest_version,
             "models": models,
             "created_at": created_at,
-            "run_id": latest_run.id,
-            "started_at": latest_run.started_at.isoformat() if latest_run.started_at else None,
-            "completed_at": latest_run.completed_at.isoformat() if latest_run.completed_at else None,
         }
 
 
@@ -168,22 +160,9 @@ def get_dataset_info():
 @router.get("/rolling")
 def get_rolling_results(session: Session = Depends(_get_session)):
     """Get rolling-origin backtest results."""
-    # Find the latest completed rolling BacktestRun
-    latest_rolling_run = session.scalar(
-        select(BacktestRun)
-        .where(BacktestRun.run_type == "rolling", BacktestRun.status == "completed")
-        .order_by(desc(BacktestRun.started_at))
-        .limit(1)
-    )
-    if not latest_rolling_run:
-        return {"folds": [], "cross_fold_summary": {}, "run_id": None}
-
     records = list(session.scalars(
         select(BacktestResultRecord)
-        .where(
-            BacktestResultRecord.run_id == latest_rolling_run.id,
-            BacktestResultRecord.split_name.like("rolling_%"),
-        )
+        .where(BacktestResultRecord.split_name.like("fold_%"))
         .order_by(BacktestResultRecord.split_name, BacktestResultRecord.model_name)
     ))
     # Group by fold
@@ -222,39 +201,4 @@ def get_rolling_results(session: Session = Depends(_get_session)):
             cross_fold[model_name]["brier_sum"] /= total
             cross_fold[model_name]["log_loss"] /= total
 
-    return {
-        "folds": list(folds.values()),
-        "cross_fold_summary": cross_fold,
-        "run_id": latest_rolling_run.id,
-        "started_at": latest_rolling_run.started_at.isoformat() if latest_rolling_run.started_at else None,
-        "completed_at": latest_rolling_run.completed_at.isoformat() if latest_rolling_run.completed_at else None,
-    }
-
-
-@router.get("/runs")
-def list_backtest_runs():
-    """List all backtest runs with status, timestamps, and summary."""
-    with session_scope() as session:
-        runs = list(session.scalars(
-            select(BacktestRun)
-            .order_by(desc(BacktestRun.started_at))
-            .limit(50)
-        ))
-
-        return {
-            "runs": [
-                {
-                    "run_id": r.id,
-                    "run_type": r.run_type,
-                    "status": r.status,
-                    "started_at": r.started_at.isoformat() if r.started_at else None,
-                    "completed_at": r.completed_at.isoformat() if r.completed_at else None,
-                    "code_version": r.code_version,
-                    "data_version": r.data_version,
-                    "dataset_hash": r.dataset_hash,
-                    "summary": r.summary_json,
-                    "error_message": r.error_message,
-                }
-                for r in runs
-            ]
-        }
+    return {"folds": list(folds.values()), "cross_fold_summary": cross_fold}

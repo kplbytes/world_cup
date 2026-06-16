@@ -648,51 +648,6 @@ def _upgrade_schema(engine: Engine) -> None:
 
                 conn.execute(text("PRAGMA user_version = 13"))
 
-            if version < 14:
-                logger.info("Upgrading database schema to version 14 (backtest_runs + run_id persistence)...")
-
-                # Create backtest_runs table
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS backtest_runs (
-                        id VARCHAR(36) PRIMARY KEY,
-                        run_type VARCHAR(20) NOT NULL,
-                        status VARCHAR(20) NOT NULL DEFAULT 'running',
-                        started_at DATETIME NOT NULL,
-                        completed_at DATETIME,
-                        code_version VARCHAR(40) NOT NULL,
-                        data_version VARCHAR(40) NOT NULL,
-                        dataset_hash VARCHAR(16) NOT NULL,
-                        summary_json JSON,
-                        error_message TEXT
-                    )
-                """))
-
-                # Add new columns to backtest_results
-                br14_exists = conn.scalar(text(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='backtest_results'"
-                ))
-                if br14_exists:
-                    br14_info = conn.execute(text("PRAGMA table_info(backtest_results)")).mappings().all()
-                    br14_cols = {row["name"] for row in br14_info}
-
-                    if "run_id" not in br14_cols:
-                        conn.execute(text("ALTER TABLE backtest_results ADD COLUMN run_id VARCHAR(36) REFERENCES backtest_runs(id)"))
-                    if "calibration_method" not in br14_cols:
-                        conn.execute(text("ALTER TABLE backtest_results ADD COLUMN calibration_method VARCHAR(40) NOT NULL DEFAULT 'none'"))
-                    if "evaluation_hash" not in br14_cols:
-                        conn.execute(text("ALTER TABLE backtest_results ADD COLUMN evaluation_hash VARCHAR(16)"))
-
-                    # Create indexes
-                    conn.execute(text("CREATE INDEX IF NOT EXISTS ix_backtest_results_run_id ON backtest_results(run_id)"))
-
-                    # Create unique index on (run_id, model_name, split_name, calibration_method)
-                    conn.execute(text("""
-                        CREATE UNIQUE INDEX IF NOT EXISTS uq_backtest_result_run_model_split_cal
-                        ON backtest_results(run_id, model_name, split_name, calibration_method)
-                    """))
-
-                conn.execute(text("PRAGMA user_version = 14"))
-
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")
             raise

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-import subprocess
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -36,22 +33,6 @@ from app.backtesting.models import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_code_version() -> str:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True,
-            cwd="/Users/liudapeng/Documents/code/others/world_cup",
-        )
-        return result.stdout.strip() or "dev"
-    except Exception:
-        return "dev"
-
-
-def _compute_eval_hash(match_ids: list[str]) -> str:
-    return hashlib.md5(",".join(sorted(match_ids)).encode()).hexdigest()[:12]
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -90,69 +71,12 @@ def run_backtest(session) -> BacktestResult:
     8. Apply admission rules
     9. Return complete results
     """
-    from app.models import HistoricalMatch, BacktestRun
-
-    # Generate run_id and create BacktestRun record
-    run_id = str(uuid.uuid4())
-    code_version = _get_code_version()
-
-    # Step 1: Build versioned dataset
-    logger.info("Step 1: Building versioned dataset...")
-    dataset = build_dataset(session)
-    data_version = dataset.version
-    logger.info("Dataset: %s (train=%d, val=%d, test=%d)",
-                data_version, dataset.train.match_count,
-                dataset.validation.match_count, dataset.test.match_count)
-
-    # Compute dataset hash
-    all_hist_matches = list(session.scalars(
-        select(HistoricalMatch)
-        .where(
-            HistoricalMatch.is_unmapped.is_(False),
-            HistoricalMatch.score_scope == "full_90min",
-        )
-        .order_by(HistoricalMatch.available_at)
-    ))
-    all_ids = sorted(m.source_match_id for m in all_hist_matches)
-    dataset_hash = hashlib.md5(",".join(all_ids).encode()).hexdigest()[:12]
-
-    # Create BacktestRun record
-    bt_run = BacktestRun(
-        id=run_id,
-        run_type="standard",
-        status="running",
-        code_version=code_version,
-        data_version=data_version,
-        dataset_hash=dataset_hash,
-    )
-    session.add(bt_run)
-    session.flush()
-
-    try:
-        result = _run_backtest_inner(session, data_version, run_id)
-        # Update BacktestRun as completed
-        bt_run.status = "completed"
-        bt_run.completed_at = datetime.now(timezone.utc)
-        bt_run.summary_json = {
-            "admission_results": result.admission_results,
-        }
-        session.flush()
-        return result
-    except Exception as e:
-        bt_run.status = "failed"
-        bt_run.error_message = str(e)[:2000]
-        bt_run.completed_at = datetime.now(timezone.utc)
-        session.flush()
-        raise
-
-
-def _run_backtest_inner(session: Any, data_version: str, run_id: str) -> BacktestResult:
-    """Inner backtest logic, separated for BacktestRun error tracking."""
     from app.models import HistoricalMatch
 
     # Step 1: Build versioned dataset
     logger.info("Step 1: Building versioned dataset...")
     dataset = build_dataset(session)
+    data_version = dataset.version
     logger.info("Dataset: %s (train=%d, val=%d, test=%d)",
                 data_version, dataset.train.match_count,
                 dataset.validation.match_count, dataset.test.match_count)
@@ -320,20 +244,8 @@ def _run_backtest_inner(session: Any, data_version: str, run_id: str) -> Backtes
 
     # Step 10: Save results to database
     logger.info("Step 10: Saving results to database...")
-
-    # Compute evaluation_hash per split
-    eval_hashes: dict[str, str] = {}
-    for split_name in ("train", "validation", "test"):
-        match_ids = []
-        for model_name in models:
-            split_preds = model_predictions.get(model_name, {}).get(split_name, [])
-            for p in split_preds:
-                if p.source_match_id not in match_ids:
-                    match_ids.append(p.source_match_id)
-        eval_hashes[split_name] = _compute_eval_hash(match_ids) if match_ids else ""
-
     _save_results(session, data_version, model_results, best_parameters,
-                  stratified_results, admission_results, run_id, eval_hashes)
+                  stratified_results, admission_results)
 
     dataset_info = {
         "version": dataset.version,
@@ -547,39 +459,33 @@ def _save_results(
     best_parameters: dict[str, dict[str, Any]],
     stratified_results: dict[str, StratifiedMetrics],
     admission_results: dict[str, str],
-    run_id: str,
-    eval_hashes: dict[str, str],
 ) -> None:
     """Save backtest results to the database."""
     from app.models import BacktestResultRecord
 
-    with session.begin_nested():
-        for model_name, splits in model_results.items():
-            for split_name, metrics in splits.items():
-                params = best_parameters.get(model_name)
-                strat = stratified_results.get(model_name)
-                admission = admission_results.get(model_name, "pending")
+    for model_name, splits in model_results.items():
+        for split_name, metrics in splits.items():
+            params = best_parameters.get(model_name)
+            strat = stratified_results.get(model_name)
+            admission = admission_results.get(model_name, "pending")
 
-                record = BacktestResultRecord(
-                    run_id=run_id,
-                    data_version=data_version,
-                    model_name=model_name,
-                    split_name=split_name,
-                    calibration_method="none",
-                    evaluation_hash=eval_hashes.get(split_name, ""),
-                    brier_sum=metrics.brier_sum,
-                    brier_mean=metrics.brier_mean,
-                    canonical_brier=metrics.canonical_brier,
-                    log_loss=metrics.log_loss,
-                    ece=metrics.ece,
-                    top1_hit_rate=metrics.top1_hit_rate,
-                    draw_recall=metrics.draw_recall,
-                    match_count=metrics.match_count,
-                    parameters_json=params,
-                    stratified_json=_stratified_to_dict(strat) if strat else None,
-                    admission_status=admission,
-                )
-                session.add(record)
+            record = BacktestResultRecord(
+                data_version=data_version,
+                model_name=model_name,
+                split_name=split_name,
+                brier_sum=metrics.brier_sum,
+                brier_mean=metrics.brier_mean,
+                canonical_brier=metrics.canonical_brier,
+                log_loss=metrics.log_loss,
+                ece=metrics.ece,
+                top1_hit_rate=metrics.top1_hit_rate,
+                draw_recall=metrics.draw_recall,
+                match_count=metrics.match_count,
+                parameters_json=params,
+                stratified_json=_stratified_to_dict(strat) if strat else None,
+                admission_status=admission,
+            )
+            session.add(record)
 
     session.flush()
 
