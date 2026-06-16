@@ -1,0 +1,164 @@
+match_id,date,home_team,away_team,home_team_id,away_team_id,exclusion_reason
+2024-01-04_Tajikistan_Hong Kong,2024-01-05,Tajikistan,Hong Kong,ht_TJK,,away_team_id is None
+2024-01-10_Saudi Arabia_Hong Kong,2024-01-11,Saudi Arabia,Hong Kong,KSA,,away_team_id is None
+2024-01-13_China_Tajikistan,2024-01-14,China,Tajikistan,,ht_TJK,home_team_id is None
+2024-01-14_United Arab Emirates_Hong Kong,2024-01-15,United Arab Emirates,Hong Kong,ht_UAE,,away_team_id is None
+2024-01-17_Lebanon_China,2024-01-18,Lebanon,China,ht_LBN,,away_team_id is None
+2024-01-19_Hong Kong_Iran,2024-01-20,Hong Kong,Iran,,IRN,home_team_id is None
+2024-01-22_Qatar_China,2024-01-23,Qatar,China,QAT,,away_team_id is None
+2024-01-23_Hong Kong_Palestine,2024-01-24,Hong Kong,Palestine,,ht_PLE,home_team_id is None
+2024-03-20_Bonaire_El Salvador,2024-03-21,Bonaire,El Salvador,,ht_SLV,home_team_id is None
+2024-03-20_Somalia_Eswatini,2024-03-21,Somalia,Eswatini,ht_SOM,,away_team_id is None
+2024-03-21_Singapore_China,2024-03-22,Singapore,China,ht_SIN,,away_team_id is None
+2024-03-21_Taiwan_Kyrgyzstan,2024-03-22,Taiwan,Kyrgyzstan,,ht_KGZ,home_team_id is None
+2024-03-21_Hong Kong_Uzbekistan,2024-03-22,Hong Kong,Uzbekistan,,UZB,home_team_id is None
+2024-03-22_Central African Republic_Bhutan,2024-03-23,Central African Republic,Bhutan,ht_CTA,,away_team_id is None
+2024-03-22_United States Virgin Islands_British Virgin Islands,2024-03-23,United States Virgin Islands,British Virgin Islands,,ht_VGB,home_team_id is None
+2024-03-25_Sri Lanka_Bhutan,2024-03-26,Sri Lanka,Bhutan,ht_SRI,,away_team_id is None
+2024-03-26_China_Singapore,2024-03-27,China,Singapore,,ht_SIN,home_team_id is None
+2024-03-26_Kyrgyzstan_Taiwan,2024-03-27,Kyrgyzstan,Taiwan,ht_KGZ,,away_team_id is None
+2024-03-26_Uzbekistan_Hong Kong,2024-03-27,Uzbekistan,Hong Kong,UZB,,away_team_id is None
+2024-03-26_Eswatini_Somalia,2024-03-27,Eswatini,Somalia,,ht_SOM,home_team_id is None
+2024-05-21_Galicia_Panama,2024-05-22,Galicia,Panama,,PAN,home_team_id is None
+2024-05-21_Basque Country_Uruguay,2024-05-22,Basque Country,Uruguay,,URU,home_team_id is None
+2024-06-01_Greenland_Turkmenistan,2024-06-02,Greenland,Turkmenistan,,ht_TKM,home_team_id is None
+2024-06-05_Nicaragua_Montserrat,2024-06-06,Nicaragua,Montserrat,ht_NCA,,away_team_id is None
+2024-06-06_China_Thailand,2024-06-07,China,Thailand,,ht_THA,home_team_id is None
+2024-06-06_Taiwan_Oman,2024-06-07,Taiwan,Oman,,ht_OMA,home_team_id is None
+2024-06-06_Hong Kong_Iran,2024-06-07,Hong Kong,Iran,,IRN,home_team_id is None
+2024-06-07_Angola_Eswatini,2024-06-08,Angola,Eswatini,ht_ANG,,away_team_id is None
+2024-06-08_Anguilla_Suriname,2024-06-09,Anguilla,Suriname,,ht_SUR,home_team_id is None
+2024-06-09_Montserrat_Panama,2024-06-10,Montserrat,Panama,,PAN,home_team_id is None
+2024-06-11_Mauritius_Eswatini,2024-06-12,Mauritius,Eswatini,ht_MRI,,away_team_id is None
+2024-06-11_South Korea_China,2024-06-12,South Korea,China,KOR,,away_team_id is None
+2024-06-11_Malaysia_Taiwan,2024-06-12,Malaysia,Taiwan,ht_MAS,,away_team_id is None
+2024-06-11_Turkmenistan_Hong Kong,2024-06-12,Turkmenistan,Hong Kong,ht_TKM,,away_team_id is None
+2024-06-11_Puerto Rico_Anguilla,2024-06-12,Puerto Rico,Anguilla,ht_PUR,,away_team_id is None
+2024-09-02_Fiji_Hong Kong,2024-09-03,Fiji,Hong Kong,ht_FIJ,,away_team_id is None
+2024-09-04_United States Virgin Islands_Bahamas,2024-09-05,United States Virgin Islands,Bahamas,,ht_BAH,home_team_id is None
+2024-09-05_Hong Kong_Solomon Islands,2024-09-06,Hong Kong,Solomon Islands,,ht_SOL,home_team_id is None
+2024-09-05_Bhutan_Bangladesh,2024-09-06,Bhutan,Bangladesh,,ht_BAN,home_team_id is None
+2024-09-05_Guinea-Bissau_Eswatini,2024-09-06,Guinea-Bissau,Eswatini,ht_GNB,,away_team_id is None
+2024-09-05_Montserrat_El Salvador,2024-09-06,Montserrat,El Salvador,,ht_SLV,home_team_id is None
+2024-09-05_Bonaire_Saint Vincent and the Grenadines,2024-09-06,Bonaire,Saint Vincent and the Grenadines,,ht_VIN,home_team_id is None
+2024-09-05_Japan_China,2024-09-06,Japan,China,JPN,,away_team_id is None
+2024-09-06_Brunei_Macau,2024-09-07,Brunei,Macau,ht_BRU,,away_team_id is None
+2024-09-06_Grenada_Saint Martin,2024-09-07,Grenada,Saint Martin,ht_GRN,,away_team_id is None
+2024-09-06_Sint Maarten_Aruba,2024-09-07,Sint Maarten,Aruba,,ht_ABW,home_team_id is None
+2024-09-07_Turks and Caicos Islands_Belize,2024-09-08,Turks and Caicos Islands,Belize,,ht_BLZ,home_team_id is None
+2024-09-08_Bhutan_Bangladesh,2024-09-09,Bhutan,Bangladesh,,ht_BAN,home_team_id is None
+2024-09-08_Saint Vincent and the Grenadines_Montserrat,2024-09-09,Saint Vincent and the Grenadines,Montserrat,ht_VIN,,away_team_id is None
+2024-09-08_Bonaire_El Salvador,2024-09-09,Bonaire,El Salvador,,ht_SLV,home_team_id is None
+2024-09-09_Curaçao_Saint Martin,2024-09-10,Curaçao,Saint Martin,CUW,,away_team_id is None
+2024-09-09_Haiti_Sint Maarten,2024-09-10,Haiti,Sint Maarten,HAI,,away_team_id is None
+2024-09-10_Macau_Brunei,2024-09-11,Macau,Brunei,,ht_BRU,home_team_id is None
+2024-09-10_Eswatini_Mali,2024-09-11,Eswatini,Mali,,ht_MLI,home_team_id is None
+2024-09-10_United States Virgin Islands_Barbados,2024-09-11,United States Virgin Islands,Barbados,,ht_BRB,home_team_id is None
+2024-09-10_Belize_Anguilla,2024-09-11,Belize,Anguilla,ht_BLZ,,away_team_id is None
+2024-09-10_China_Saudi Arabia,2024-09-11,China,Saudi Arabia,,KSA,home_team_id is None
+2024-10-09_Barbados_United States Virgin Islands,2024-10-10,Barbados,United States Virgin Islands,ht_BRB,,away_team_id is None
+2024-10-09_Belize_Anguilla,2024-10-10,Belize,Anguilla,ht_BLZ,,away_team_id is None
+2024-10-10_Liechtenstein_Hong Kong,2024-10-11,Liechtenstein,Hong Kong,ht_LIE,,away_team_id is None
+2024-10-10_Australia_China,2024-10-11,Australia,China,AUS,,away_team_id is None
+2024-10-11_Cambodia_Taiwan,2024-10-12,Cambodia,Taiwan,ht_CAM,,away_team_id is None
+2024-10-11_Mozambique_Eswatini,2024-10-12,Mozambique,Eswatini,ht_MOZ,,away_team_id is None
+2024-10-11_Saint Lucia_Saint Martin,2024-10-12,Saint Lucia,Saint Martin,ht_LCA,,away_team_id is None
+2024-10-11_Sint Maarten_Puerto Rico,2024-10-12,Sint Maarten,Puerto Rico,,ht_PUR,home_team_id is None
+2024-10-12_Bahamas_United States Virgin Islands,2024-10-13,Bahamas,United States Virgin Islands,ht_BAH,,away_team_id is None
+2024-10-14_Eswatini_Mozambique,2024-10-15,Eswatini,Mozambique,,ht_MOZ,home_team_id is None
+2024-10-14_Saint Lucia_Saint Martin,2024-10-15,Saint Lucia,Saint Martin,ht_LCA,,away_team_id is None
+2024-10-14_Puerto Rico_Sint Maarten,2024-10-15,Puerto Rico,Sint Maarten,ht_PUR,,away_team_id is None
+2024-10-15_Hong Kong_Cambodia,2024-10-16,Hong Kong,Cambodia,,ht_CAM,home_team_id is None
+2024-10-15_Belize_Turks and Caicos Islands,2024-10-16,Belize,Turks and Caicos Islands,ht_BLZ,,away_team_id is None
+2024-10-15_China_Indonesia,2024-10-16,China,Indonesia,,ht_IDN,home_team_id is None
+2024-11-14_Montserrat_Saint Vincent and the Grenadines,2024-11-15,Montserrat,Saint Vincent and the Grenadines,,ht_VIN,home_team_id is None
+2024-11-14_El Salvador_Bonaire,2024-11-15,El Salvador,Bonaire,ht_SLV,,away_team_id is None
+2024-11-14_Hong Kong_Philippines,2024-11-15,Hong Kong,Philippines,,ht_PHI,home_team_id is None
+2024-11-14_Bahrain_China,2024-11-15,Bahrain,China,ht_BHR,,away_team_id is None
+2024-11-15_Curaçao_Saint Martin,2024-11-16,Curaçao,Saint Martin,CUW,,away_team_id is None
+2024-11-15_Sint Maarten_Haiti,2024-11-16,Sint Maarten,Haiti,,HAI,home_team_id is None
+2024-11-15_Eswatini_Guinea-Bissau,2024-11-16,Eswatini,Guinea-Bissau,,ht_GNB,home_team_id is None
+2024-11-17_Saint Vincent and the Grenadines_Bonaire,2024-11-18,Saint Vincent and the Grenadines,Bonaire,ht_VIN,,away_team_id is None
+2024-11-17_El Salvador_Montserrat,2024-11-18,El Salvador,Montserrat,ht_SLV,,away_team_id is None
+2024-11-18_Grenada_Saint Martin,2024-11-19,Grenada,Saint Martin,ht_GRN,,away_team_id is None
+2024-11-18_Aruba_Sint Maarten,2024-11-19,Aruba,Sint Maarten,ht_ABW,,away_team_id is None
+2024-11-18_Singapore_Taiwan,2024-11-19,Singapore,Taiwan,ht_SIN,,away_team_id is None
+2024-11-19_Hong Kong_Mauritius,2024-11-20,Hong Kong,Mauritius,,ht_MRI,home_team_id is None
+2024-11-19_China_Japan,2024-11-20,China,Japan,,JPN,home_team_id is None
+2024-11-19_Mali_Eswatini,2024-11-20,Mali,Eswatini,ht_MLI,,away_team_id is None
+2024-12-08_Hong Kong_Mongolia,2024-12-09,Hong Kong,Mongolia,,ht_MNG,home_team_id is None
+2024-12-11_Taiwan_Mongolia,2024-12-12,Taiwan,Mongolia,,ht_MNG,home_team_id is None
+2024-12-14_Macau_Guam,2024-12-15,Macau,Guam,,ht_GUM,home_team_id is None
+2024-12-17_Hong Kong_Guam,2024-12-18,Hong Kong,Guam,,ht_GUM,home_team_id is None
+2025-01-03_Zanzibar_Tanzania,2025-01-04,Zanzibar,Tanzania,,ht_TAN,home_team_id is None
+2025-01-06_Zanzibar_Burkina Faso,2025-01-07,Zanzibar,Burkina Faso,,ht_BFA,home_team_id is None
+2025-01-10_Zanzibar_Kenya,2025-01-11,Zanzibar,Kenya,,ht_KEN,home_team_id is None
+2025-01-13_Zanzibar_Burkina Faso,2025-01-14,Zanzibar,Burkina Faso,,ht_BFA,home_team_id is None
+2025-03-19_Eswatini_Cameroon,2025-03-20,Eswatini,Cameroon,,ht_CMR,home_team_id is None
+2025-03-20_Saudi Arabia_China,2025-03-21,Saudi Arabia,China,KSA,,away_team_id is None
+2025-03-23_Eswatini_Mauritius,2025-03-24,Eswatini,Mauritius,,ht_MRI,home_team_id is None
+2025-03-25_Bhutan_Yemen,2025-03-26,Bhutan,Yemen,,ht_YEM,home_team_id is None
+2025-03-25_Singapore_Hong Kong,2025-03-26,Singapore,Hong Kong,ht_SIN,,away_team_id is None
+2025-03-25_Taiwan_Turkmenistan,2025-03-26,Taiwan,Turkmenistan,,ht_TKM,home_team_id is None
+2025-03-25_Niger_Bonaire,2025-03-26,Niger,Bonaire,ht_NIG,,away_team_id is None
+2025-03-25_China_Australia,2025-03-26,China,Australia,,AUS,home_team_id is None
+2025-05-25_Anguilla_Saint Kitts and Nevis,2025-05-26,Anguilla,Saint Kitts and Nevis,,ht_SKN,home_team_id is None
+2025-06-01_Grenada_Anguilla,2025-06-02,Grenada,Anguilla,ht_GRN,,away_team_id is None
+2025-06-04_Bangladesh_Bhutan,2025-06-05,Bangladesh,Bhutan,ht_BAN,,away_team_id is None
+2025-06-04_Montserrat_Belize,2025-06-05,Montserrat,Belize,,ht_BLZ,home_team_id is None
+2025-06-04_Saint Vincent and the Grenadines_Anguilla,2025-06-05,Saint Vincent and the Grenadines,Anguilla,ht_VIN,,away_team_id is None
+2025-06-05_Hong Kong_Nepal,2025-06-06,Hong Kong,Nepal,,ht_NEP,home_team_id is None
+2025-06-05_Indonesia_China,2025-06-06,Indonesia,China,ht_IDN,,away_team_id is None
+2025-06-07_Anguilla_El Salvador,2025-06-08,Anguilla,El Salvador,,ht_SLV,home_team_id is None
+2025-06-10_Brunei_Bhutan,2025-06-11,Brunei,Bhutan,ht_BRU,,away_team_id is None
+2025-06-10_Hong Kong_India,2025-06-11,Hong Kong,India,,ht_IND,home_team_id is None
+2025-06-10_Sri Lanka_Taiwan,2025-06-11,Sri Lanka,Taiwan,ht_SRI,,away_team_id is None
+2025-06-10_China_Bahrain,2025-06-11,China,Bahrain,,ht_BHR,home_team_id is None
+2025-06-10_Guyana_Montserrat,2025-06-11,Guyana,Montserrat,ht_GUY,,away_team_id is None
+2025-09-04_Cameroon_Eswatini,2025-09-05,Cameroon,Eswatini,ht_CMR,,away_team_id is None
+2025-09-04_Iraq_Hong Kong,2025-09-05,Iraq,Hong Kong,IRQ,,away_team_id is None
+2025-09-05_Indonesia_Taiwan,2025-09-06,Indonesia,Taiwan,ht_IDN,,away_team_id is None
+2025-09-07_Fiji_Hong Kong,2025-09-08,Fiji,Hong Kong,ht_FIJ,,away_team_id is None
+2025-09-08_Libya_Eswatini,2025-09-09,Libya,Eswatini,ht_LBY,,away_team_id is None
+2025-10-04_Saint Kitts and Nevis_Saint Martin,2025-10-05,Saint Kitts and Nevis,Saint Martin,ht_SKN,,away_team_id is None
+2025-10-05_Saint Kitts and Nevis_Saint Martin,2025-10-06,Saint Kitts and Nevis,Saint Martin,ht_SKN,,away_team_id is None
+2025-10-08_Eswatini_Angola,2025-10-09,Eswatini,Angola,,ht_ANG,home_team_id is None
+2025-10-09_Lebanon_Bhutan,2025-10-10,Lebanon,Bhutan,ht_LBN,,away_team_id is None
+2025-10-09_Bangladesh_Hong Kong,2025-10-10,Bangladesh,Hong Kong,ht_BAN,,away_team_id is None
+2025-10-09_Thailand_Taiwan,2025-10-10,Thailand,Taiwan,ht_THA,,away_team_id is None
+2025-10-13_Cape Verde_Eswatini,2025-10-14,Cape Verde,Eswatini,CPV,,away_team_id is None
+2025-10-14_Bhutan_Lebanon,2025-10-15,Bhutan,Lebanon,,ht_LBN,home_team_id is None
+2025-10-14_Hong Kong_Bangladesh,2025-10-15,Hong Kong,Bangladesh,,ht_BAN,home_team_id is None
+2025-10-14_Taiwan_Thailand,2025-10-15,Taiwan,Thailand,,ht_THA,home_team_id is None
+2025-11-12_Dominica_Saint Martin,2025-11-13,Dominica,Saint Martin,ht_DMA,,away_team_id is None
+2025-11-12_Saint Kitts and Nevis_Sint Maarten,2025-11-13,Saint Kitts and Nevis,Sint Maarten,ht_SKN,,away_team_id is None
+2025-11-12_Barbados_Bonaire,2025-11-13,Barbados,Bonaire,ht_BRB,,away_team_id is None
+2025-11-12_Bahamas_Anguilla,2025-11-13,Bahamas,Anguilla,ht_BAH,,away_team_id is None
+2025-11-13_Hong Kong_Cambodia,2025-11-14,Hong Kong,Cambodia,,ht_CAM,home_team_id is None
+2025-11-15_Dominica_Sint Maarten,2025-11-16,Dominica,Sint Maarten,ht_DMA,,away_team_id is None
+2025-11-15_Saint Martin_Belize,2025-11-16,Saint Martin,Belize,,ht_BLZ,home_team_id is None
+2025-11-15_Guyana_Bonaire,2025-11-16,Guyana,Bonaire,ht_GUY,,away_team_id is None
+2025-11-15_Cayman Islands_Anguilla,2025-11-16,Cayman Islands,Anguilla,ht_CAY,,away_team_id is None
+2025-11-15_Basque Country_Palestine,2025-11-16,Basque Country,Palestine,,ht_PLE,home_team_id is None
+2025-11-18_Yemen_Bhutan,2025-11-19,Yemen,Bhutan,ht_YEM,,away_team_id is None
+2025-11-18_Hong Kong_Singapore,2025-11-19,Hong Kong,Singapore,,ht_SIN,home_team_id is None
+2025-11-18_Turkmenistan_Taiwan,2025-11-19,Turkmenistan,Taiwan,ht_TKM,,away_team_id is None
+2026-01-26_Uzbekistan_China,2026-01-27,Uzbekistan,China,UZB,,away_team_id is None
+2026-03-25_United States Virgin Islands_American Samoa,2026-03-26,United States Virgin Islands,American Samoa,,ht_ASA,home_team_id is None
+2026-03-26_Aruba_Macau,2026-03-27,Aruba,Macau,ht_ABW,,away_team_id is None
+2026-03-26_Saint Martin_Barbados,2026-03-27,Saint Martin,Barbados,,ht_BRB,home_team_id is None
+2026-03-26_Bonaire_Saint Vincent and the Grenadines,2026-03-27,Bonaire,Saint Vincent and the Grenadines,,ht_VIN,home_team_id is None
+2026-03-26_Bahamas_Anguilla,2026-03-27,Bahamas,Anguilla,ht_BAH,,away_team_id is None
+2026-03-27_China_Curaçao,2026-03-28,China,Curaçao,,CUW,home_team_id is None
+2026-03-27_Belize_Sint Maarten,2026-03-28,Belize,Sint Maarten,ht_BLZ,,away_team_id is None
+2026-03-28_Puerto Rico_United States Virgin Islands,2026-03-29,Puerto Rico,United States Virgin Islands,ht_PUR,,away_team_id is None
+2026-03-29_Macau_Tanzania,2026-03-30,Macau,Tanzania,,ht_TAN,home_team_id is None
+2026-03-29_British Virgin Islands_Anguilla,2026-03-30,British Virgin Islands,Anguilla,ht_VGB,,away_team_id is None
+2026-03-30_Dominica_Sint Maarten,2026-03-31,Dominica,Sint Maarten,ht_DMA,,away_team_id is None
+2026-03-31_Cameroon_China,2026-04-01,Cameroon,China,ht_CMR,,away_team_id is None
+2026-06-04_Cambodia_Bhutan,2026-06-05,Cambodia,Bhutan,ht_CAM,,away_team_id is None
+2026-06-05_Hong Kong_Mongolia,2026-06-06,Hong Kong,Mongolia,,ht_MNG,home_team_id is None
+2026-06-05_Singapore_China,2026-06-06,Singapore,China,ht_SIN,,away_team_id is None
+2026-06-06_British Virgin Islands_Bonaire,2026-06-07,British Virgin Islands,Bonaire,ht_VGB,,away_team_id is None
+2026-06-09_Cambodia_Hong Kong,2026-06-10,Cambodia,Hong Kong,ht_CAM,,away_team_id is None
+2026-06-09_China_Thailand,2026-06-10,China,Thailand,,ht_THA,home_team_id is None
