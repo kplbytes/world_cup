@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import subprocess
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -11,6 +13,22 @@ from typing import Any
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
+
+
+def _get_code_version() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True,
+            cwd="/Users/liudapeng/Documents/code/others/world_cup",
+        )
+        return result.stdout.strip() or "dev"
+    except Exception:
+        return "dev"
+
+
+def _compute_eval_hash(match_ids: list[str]) -> str:
+    return hashlib.md5(",".join(sorted(match_ids)).encode()).hexdigest()[:12]
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -81,11 +99,12 @@ class RollingResult:
     admission_decisions: dict[str, str] = field(default_factory=dict)
     data_version: str = ""
     dataset_hash: str = ""
+    run_id: str = ""
 
 
 def run_rolling_backtest(session) -> RollingResult:
     """Run rolling-origin time-series cross-validation."""
-    from app.models import HistoricalMatch, BacktestResultRecord
+    from app.models import HistoricalMatch, BacktestResultRecord, BacktestRun
     from app.backtesting.elo_replay import replay_elo_history
     from app.backtesting.evaluation import compute_metrics, compute_draw_metrics, MatchPrediction
     from app.backtesting.models import (
@@ -94,7 +113,11 @@ def run_rolling_backtest(session) -> RollingResult:
     from app.backtesting.calibration import CALIBRATOR_REGISTRY
     from app.backtesting.bootstrap import paired_bootstrap, brier_sum_fn, log_loss_fn, top1_accuracy_fn
 
-    # Load all valid matches
+    # Generate run_id and create BacktestRun record
+    run_id = str(uuid.uuid4())
+    code_version = _get_code_version()
+
+    # Load all valid matches (needed for dataset_hash before creating BacktestRun)
     all_matches = list(session.scalars(
         select(HistoricalMatch)
         .where(
@@ -114,6 +137,55 @@ def run_rolling_backtest(session) -> RollingResult:
     dataset_hash = hashlib.md5(",".join(all_ids).encode()).hexdigest()[:12]
 
     data_version = "international-history-v1"
+
+    # Create BacktestRun record
+    bt_run = BacktestRun(
+        id=run_id,
+        run_type="rolling",
+        status="running",
+        code_version=code_version,
+        data_version=data_version,
+        dataset_hash=dataset_hash,
+    )
+    session.add(bt_run)
+    session.flush()
+
+    try:
+        result = _run_rolling_inner(session, all_matches, data_version, dataset_hash, run_id)
+        # Update BacktestRun as completed
+        bt_run.status = "completed"
+        bt_run.completed_at = datetime.now(timezone.utc)
+        bt_run.summary_json = {
+            "cross_fold_summary": result.cross_fold_summary,
+            "admission_decisions": result.admission_decisions,
+        }
+        session.flush()
+        return result
+    except Exception as e:
+        bt_run.status = "failed"
+        bt_run.error_message = str(e)[:2000]
+        bt_run.completed_at = datetime.now(timezone.utc)
+        session.flush()
+        raise
+
+
+def _run_rolling_inner(
+    session: Any,
+    all_matches: list,
+    data_version: str,
+    dataset_hash: str,
+    run_id: str,
+) -> RollingResult:
+    """Inner rolling backtest logic, separated for BacktestRun error tracking."""
+    from app.models import BacktestResultRecord
+    from app.backtesting.elo_replay import replay_elo_history
+    from app.backtesting.evaluation import compute_metrics, compute_draw_metrics, MatchPrediction
+    from app.backtesting.models import (
+        LegacyModel, RefittedModel, DixonColesModel, NegBinomialModel, LogisticModel,
+    )
+    from app.backtesting.calibration import CALIBRATOR_REGISTRY
+    from app.backtesting.bootstrap import paired_bootstrap, brier_sum_fn, log_loss_fn, top1_accuracy_fn
+
     wc_cutoff = datetime(2026, 6, 11, tzinfo=timezone.utc)
 
     # Collect OOF predictions across all folds
@@ -351,6 +423,7 @@ def run_rolling_backtest(session) -> RollingResult:
         folds=folds_result,
         data_version=data_version,
         dataset_hash=dataset_hash,
+        run_id=run_id,
     )
     _compute_cross_fold_summary(rolling_result)
 
@@ -476,27 +549,63 @@ def _save_rolling_results(session: Any, result: RollingResult) -> None:
     """Save rolling backtest results to database."""
     from app.models import BacktestResultRecord
 
-    for fold in result.folds:
-        for model_name, metrics_dict in fold.model_metrics.items():
-            eval_m = metrics_dict.get("eval", {})
-            admission = result.admission_decisions.get(model_name, "pending")
+    with session.begin_nested():
+        for fold in result.folds:
+            eval_hash = _compute_eval_hash(fold.match_ids) if fold.match_ids else ""
 
-            record = BacktestResultRecord(
-                data_version=result.data_version,
-                model_name=model_name,
-                split_name=f"rolling_{fold.fold_name}",
-                brier_sum=eval_m.get("brier_sum", 0.0),
-                brier_mean=eval_m.get("brier_mean", 0.0),
-                canonical_brier=eval_m.get("canonical_brier", 0.0),
-                log_loss=eval_m.get("log_loss", 0.0),
-                ece=eval_m.get("ece", 0.0),
-                top1_hit_rate=eval_m.get("top1_hit_rate", 0.0),
-                draw_recall=eval_m.get("draw_recall", 0.0),
-                match_count=eval_m.get("match_count", 0),
-                parameters_json={"fold": fold.fold_name, "match_id_hash": fold.match_id_hash},
-                stratified_json=fold.draw_metrics.get(model_name),
-                admission_status=admission,
-            )
-            session.add(record)
+            # Uncalibrated results
+            for model_name, metrics_dict in fold.model_metrics.items():
+                eval_m = metrics_dict.get("eval", {})
+                admission = result.admission_decisions.get(model_name, "pending")
+
+                record = BacktestResultRecord(
+                    run_id=result.run_id,
+                    data_version=result.data_version,
+                    model_name=model_name,
+                    split_name=f"rolling_{fold.fold_name}",
+                    calibration_method="none",
+                    evaluation_hash=eval_hash,
+                    brier_sum=eval_m.get("brier_sum", 0.0),
+                    brier_mean=eval_m.get("brier_mean", 0.0),
+                    canonical_brier=eval_m.get("canonical_brier", 0.0),
+                    log_loss=eval_m.get("log_loss", 0.0),
+                    ece=eval_m.get("ece", 0.0),
+                    top1_hit_rate=eval_m.get("top1_hit_rate", 0.0),
+                    draw_recall=eval_m.get("draw_recall", 0.0),
+                    match_count=eval_m.get("match_count", 0),
+                    parameters_json={"fold": fold.fold_name, "match_id_hash": fold.match_id_hash},
+                    stratified_json=fold.draw_metrics.get(model_name),
+                    admission_status=admission,
+                )
+                session.add(record)
+
+            # Calibrated results
+            for cal_model_name, cal_metrics_dict in fold.calibrated_metrics.items():
+                cal_eval_m = cal_metrics_dict.get("eval", {})
+                # Extract base model name and calibrator name from "model+calibrator"
+                parts = cal_model_name.rsplit("+", 1)
+                cal_name = parts[1] if len(parts) == 2 else "unknown"
+                base_model_name = parts[0] if len(parts) == 2 else cal_model_name
+                admission = result.admission_decisions.get(base_model_name, "pending")
+
+                record = BacktestResultRecord(
+                    run_id=result.run_id,
+                    data_version=result.data_version,
+                    model_name=cal_model_name,
+                    split_name=f"rolling_{fold.fold_name}",
+                    calibration_method=cal_name,
+                    evaluation_hash=eval_hash,
+                    brier_sum=cal_eval_m.get("brier_sum", 0.0),
+                    brier_mean=cal_eval_m.get("brier_mean", 0.0),
+                    canonical_brier=cal_eval_m.get("canonical_brier", 0.0),
+                    log_loss=cal_eval_m.get("log_loss", 0.0),
+                    ece=cal_eval_m.get("ece", 0.0),
+                    top1_hit_rate=cal_eval_m.get("top1_hit_rate", 0.0),
+                    draw_recall=cal_eval_m.get("draw_recall", 0.0),
+                    match_count=cal_eval_m.get("match_count", 0),
+                    parameters_json={"fold": fold.fold_name, "match_id_hash": fold.match_id_hash, "calibrated": True},
+                    admission_status=admission,
+                )
+                session.add(record)
 
     session.flush()

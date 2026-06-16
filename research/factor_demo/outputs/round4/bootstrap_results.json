@@ -1,0 +1,116 @@
+{
+  "LR_elo_only": {
+    "iid": {
+      "mean_brier_diff": -0.00017620988161863205,
+      "ci_95_low": -0.0017515101927309572,
+      "ci_95_high": 0.0014315686816756012,
+      "ci_excludes_zero": false,
+      "directional_support": "none",
+      "direction": "worse",
+      "method": "iid",
+      "n_independent_samples": 6868,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    },
+    "block_by_year": {
+      "mean_brier_diff": -0.00018982481367884013,
+      "ci_95_low": -0.0013559608295773936,
+      "ci_95_high": 0.000995866969675156,
+      "ci_excludes_zero": false,
+      "directional_support": "none",
+      "direction": "worse",
+      "method": "block_by_year",
+      "n_independent_samples": 7,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": -0.0006405189745035732,
+      "ci_95_low": -0.004990199125473366,
+      "ci_95_high": 0.002394793437051556,
+      "ci_excludes_zero": false,
+      "directional_support": "none",
+      "direction": "worse",
+      "method": "block_by_tournament",
+      "n_independent_samples": 6,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    }
+  },
+  "LR_new_only": {
+    "iid": {
+      "mean_brier_diff": -0.017584982716346537,
+      "ci_95_low": -0.02148901815826488,
+      "ci_95_high": -0.01363947983905794,
+      "ci_excludes_zero": true,
+      "directional_support": "negative",
+      "direction": "worse",
+      "method": "iid",
+      "n_independent_samples": 6868,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    },
+    "block_by_year": {
+      "mean_brier_diff": -0.017442415794238417,
+      "ci_95_low": -0.02330570649789313,
+      "ci_95_high": -0.01168360903289467,
+      "ci_excludes_zero": true,
+      "directional_support": "negative",
+      "direction": "worse",
+      "method": "block_by_year",
+      "n_independent_samples": 7,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": -0.016794635578974215,
+      "ci_95_low": -0.020868310498031697,
+      "ci_95_high": -0.009022040241914345,
+      "ci_excludes_zero": true,
+      "directional_support": "negative",
+      "direction": "worse",
+      "method": "block_by_tournament",
+      "n_independent_samples": 6,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    }
+  },
+  "LR_full": {
+    "iid": {
+      "mean_brier_diff": 0.005300342907975634,
+      "ci_95_low": 0.003121533435811486,
+      "ci_95_high": 0.007448865264566918,
+      "ci_excludes_zero": true,
+      "directional_support": "positive",
+      "direction": "better",
+      "method": "iid",
+      "n_independent_samples": 6868,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    },
+    "block_by_year": {
+      "mean_brier_diff": 0.005353561967039323,
+      "ci_95_low": 0.0015854367909379117,
+      "ci_95_high": 0.009526502994681945,
+      "ci_excludes_zero": true,
+      "directional_support": "positive",
+      "direction": "better",
+      "method": "block_by_year",
+      "n_independent_samples": 7,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": 0.0054360945292570165,
+      "ci_95_low": 0.0033830464136517047,
+      "ci_95_high": 0.008070625252756139,
+      "ci_excludes_zero": true,
+      "directional_support": "positive",
+      "direction": "better",
+      "method": "block_by_tournament",
+      "n_independent_samples": 6,
+      "n_total_matches": 6868,
+      "note": "方向性支持，非强统计证据（仅7个年份块/6个赛事类别块）"
+    }
+  }
+}

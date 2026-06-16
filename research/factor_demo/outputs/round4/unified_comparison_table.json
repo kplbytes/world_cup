@@ -1,0 +1,38 @@
+{
+  "EloPoisson": {
+    "validation": {
+      "brier_score": 0.5092451077510173,
+      "log_loss": 0.8685759698690904,
+      "accuracy": 0.6064356435643564,
+      "n_samples": 6868,
+      "ece": 0.03498590341434416
+    }
+  },
+  "LR_elo_only": {
+    "validation": {
+      "brier_score": 0.5094342719154884,
+      "log_loss": 0.8671199506161924,
+      "accuracy": 0.605270821199767,
+      "n_samples": 6868,
+      "ece": 0.02326207154605582
+    }
+  },
+  "LR_new_only": {
+    "validation": {
+      "brier_score": 0.5268127108073433,
+      "log_loss": 0.8954084287953394,
+      "accuracy": 0.593185789167152,
+      "n_samples": 6868,
+      "ece": 0.018531631243558534
+    }
+  },
+  "LR_full": {
+    "validation": {
+      "brier_score": 0.5039132561078465,
+      "log_loss": 0.8589981900430962,
+      "accuracy": 0.6070180547466512,
+      "n_samples": 6868,
+      "ece": 0.019344891584877722
+    }
+  }
+}

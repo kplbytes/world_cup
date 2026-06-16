@@ -1,0 +1,93 @@
+[
+  {
+    "test_period": "2019-01-01~2019-12-31",
+    "n_test": 1149,
+    "EloPoisson_brier": 0.49460519728608204,
+    "LR_full_brier": 0.48904500218462704,
+    "delta_brier": 0.005560195101455001,
+    "EloPoisson_logloss": 0.8480253387436717,
+    "LR_full_logloss": 0.8374255072268418,
+    "EloPoisson_acc": 0.6144473455178416,
+    "LR_full_acc": 0.6127067014795474,
+    "EloPoisson_ece": 0.047347773455970195,
+    "LR_full_ece": 0.03188501391691401
+  },
+  {
+    "test_period": "2020-01-01~2020-12-31",
+    "n_test": 347,
+    "EloPoisson_brier": 0.581326499182704,
+    "LR_full_brier": 0.5770199905055646,
+    "delta_brier": 0.004306508677139331,
+    "EloPoisson_logloss": 0.9722189622588678,
+    "LR_full_logloss": 0.9671599011107819,
+    "EloPoisson_acc": 0.5244956772334294,
+    "LR_full_acc": 0.5389048991354467,
+    "EloPoisson_ece": 0.07365150032884325,
+    "LR_full_ece": 0.07402060452891725
+  },
+  {
+    "test_period": "2021-01-01~2021-12-31",
+    "n_test": 1115,
+    "EloPoisson_brier": 0.4748017866630525,
+    "LR_full_brier": 0.4614879728791656,
+    "delta_brier": 0.013313813783886908,
+    "EloPoisson_logloss": 0.8157373606749033,
+    "LR_full_logloss": 0.792130360422394,
+    "EloPoisson_acc": 0.6439461883408072,
+    "LR_full_acc": 0.6484304932735426,
+    "EloPoisson_ece": 0.06682614381443079,
+    "LR_full_ece": 0.04759549698855594
+  },
+  {
+    "test_period": "2022-01-01~2022-12-31",
+    "n_test": 970,
+    "EloPoisson_brier": 0.5380439570416773,
+    "LR_full_brier": 0.5378851242537166,
+    "delta_brier": 0.00015883278796069433,
+    "EloPoisson_logloss": 0.9158107394182634,
+    "LR_full_logloss": 0.9155090939196826,
+    "EloPoisson_acc": 0.5814432989690722,
+    "LR_full_acc": 0.5855670103092784,
+    "EloPoisson_ece": 0.0490349959783629,
+    "LR_full_ece": 0.034868049087826154
+  },
+  {
+    "test_period": "2023-01-01~2023-12-31",
+    "n_test": 1054,
+    "EloPoisson_brier": 0.5111573799453464,
+    "LR_full_brier": 0.5001670926066861,
+    "delta_brier": 0.010990287338660254,
+    "EloPoisson_logloss": 0.8705913622238997,
+    "LR_full_logloss": 0.8543020404894329,
+    "EloPoisson_acc": 0.6091081593927894,
+    "LR_full_acc": 0.6138519924098672,
+    "EloPoisson_ece": 0.0322919668653551,
+    "LR_full_ece": 0.026245040078469548
+  },
+  {
+    "test_period": "2024-01-01~2024-12-31",
+    "n_test": 1231,
+    "EloPoisson_brier": 0.5297580055850518,
+    "LR_full_brier": 0.5289181540640592,
+    "delta_brier": 0.0008398515209926405,
+    "EloPoisson_logloss": 0.8990056313726641,
+    "LR_full_logloss": 0.896294847327723,
+    "EloPoisson_acc": 0.5889520714865962,
+    "LR_full_acc": 0.586515028432169,
+    "EloPoisson_ece": 0.032691408940884154,
+    "LR_full_ece": 0.028051400310421113
+  },
+  {
+    "test_period": "2025-01-01~2025-12-31",
+    "n_test": 1002,
+    "EloPoisson_brier": 0.4843065063259041,
+    "LR_full_brier": 0.48267348999392296,
+    "delta_brier": 0.001633016331981152,
+    "EloPoisson_logloss": 0.8298162320844646,
+    "LR_full_logloss": 0.8239081990760102,
+    "EloPoisson_acc": 0.626746506986028,
+    "LR_full_acc": 0.6227544910179641,
+    "EloPoisson_ece": 0.034824466282042735,
+    "LR_full_ece": 0.05224694530445476
+  }
+]

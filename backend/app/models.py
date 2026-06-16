@@ -566,14 +566,36 @@ class EnsembleLockTracker(Base):
     ensemble_id: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
+class BacktestRun(Base):
+    """Tracks a single backtest run for persistence and dedup."""
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)  # UUID
+    run_type: Mapped[str] = mapped_column(String(20))  # "standard" or "rolling"
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running / completed / failed
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    code_version: Mapped[str] = mapped_column(String(40))
+    data_version: Mapped[str] = mapped_column(String(40))
+    dataset_hash: Mapped[str] = mapped_column(String(16))
+    summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class BacktestResultRecord(Base):
     """Persisted backtest result."""
     __tablename__ = "backtest_results"
+    __table_args__ = (
+        UniqueConstraint("run_id", "model_name", "split_name", "calibration_method", name="uq_backtest_result_run_model_split_cal"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), ForeignKey("backtest_runs.id"), index=True)
     data_version: Mapped[str] = mapped_column(String(40), index=True)
     model_name: Mapped[str] = mapped_column(String(80), index=True)
     split_name: Mapped[str] = mapped_column(String(20), index=True)
+    calibration_method: Mapped[str] = mapped_column(String(40), default="none")
+    evaluation_hash: Mapped[str | None] = mapped_column(String(16), nullable=True)
     brier_sum: Mapped[float] = mapped_column(Float)
     brier_mean: Mapped[float] = mapped_column(Float)
     canonical_brier: Mapped[float] = mapped_column(Float)
