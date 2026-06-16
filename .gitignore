@@ -10,6 +10,12 @@ __pycache__/
 htmlcov/
 backend/.venv/
 backend/*.egg-info/
+backend/world_cup.db
+backend/world_cup.db-shm
+backend/world_cup.db-wal
+backend/dashboard.json
+backend/decision.json
+backend/model-score.json
 frontend/node_modules/
 frontend/dist/
 frontend/*.tsbuildinfo
@@ -20,3 +26,7 @@ frontend/vite.config.d.ts
 data/logs/
 *.log
 *.jsonl
+
+# Runtime
+.pids/
+.workbuddy/
