@@ -181,6 +181,29 @@ def lock_due_predictions(
     return counts
 
 
+def count_locked_matches(session: Session) -> int:
+    """Count non-final matches within 24h of kickoff that have a locked pre-match snapshot."""
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(hours=24)
+    matches = list(session.scalars(
+        select(Match)
+        .where(Match.status != "final")
+        .where(Match.kickoff >= now)
+        .where(Match.kickoff <= window_end)
+    ))
+    count = 0
+    for m in matches:
+        snap = session.scalar(
+            select(PredictionSnapshot)
+            .where(PredictionSnapshot.match_id == m.id)
+            .where(PredictionSnapshot.is_pre_match_locked == True)
+            .limit(1)
+        )
+        if snap:
+            count += 1
+    return count
+
+
 def repair_invalid_prediction_locks(session: Session) -> dict[str, int]:
     """Remove historical AI/ensemble locks created outside the 24h lock window.
 

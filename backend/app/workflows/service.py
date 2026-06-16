@@ -1257,3 +1257,90 @@ async def run_full_workflow_async(
         _finish_run(run_id, "failed", error=str(e))
 
     return run_id
+
+
+def run_update_predictions_workflow(
+    limit: int = 10,
+    with_ai: bool = True,
+    with_ensemble: bool = True,
+    only_missing: bool = True,
+    trigger_source: str = "manual_button",
+) -> int:
+    """Run the update predictions workflow: refresh + recompute + AI + ensemble."""
+    run_id = _create_run("update_predictions", trigger_source, {
+        "limit": limit, "with_ai": with_ai,
+        "with_ensemble": with_ensemble, "only_missing": only_missing,
+    })
+    if not try_start_workflow(run_id):
+        return -1
+
+    try:
+        _run_refresh_step(run_id)
+        _update_step(run_id, "post_match_recompute", "skipped", {"reason": "not_in_update_predictions"})
+        _update_step(run_id, "post_match_score", "skipped", {"reason": "not_in_update_predictions"})
+        _run_recompute_step(run_id, "pre_match_recompute")
+
+        if with_ai:
+            _run_ai_prediction_step(run_id, limit=limit, only_missing=only_missing)
+        else:
+            _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
+
+        if with_ensemble:
+            _run_ensemble_step(run_id)
+        else:
+            _update_step(run_id, "ensemble_generation", "skipped", {"reason": "with_ensemble=false"})
+
+        _update_step(run_id, "lock_predictions", "skipped", {"reason": "lock_protection_inherent"})
+        _run_accuracy_update_step(run_id)
+        _run_artifact_step(run_id)
+
+        overall = _determine_overall_status(run_id)
+        _finish_run(run_id, overall)
+    except Exception as e:
+        _finish_run(run_id, "failed", error=str(e))
+
+    return run_id
+
+
+async def run_update_predictions_workflow_async(
+    limit: int = 10,
+    with_ai: bool = True,
+    with_ensemble: bool = True,
+    only_missing: bool = True,
+    trigger_source: str = "manual_button",
+) -> int:
+    """Async version of run_update_predictions_workflow for use within FastAPI async context."""
+    from app.workflows.state import try_start_workflow
+    run_id = _create_run("update_predictions", trigger_source, {
+        "limit": limit, "with_ai": with_ai,
+        "with_ensemble": with_ensemble, "only_missing": only_missing,
+    })
+    if not try_start_workflow(run_id):
+        return -1
+
+    try:
+        _run_refresh_step(run_id)
+        _update_step(run_id, "post_match_recompute", "skipped", {"reason": "not_in_update_predictions"})
+        _update_step(run_id, "post_match_score", "skipped", {"reason": "not_in_update_predictions"})
+        _run_recompute_step(run_id, "pre_match_recompute")
+
+        if with_ai:
+            await _run_ai_prediction_step_async(run_id, limit=limit, only_missing=only_missing)
+        else:
+            _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
+
+        if with_ensemble:
+            _run_ensemble_step(run_id)
+        else:
+            _update_step(run_id, "ensemble_generation", "skipped", {"reason": "with_ensemble=false"})
+
+        _update_step(run_id, "lock_predictions", "skipped", {"reason": "lock_protection_inherent"})
+        _run_accuracy_update_step(run_id)
+        _run_artifact_step(run_id)
+
+        overall = _determine_overall_status(run_id)
+        _finish_run(run_id, overall)
+    except Exception as e:
+        _finish_run(run_id, "failed", error=str(e))
+
+    return run_id

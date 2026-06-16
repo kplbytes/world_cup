@@ -151,36 +151,44 @@ const modelScore = {
   },
 };
 
+function defaultFetchHandler(url: string) {
+  if (url.includes("/api/model-score")) return { ok: true, json: async () => modelScore };
+  if (url.includes("/api/decision")) return { ok: true, json: async () => decision };
+  if (url.includes("/api/accuracy-command-center")) return { ok: true, json: async () => ({
+    model_recommendation: null, version_scores: [], calibration: { buckets: [] },
+    market_comparison: { market_sample_count: 0, model_brier: 0, market_brier: 0, blended_brier: 0, model_logloss: 0, market_logloss: 0, blended_logloss: 0, suggested_market_blend_weight: 0, market_helped_count: 0, market_hurt_count: 0, market_neutral_count: 0 },
+    data_quality: null, ai_evaluation: { system: { sample_count: 0, brier: null, logloss: null, hit_rate: null }, ai_by_version: {}, ensemble: { sample_count: 0, brier: null, logloss: null, hit_rate: null, helped: 0, hurt: 0 }, ai_effect: {} },
+    ai_models: { enabled: false, models: [] },
+  }) };
+  if (url.includes("/api/workflows/status")) return { ok: true, json: async () => ({
+    today_status: "completed", last_run_at: "2026-06-13T08:00:00Z",
+    recommended_action: null, button_states: {},
+    yesterday_matches: { count: 0, scored: 0, needs_review: false },
+    upcoming_matches: { count_24h: 0, count_48h: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, needs_ai: 0 },
+    lock_status: { matches_near_kickoff: 0, locked: 0, needs_lock: 0, real_time_only: 0 },
+    ai_stats: { today_ai_calls: 0, today_ai_failed: 0, today_ai_skipped: 0, cooldown_skipped: false, only_missing_skipped: 0 },
+  }) };
+  if (url.includes("/api/workflows/runs")) return { ok: true, json: async () => ({ runs: [] }) };
+  if (url.includes("/api/tournament/projections")) return { ok: true, json: async () => ({ teams: [], source: "simulation" }) };
+  if (url.includes("/api/tournament/bracket")) return { ok: true, json: async () => ({ rounds: [] }) };
+  if (url.includes("/api/ai-models")) return { ok: true, json: async () => ({ enabled: false, models: [] }) };
+  if (url.includes("/api/ai-predictions")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
+  if (url.includes("/api/ensemble")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
+  if (url.includes("/api/ai-evaluation")) return { ok: true, json: async () => ({ system: { sample_count: 0 }, ai_by_version: {}, ensemble: { sample_count: 0, helped: 0, hurt: 0 }, ai_effect: {} }) };
+  if (url.includes("/api/team-profiles/evaluation")) return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
+  if (url.includes("/api/team-profiles/") && !url.includes("evaluation")) return { ok: true, json: async () => ({ profile: { team_id: "A1", team_code: "A1", profile_version: "team-profile-v1", sample_count: 16, world_cup_sample_count: 10, traits_json: ["防守优先", "大赛经验丰富"], draw_rate_overall: 0.25, draw_resilience_score: 0.4, low_score_tendency: 0.3, favorite_overconfidence_risk: 0.15, source_summary_json: { mode: "seed_mock_v1" } }, summary: "防守优先，大赛经验丰富" }) };
+  if (url.includes("/api/team-profiles")) return { ok: true, json: async () => ({ profiles: [], total: 0 }) };
+  if (url.includes("/api/decision-snapshot-status")) return { ok: true, json: async () => ({ snapshots_ready: 0, matches_total: 0 }) };
+  if (url.includes("/api/match-count-breakdown")) return { ok: true, json: async () => ({}) };
+  if (url.includes("/api/error-attribution-summary")) return { ok: true, json: async () => ({}) };
+  if (url.includes("/api/model-comparison")) return { ok: true, json: async () => ({ comparison: [], sample_sufficient: false, sample_count: 0 }) };
+  return { ok: true, json: async () => dashboard };
+}
+
 function renderApp() {
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/model-score")) return { ok: true, json: async () => modelScore };
-    if (url.includes("/api/decision")) return { ok: true, json: async () => decision };
-    if (url.includes("/api/accuracy-command-center")) return { ok: true, json: async () => ({
-      model_recommendation: null, version_scores: [], calibration: { buckets: [] },
-      market_comparison: { market_sample_count: 0, model_brier: 0, market_brier: 0, blended_brier: 0, model_logloss: 0, market_logloss: 0, blended_logloss: 0, suggested_market_blend_weight: 0, market_helped_count: 0, market_hurt_count: 0, market_neutral_count: 0 },
-      data_quality: null, ai_evaluation: { system: { sample_count: 0, brier: null, logloss: null, hit_rate: null }, ai_by_version: {}, ensemble: { sample_count: 0, brier: null, logloss: null, hit_rate: null, helped: 0, hurt: 0 }, ai_effect: {} },
-      ai_models: { enabled: false, models: [] },
-    }) };
-    if (url.includes("/api/workflows/status")) return { ok: true, json: async () => ({
-      today_status: "completed", last_run_at: "2026-06-13T08:00:00Z",
-      recommended_action: null, button_states: {},
-      yesterday_matches: { count: 0, scored: 0, needs_review: false },
-      upcoming_matches: { count_24h: 0, count_48h: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, needs_ai: 0 },
-      lock_status: { matches_near_kickoff: 0, locked: 0, needs_lock: 0, real_time_only: 0 },
-      ai_stats: { today_ai_calls: 0, today_ai_failed: 0, today_ai_skipped: 0, cooldown_skipped: false, only_missing_skipped: 0 },
-    }) };
-    if (url.includes("/api/workflows/runs")) return { ok: true, json: async () => ({ runs: [] }) };
-    if (url.includes("/api/tournament/projections")) return { ok: true, json: async () => ({ teams: [], source: "simulation" }) };
-    if (url.includes("/api/tournament/bracket")) return { ok: true, json: async () => ({ rounds: [] }) };
-    if (url.includes("/api/ai-models")) return { ok: true, json: async () => ({ enabled: false, models: [] }) };
-    if (url.includes("/api/ai-predictions")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
-    if (url.includes("/api/ensemble")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
-    if (url.includes("/api/ai-evaluation")) return { ok: true, json: async () => ({ system: { sample_count: 0 }, ai_by_version: {}, ensemble: { sample_count: 0, helped: 0, hurt: 0 }, ai_effect: {} }) };
-    if (url.includes("/api/team-profiles/evaluation")) return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
-    if (url.includes("/api/team-profiles/") && !url.includes("evaluation")) return { ok: true, json: async () => ({ profile: { team_id: "A1", team_code: "A1", profile_version: "team-profile-v1", sample_count: 16, world_cup_sample_count: 10, traits_json: ["防守优先", "大赛经验丰富"], draw_rate_overall: 0.25, draw_resilience_score: 0.4, low_score_tendency: 0.3, favorite_overconfidence_risk: 0.15, source_summary_json: { mode: "seed_mock_v1" } }, summary: "防守优先，大赛经验丰富" }) };
-    if (url.includes("/api/team-profiles")) return { ok: true, json: async () => ({ profiles: [], total: 0 }) };
-    return { ok: true, json: async () => dashboard };
+    return defaultFetchHandler(url);
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
@@ -311,4 +319,97 @@ it("shows seed_mock_v1 data source in profile evaluation", async () => {
   await userEvent.click(screen.getByRole("button", { name: "模型复盘" }));
   // The profile evaluation should reference the team profile model version
   expect(await screen.findByText(/elo-poisson-v1-team-profile/)).toBeVisible();
+});
+
+// Update Predictions button is rendered on the daily dashboard
+it("shows 更新预测 button on daily dashboard", async () => {
+  renderApp();
+  expect(await screen.findByRole("button", { name: "更新预测" })).toBeVisible();
+});
+
+// Clicking 更新预测 calls the correct API endpoint
+it("calls /api/workflows/update-predictions when clicking 更新预测", async () => {
+  const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/workflows/update-predictions")) {
+      return { ok: true, json: async () => ({ status: "ok", updated_at: "2026-06-13T08:00:00Z", matches_considered: 3, predictions_updated: 3, ai_success: 3, ai_failed: 0, ensemble_updated: 3, locked_skipped: 0, errors: [], run_id: 42 }) };
+    }
+    return defaultFetchHandler(url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  const btn = await screen.findByRole("button", { name: "更新预测" });
+  await userEvent.click(btn);
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    expect.stringContaining("/api/workflows/update-predictions"),
+    expect.objectContaining({ method: "POST" }),
+  );
+});
+
+// Button shows 更新中... while loading
+it("shows 更新中... while update predictions is loading", async () => {
+  let resolveUpdatePredictions!: (value: unknown) => void;
+  const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/workflows/update-predictions")) {
+      return new Promise((resolve) => { resolveUpdatePredictions = resolve; })
+        .then(() => ({ ok: true, json: async () => ({ status: "ok", updated_at: "2026-06-13T08:00:00Z", matches_considered: 3, predictions_updated: 3, ai_success: 3, ai_failed: 0, ensemble_updated: 3, locked_skipped: 0, errors: [], run_id: 42 }) }));
+    }
+    return defaultFetchHandler(url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  const btn = await screen.findByRole("button", { name: "更新预测" });
+  await userEvent.click(btn);
+
+  expect(await screen.findByRole("button", { name: "更新中..." })).toBeVisible();
+
+  // Resolve to clean up
+  resolveUpdatePredictions(undefined);
+});
+
+// Success feedback is shown after mutation succeeds
+it("shows success feedback after update predictions succeeds", async () => {
+  const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/workflows/update-predictions")) {
+      return { ok: true, json: async () => ({ status: "ok", updated_at: "2026-06-13T08:00:00Z", matches_considered: 3, predictions_updated: 3, ai_success: 3, ai_failed: 0, ensemble_updated: 3, locked_skipped: 0, errors: [], run_id: 42 }) };
+    }
+    return defaultFetchHandler(url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  const btn = await screen.findByRole("button", { name: "更新预测" });
+  await userEvent.click(btn);
+
+  // Should show success details
+  expect(await screen.findByText(/AI 成功 3/)).toBeVisible();
+  // Button should show updated time
+  expect(await screen.findByRole("button", { name: /预测已更新/ })).toBeVisible();
+});
+
+// Error feedback is shown after mutation fails
+it("shows error feedback after update predictions fails", async () => {
+  const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/workflows/update-predictions")) {
+      return { ok: false, status: 500, json: async () => ({ detail: "Internal error" }) };
+    }
+    return defaultFetchHandler(url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  const btn = await screen.findByRole("button", { name: "更新预测" });
+  await userEvent.click(btn);
+
+  expect(await screen.findByText(/更新失败/)).toBeVisible();
 });

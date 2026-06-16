@@ -5,6 +5,7 @@ import {
   triggerDailyOpen,
   triggerPreMatch,
   triggerFullWorkflow,
+  triggerUpdatePredictions,
   getWorkflowRuns,
   getDashboard,
   getAccuracyCommandCenter,
@@ -91,6 +92,7 @@ export default function DailyDashboard() {
   const queryClient = useQueryClient();
   const [autoTriggered, setAutoTriggered] = useState(false);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+  const [updateSuccessTime, setUpdateSuccessTime] = useState<string | null>(null);
 
   // Data queries
   const statusQuery = useQuery({
@@ -155,10 +157,21 @@ export default function DailyDashboard() {
     },
   });
 
+  const updatePredictionsMutation = useMutation({
+    mutationFn: triggerUpdatePredictions,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
+      queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      setUpdateSuccessTime(new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }));
+    },
+  });
+
   const anyRunning =
     dailyOpenMutation.isPending ||
     preMatchMutation.isPending ||
-    fullMutation.isPending;
+    fullMutation.isPending ||
+    updatePredictionsMutation.isPending;
 
   useEffect(() => {
     if (autoTriggered) return;
@@ -389,8 +402,56 @@ export default function DailyDashboard() {
   return (
     <div>
       {/* A. Status Summary Strip */}
-      <SectionCard title="今日状态" badge={status ? formatChinaTimeShort(status.last_run_at ?? new Date().toISOString()) : "加载中"}>
+      <SectionCard
+        title="今日状态"
+        badge={status ? formatChinaTimeShort(status.last_run_at ?? new Date().toISOString()) : "加载中"}
+        action={
+          <button
+            onClick={() => {
+              setUpdateSuccessTime(null);
+              updatePredictionsMutation.mutate({});
+            }}
+            disabled={anyRunning || updatePredictionsMutation.isPending}
+            style={{
+              background: "var(--mint, #35D99B)",
+              color: "#fff",
+              border: "none",
+              padding: "6px 14px",
+              borderRadius: 6,
+              cursor: (anyRunning || updatePredictionsMutation.isPending) ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontWeight: 600,
+              opacity: (anyRunning || updatePredictionsMutation.isPending) ? 0.6 : 1,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {updatePredictionsMutation.isPending
+              ? "更新中..."
+              : updateSuccessTime
+                ? `预测已更新 ${updateSuccessTime}`
+                : "更新预测"}
+          </button>
+        }
+      >
         <StatusStrip items={statusItems} />
+        {updatePredictionsMutation.isError && (
+          <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>
+            更新失败：{updatePredictionsMutation.error instanceof Error ? updatePredictionsMutation.error.message : "未知错误"}
+          </div>
+        )}
+        {updatePredictionsMutation.isSuccess && updatePredictionsMutation.data && (
+          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {(() => {
+              const d = updatePredictionsMutation.data as Record<string, unknown>;
+              const items: string[] = [];
+              if (d.ai_success != null) items.push(`AI 成功 ${d.ai_success}`);
+              if (d.ai_failed != null && (d.ai_failed as number) > 0) items.push(`AI 失败 ${d.ai_failed}`);
+              if (d.ensemble_updated != null) items.push(`Ensemble ${d.ensemble_updated}`);
+              if (d.locked_skipped != null && (d.locked_skipped as number) > 0) items.push(`锁定跳过 ${d.locked_skipped}`);
+              return items.length > 0 ? items.join(" / ") : null;
+            })()}
+          </div>
+        )}
       </SectionCard>
 
       {/* B. Next Step Suggestion */}

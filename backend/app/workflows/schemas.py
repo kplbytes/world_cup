@@ -44,6 +44,13 @@ class FullWorkflowRequest(BaseModel):
     only_missing: bool = True
 
 
+class UpdatePredictionsRequest(BaseModel):
+    limit: int = 10
+    with_ai: bool = True
+    with_ensemble: bool = True
+    only_missing: bool = True
+
+
 class WorkflowStepStatus(BaseModel):
     step_name: str
     status: str

@@ -8,11 +8,13 @@ from app.db import session_scope
 from app.models import WorkflowRun, WorkflowStep
 from app.workflows.schemas import (
     DailyOpenRequest, PreMatchRequest, PostMatchRequest,
-    LockRequest, FullWorkflowRequest, WorkflowRunStatus, WorkflowStepStatus,
+    LockRequest, FullWorkflowRequest, UpdatePredictionsRequest,
+    WorkflowRunStatus, WorkflowStepStatus,
 )
 from app.workflows.service import (
     get_workflow_status, run_daily_open_workflow, run_pre_match_workflow,
     run_post_match_workflow, run_lock_workflow, run_full_workflow,
+    run_update_predictions_workflow,
 )
 from app.workflows.state import is_workflow_running
 from app.workflows.scheduler import should_auto_run_daily
@@ -209,6 +211,72 @@ def workflow_full(req: FullWorkflowRequest = FullWorkflowRequest()):
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
     return {"status": "started", "run_id": run_id}
+
+
+@router.post("/update-predictions")
+def workflow_update_predictions(req: UpdatePredictionsRequest = UpdatePredictionsRequest()):
+    """Manually trigger update predictions workflow."""
+    if is_workflow_running():
+        raise HTTPException(status_code=409, detail="A workflow is already running")
+
+    run_id = run_update_predictions_workflow(
+        limit=min(req.limit, settings.ai_run_all_max_limit),
+        with_ai=req.with_ai,
+        with_ensemble=req.with_ensemble,
+        only_missing=req.only_missing,
+        trigger_source="manual_button",
+    )
+
+    if run_id < 0:
+        raise HTTPException(status_code=409, detail="A workflow is already running")
+
+    # Return structured summary
+    from datetime import datetime, timezone
+    from sqlalchemy import func
+    from app.models import Match
+    from app.services.snapshots import count_locked_matches
+
+    with session_scope() as session:
+        run = session.get(WorkflowRun, run_id)
+        steps = list(session.scalars(
+            select(WorkflowStep).where(WorkflowStep.workflow_run_id == run_id)
+        ))
+
+        # Build summary from step results
+        ai_step = next((s for s in steps if s.step_name == "ai_prediction"), None)
+        ensemble_step = next((s for s in steps if s.step_name == "ensemble_generation"), None)
+
+        ai_summary = (ai_step.summary_json or {}) if ai_step else {}
+        ensemble_summary = (ensemble_step.summary_json or {}) if ensemble_step else {}
+
+        # Count locked skipped
+        locked_skipped = count_locked_matches(session)
+
+        # Count upcoming matches
+        now = datetime.now(timezone.utc)
+        matches_considered = session.scalar(
+            select(func.count(Match.id))
+            .where(Match.status != "final")
+            .where(Match.kickoff >= now)
+        ) or 0
+
+        overall = run.status if run else "unknown"
+        status_map = {"success": "ok", "partial_success": "partial", "failed": "failed"}
+
+        errors = [s.error_message for s in steps if s.error_message]
+
+        return {
+            "status": status_map.get(overall, overall),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "matches_considered": matches_considered,
+            "predictions_updated": 1 if any(s.step_name == "pre_match_recompute" and s.status == "success" for s in steps) else 0,
+            "ai_success": ai_summary.get("success", 0),
+            "ai_failed": ai_summary.get("failed", 0),
+            "ensemble_updated": ensemble_summary.get("success", 0),
+            "locked_skipped": locked_skipped,
+            "errors": errors,
+            "run_id": run_id,
+        }
 
 
 @router.get("/runs")

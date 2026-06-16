@@ -214,6 +214,17 @@ export async function triggerLock(params?: Record<string, unknown>): Promise<Rec
   return res.json();
 }
 
+export async function triggerUpdatePredictions(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const res = await fetchWithTimeout("/api/workflows/update-predictions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params || {}),
+    timeoutMs: 120_000,
+  });
+  if (!res.ok) throw new Error(`Update predictions failed: ${res.status}`);
+  return res.json();
+}
+
 export async function triggerFullWorkflow(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
   const res = await fetchWithTimeout("/api/workflows/full", {
     method: "POST",

@@ -525,6 +525,106 @@ def test_dashboard_ai_ensemble_prediction_are_distinct_from_baseline(tmp_path):
     assert match_payload["ensemble_prediction"]["home_win"] == 0.15
 
 
+def test_update_predictions_endpoint_returns_structured_summary(tmp_path):
+    """POST /api/workflows/update-predictions returns structured summary with expected fields."""
+    from unittest.mock import patch
+
+    client = api_client(tmp_path)
+    with patch("app.workflows.service._run_refresh_step"), \
+         patch("app.workflows.service._run_recompute_step"), \
+         patch("app.workflows.service._run_ensemble_step"), \
+         patch("app.workflows.service._run_accuracy_update_step"), \
+         patch("app.workflows.service._run_artifact_step"):
+        response = client.post("/api/workflows/update-predictions", json={"with_ai": False, "with_ensemble": True})
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify all expected fields are present
+    assert "status" in data
+    assert "updated_at" in data
+    assert "matches_considered" in data
+    assert "predictions_updated" in data
+    assert "ai_success" in data
+    assert "ai_failed" in data
+    assert "ensemble_updated" in data
+    assert "locked_skipped" in data
+    assert "errors" in data
+    assert "run_id" in data
+
+    # Status should be one of the valid values
+    assert data["status"] in ("ok", "partial", "failed")
+    # updated_at should be a valid ISO timestamp
+    assert "T" in data["updated_at"]
+    # matches_considered should be a non-negative integer
+    assert isinstance(data["matches_considered"], int)
+    assert data["matches_considered"] >= 0
+    # locked_skipped should be a non-negative integer
+    assert isinstance(data["locked_skipped"], int)
+    assert data["locked_skipped"] >= 0
+    # errors should be a list
+    assert isinstance(data["errors"], list)
+
+
+def test_update_predictions_does_not_overwrite_locked_snapshots(tmp_path):
+    """Locked snapshots should not be overwritten by the update-predictions workflow."""
+    from unittest.mock import patch
+    from app.models import PredictionSnapshot, DashboardRevision
+    from sqlalchemy import select
+
+    client = api_client(tmp_path)
+    with session_scope() as session:
+        # Get a match and create a locked snapshot for it
+        dashboard = client.get("/api/dashboard").json()
+        match_id = dashboard["groups"][0]["matches"][0]["id"]
+        revision = session.scalar(
+            select(DashboardRevision).where(DashboardRevision.active.is_(True))
+        )
+
+        # Create a locked snapshot with specific values
+        locked_snap = PredictionSnapshot(
+            match_id=match_id,
+            revision_id=revision.id,
+            kickoff=datetime(2026, 6, 14, 12, tzinfo=timezone.utc),
+            is_pre_match_locked=True,
+            home_win=0.33,
+            draw=0.34,
+            away_win=0.33,
+            home_xg=1.0,
+            away_xg=1.0,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.5,
+            confidence_label="medium",
+            model_inputs={},
+            model_version="elo-poisson-v1",
+            snapshotted_at=datetime(2026, 6, 14, 10, tzinfo=timezone.utc),
+        )
+        session.add(locked_snap)
+        session.flush()
+
+        # Record the locked snapshot's home_win value
+        locked_home_win = locked_snap.home_win
+
+    with patch("app.workflows.service._run_refresh_step"), \
+         patch("app.workflows.service._run_recompute_step"), \
+         patch("app.workflows.service._run_ensemble_step"), \
+         patch("app.workflows.service._run_accuracy_update_step"), \
+         patch("app.workflows.service._run_artifact_step"):
+        client.post("/api/workflows/update-predictions", json={"with_ai": False, "with_ensemble": True})
+
+    # Verify the locked snapshot was not overwritten
+    with session_scope() as session:
+        snap = session.scalar(
+            select(PredictionSnapshot)
+            .where(PredictionSnapshot.match_id == match_id)
+            .where(PredictionSnapshot.is_pre_match_locked == True)
+            .limit(1)
+        )
+        assert snap is not None
+        assert snap.home_win == locked_home_win
+
+
 def test_match_detail_ai_ensemble_prediction_are_distinct(tmp_path):
     """P0-3: Verify match detail endpoint also returns distinct AI/Ensemble."""
     client = api_client(tmp_path)
