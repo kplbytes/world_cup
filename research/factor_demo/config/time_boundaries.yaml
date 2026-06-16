@@ -1,0 +1,60 @@
+# 时间边界定义 - 第二轮验证
+# 所有日期均为 UTC 时区
+# 2022-2025 已在第一轮查看，降级为验证集
+
+train:
+  start: "2010-01-01"
+  end: "2018-12-31"
+
+validation:
+  start: "2019-01-01"
+  end: "2025-12-31"
+
+# 最终盲测集（第二轮新增，模型确定前不得查看详细结果）
+blind_test:
+  start: "2026-01-01"
+  end: "2026-12-31"
+
+# 2022 世界杯时间范围（属于验证集）
+world_cup_2022:
+  start: "2022-11-20"
+  end: "2022-12-18"
+
+# 滚动验证配置（嵌套 Walk-Forward）
+rolling_validation:
+  train_start: "2010-01-01"
+  initial_train_end: "2016-12-31"
+  step_years: 1
+  min_train_years: 5
+  inner_val_years: 1  # 内层验证窗口
+
+# 数据起始点（用于计算历史特征）
+data_start: "2000-01-01"
+
+# 因子分类
+factor_classification:
+  baseline_factors:
+    - elo_diff  # 现有 Elo+Poisson Baseline 能力，不算新因子
+  new_candidate_factors:
+    - recent_form_5
+    - recent_form_10
+    - recent_form_5_opp_adjusted
+    - recent_goals_scored_5
+    - recent_goals_conceded_5
+    - recent_goal_diff_5
+    - attack_strength
+    - defense_strength
+    - official_vs_friendly
+    - home_away_neutral_form
+    - rest_days
+    - match_density_30d
+    - match_density_90d
+    - tournament_experience
+    - knockout_experience
+    - inter_confederation_form
+    - host_advantage
+    - h2h_last_5
+  skip_factors:  # 覆盖率为0，暂不研究
+    - fifa_rank_diff
+    - odds_implied_prob
+    - odds_movement

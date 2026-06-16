@@ -30,9 +30,14 @@ frontend/screenshots/
 
 # Backend runtime data
 backend/sqlite
+backend/sqlite:
+backend/world_cup.db
 backend/dashboard.json
 backend/decision.json
 backend/model-score.json
+
+# Runtime PIDs
+.pids/
 
 # Factor research demo outputs
 research/factor_demo/outputs/

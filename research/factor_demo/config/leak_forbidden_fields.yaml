@@ -1,0 +1,99 @@
+# 数据泄漏禁止字段清单
+# 以下字段在计算赛前因子时严禁使用
+
+forbidden_fields:
+  - field: home_score
+    reason: "本场比赛结果，未来数据"
+    available_after: "比赛结束"
+
+  - field: away_score
+    reason: "本场比赛结果，未来数据"
+    available_after: "比赛结束"
+
+  - field: match_result
+    reason: "本场比赛结果，未来数据"
+    available_after: "比赛结束"
+
+  - field: penalty_home_score
+    reason: "点球大战结果，非90分钟数据"
+    available_after: "比赛结束"
+
+  - field: penalty_away_score
+    reason: "点球大战结果，非90分钟数据"
+    available_after: "比赛结束"
+
+  - field: extra_time_home_score
+    reason: "加时赛进球，非90分钟数据"
+    available_after: "比赛结束"
+
+  - field: extra_time_away_score
+    reason: "加时赛进球，非90分钟数据"
+    available_after: "比赛结束"
+
+  - field: post_match_fifa_rank_home
+    reason: "赛后更新的排名"
+    available_after: "FIFA排名更新日"
+
+  - field: post_match_fifa_rank_away
+    reason: "赛后更新的排名"
+    available_after: "FIFA排名更新日"
+
+  - field: shots_home
+    reason: "比赛统计数据，未来数据"
+    available_after: "比赛结束"
+
+  - field: shots_away
+    reason: "比赛统计数据，未来数据"
+    available_after: "比赛结束"
+
+  - field: possession_home
+    reason: "比赛统计数据，未来数据"
+    available_after: "比赛结束"
+
+  - field: in_play_odds
+    reason: "赛中赔率变化，未来数据"
+    available_after: "比赛结束"
+
+# 可安全使用的赛前数据
+safe_fields:
+  - field: date
+    reason: "比赛日期，赛前已知"
+
+  - field: home_team
+    reason: "赛前已知"
+
+  - field: away_team
+    reason: "赛前已知"
+
+  - field: tournament
+    reason: "赛事类型，赛前已知"
+
+  - field: city
+    reason: "比赛城市，赛前已知"
+
+  - field: country
+    reason: "比赛国家，赛前已知"
+
+  - field: neutral
+    reason: "中立场标识，赛前已知"
+
+  - field: pre_match_elo_home
+    reason: "赛前计算的Elo"
+
+  - field: pre_match_elo_away
+    reason: "赛前计算的Elo"
+
+  - field: pre_match_fifa_rank_home
+    reason: "赛前最新FIFA排名"
+
+  - field: pre_match_fifa_rank_away
+    reason: "赛前最新FIFA排名"
+
+  - field: pre_match_odds_home
+    reason: "赛前赔率"
+
+  - field: pre_match_odds_draw
+    reason: "赛前赔率"
+
+  - field: pre_match_odds_away
+    reason: "赛前赔率"

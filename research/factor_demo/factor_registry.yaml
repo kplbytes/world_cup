@@ -1,0 +1,247 @@
+# 因子注册表
+# 每个因子必须在此注册，未注册的因子不得进入模型
+
+factors:
+  elo_diff:
+    name: "赛前Elo差值"
+    group: "rating"
+    description: "主队赛前Elo减去客队赛前Elo"
+    window: "all_history"
+    min_coverage: 0.80
+    status: "candidate"
+    computation: "pre_match_elo_home - pre_match_elo_away"
+
+  fifa_rank_diff:
+    name: "FIFA排名差值"
+    group: "rating"
+    description: "客队FIFA排名减去主队FIFA排名（正值表示主队排名更高）"
+    window: "latest"
+    min_coverage: 0.60
+    status: "candidate"
+    computation: "pre_match_fifa_rank_away - pre_match_fifa_rank_home"
+
+  recent_form_5:
+    name: "最近5场状态"
+    group: "form"
+    description: "最近5场比赛的得分率（胜=1, 平=0.5, 负=0）"
+    window: "last_5"
+    min_coverage: 0.90
+    status: "candidate"
+    computation: "sum(outcome_scores) / 5"
+
+  recent_form_10:
+    name: "最近10场状态"
+    group: "form"
+    description: "最近10场比赛的得分率"
+    window: "last_10"
+    min_coverage: 0.85
+    status: "candidate"
+    computation: "sum(outcome_scores) / 10"
+
+  recent_form_5_opp_adjusted:
+    name: "对手强度修正后的近期状态(5场)"
+    group: "form"
+    description: "用对手Elo加权的近期得分率"
+    window: "last_5"
+    min_coverage: 0.80
+    status: "candidate"
+    computation: "weighted_score / weighted_max"
+
+  recent_goals_scored_5:
+    name: "近5场进球数"
+    group: "attack_defense"
+    description: "最近5场比赛总进球数"
+    window: "last_5"
+    min_coverage: 0.90
+    status: "candidate"
+    computation: "sum(goals_scored_last_5)"
+
+  recent_goals_conceded_5:
+    name: "近5场失球数"
+    group: "attack_defense"
+    description: "最近5场比赛总失球数"
+    window: "last_5"
+    min_coverage: 0.90
+    status: "candidate"
+    computation: "sum(goals_conceded_last_5)"
+
+  recent_goal_diff_5:
+    name: "近5场净胜球"
+    group: "attack_defense"
+    description: "最近5场比赛净胜球"
+    window: "last_5"
+    min_coverage: 0.90
+    status: "candidate"
+    computation: "goals_scored_5 - goals_conceded_5"
+
+  attack_strength:
+    name: "进攻强度"
+    group: "attack_defense"
+    description: "球队进球率除以同期平均进球率"
+    window: "last_10"
+    min_coverage: 0.80
+    status: "candidate"
+    computation: "team_goals_per_game / league_avg_goals_per_game"
+
+  defense_strength:
+    name: "防守强度"
+    group: "attack_defense"
+    description: "球队失球率除以同期平均失球率"
+    window: "last_10"
+    min_coverage: 0.80
+    status: "candidate"
+    computation: "team_conceded_per_game / league_avg_conceded_per_game"
+
+  official_vs_friendly:
+    name: "正式比赛与友谊赛分层表现"
+    group: "form"
+    description: "正式比赛得分率减去友谊赛得分率"
+    window: "last_20"
+    min_coverage: 0.70
+    status: "candidate"
+    computation: "official_form - friendly_form"
+
+  home_away_neutral_form:
+    name: "主场/客场/中立场表现"
+    group: "venue"
+    description: "各场地类型的近期得分率"
+    window: "last_10"
+    min_coverage: 0.60
+    status: "candidate"
+    computation: "form_by_venue_type"
+
+  rest_days:
+    name: "休息天数"
+    group: "fatigue"
+    description: "上一场比赛距当前比赛的天数"
+    window: "last_1"
+    min_coverage: 0.80
+    status: "candidate"
+    computation: "days_since_last_match"
+
+  match_density_30d:
+    name: "30天比赛密度"
+    group: "fatigue"
+    description: "过去30天的比赛场次"
+    window: "30d"
+    min_coverage: 0.90
+    status: "candidate"
+    computation: "count(matches_in_last_30_days)"
+
+  match_density_90d:
+    name: "90天比赛密度"
+    group: "fatigue"
+    description: "过去90天的比赛场次"
+    window: "90d"
+    min_coverage: 0.90
+    status: "candidate"
+    computation: "count(matches_in_last_90_days)"
+
+  tournament_experience:
+    name: "大赛经验"
+    group: "experience"
+    description: "过去5年世界杯和洲际杯出场次数"
+    window: "5y"
+    min_coverage: 0.70
+    status: "candidate"
+    computation: "count(major_tournament_matches_last_5y)"
+
+  knockout_experience:
+    name: "淘汰赛经验"
+    group: "experience"
+    description: "过去5年淘汰赛出场次数和胜率"
+    window: "5y"
+    min_coverage: 0.50
+    status: "candidate"
+    computation: "knockout_matches_and_win_rate_last_5y"
+
+  inter_confederation_form:
+    name: "同洲/跨洲表现"
+    group: "confederation"
+    description: "对阵同洲和跨洲对手的得分率差"
+    window: "all_history"
+    min_coverage: 0.50
+    status: "candidate"
+    computation: "same_confederation_form - cross_confederation_form"
+
+  host_advantage:
+    name: "东道主/半主场效应"
+    group: "venue"
+    description: "是否为东道主或半主场（比赛在本国进行）"
+    window: "single"
+    min_coverage: 1.00
+    status: "candidate"
+    computation: "is_host_or_semi_host"
+
+  h2h_last_5:
+    name: "历史交锋(近5场)"
+    group: "h2h"
+    description: "两队最近5次交锋的得分率"
+    window: "h2h_last_5"
+    min_coverage: 0.30
+    status: "candidate_low_weight"
+    computation: "h2h_score_rate_last_5"
+
+  odds_implied_prob:
+    name: "赔率隐含概率"
+    group: "market"
+    description: "从赛前赔率反推的胜平负概率"
+    window: "single"
+    min_coverage: 0.40
+    status: "candidate_independent"
+    computation: "1/odds_normalized"
+
+  odds_movement:
+    name: "赔率变化"
+    group: "market"
+    description: "开盘赔率与临场赔率的变化方向"
+    window: "single"
+    min_coverage: 0.30
+    status: "candidate_independent"
+    computation: "closing_odds - opening_odds"
+
+factor_groups:
+  rating:
+    name: "评级因子"
+    description: "基于Elo和FIFA排名的因子"
+
+  form:
+    name: "状态因子"
+    description: "基于近期比赛表现的因子"
+
+  attack_defense:
+    name: "攻防因子"
+    description: "基于进球和失球的因子"
+
+  venue:
+    name: "场地因子"
+    description: "基于比赛场地的因子"
+
+  fatigue:
+    name: "疲劳因子"
+    description: "基于赛程密度的因子"
+
+  experience:
+    name: "经验因子"
+    description: "基于大赛经验的因子"
+
+  confederation:
+    name: "洲际因子"
+    description: "基于洲际对抗的因子"
+
+  h2h:
+    name: "交锋因子"
+    description: "基于历史交锋的因子（低权重候选）"
+
+  market:
+    name: "市场因子"
+    description: "基于赔率的因子（独立市场因子组）"
+
+status_definitions:
+  candidate: "候选因子，待验证"
+  candidate_low_weight: "低权重候选，需强证据才能进入模型"
+  candidate_independent: "独立市场因子组，不与评级因子混用"
+  validated: "已通过单因子验证"
+  promoted: "已通过准入评审，可进入Shadow模式"
+  rejected: "未通过准入评审"
+  needs_more_data: "数据不足，待补充数据后重新验证"
