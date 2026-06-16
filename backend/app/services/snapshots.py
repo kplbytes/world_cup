@@ -154,32 +154,6 @@ def lock_due_predictions(
                 ensemble.locked_at = now
                 counts["ensemble"] += 1
 
-        # Also mark any pre-match ensemble as fallback if match is past kickoff
-        # and no locked/fallback ensemble exists yet
-        if now >= kickoff:
-            existing_ens_locked = session.scalar(
-                select(EnsemblePrediction.id)
-                .where(
-                    EnsemblePrediction.match_id == match.id,
-                    (EnsemblePrediction.is_pre_match_locked.is_(True))
-                    | (EnsemblePrediction.is_fallback_locked.is_(True)),
-                )
-                .limit(1)
-            )
-            if existing_ens_locked is None:
-                latest_pre_match_ens = session.scalar(
-                    select(EnsemblePrediction)
-                    .where(
-                        EnsemblePrediction.match_id == match.id,
-                        EnsemblePrediction.created_at < kickoff,
-                        EnsemblePrediction.real_time_only.is_(False),
-                    )
-                    .order_by(EnsemblePrediction.created_at.desc())
-                    .limit(1)
-                )
-                if latest_pre_match_ens and not latest_pre_match_ens.is_fallback_locked:
-                    latest_pre_match_ens.is_fallback_locked = True
-
         existing_profile = session.scalar(
             select(TeamProfilePrediction.id).where(
                 TeamProfilePrediction.match_id == match.id,
@@ -307,10 +281,9 @@ def write_snapshots(session: Session, revision: DashboardRevision, now: datetime
             .limit(1)
         )
 
-        # If a locked snapshot exists, skip this match entirely (locked = immutable).
-        # If no locked snapshot exists and match has started, create a fallback lock.
-        # If no locked snapshot exists and match hasn't started, write/update a snapshot.
-        # Within 24h of kickoff, new snapshots are locked immediately.
+        # If the match has already started and is locked, skip it completely.
+        # If it has started but not locked, we must create a fallback.
+        # If it hasn't started, we write a snapshot. If within 24h lock window, we lock it.
 
         kickoff = match.kickoff
         if kickoff.tzinfo is None:
@@ -318,6 +291,10 @@ def write_snapshots(session: Session, revision: DashboardRevision, now: datetime
 
         is_past_kickoff = now >= kickoff
         is_within_lock_window = now >= kickoff - lock_threshold
+
+        if existing_locked and is_past_kickoff:
+            # Fully locked and started, no more snapshots allowed
+            continue
 
         is_locked = False
         is_fallback = False
@@ -345,9 +322,60 @@ def write_snapshots(session: Session, revision: DashboardRevision, now: datetime
                 # Within 24h lock window
                 is_locked = True
 
-        if existing_locked:
-            # Locked snapshots are immutable - skip this match entirely
-            # (This covers both pre-kickoff and post-kickoff cases)
+        # If an existing_locked exists but the match hasn't kicked off yet,
+        # update the locked snapshot with the latest prediction values.
+        if existing_locked and not is_past_kickoff:
+            # Update the existing locked snapshot with latest prediction
+            existing_locked.home_win = pred.home_win
+            existing_locked.draw = pred.draw
+            existing_locked.away_win = pred.away_win
+            existing_locked.home_xg = pred.home_xg
+            existing_locked.away_xg = pred.away_xg
+            existing_locked.has_auto_adjustments = pred.has_auto_adjustments
+            existing_locked.base_home_win = pred.base_home_win
+            existing_locked.base_draw = pred.base_draw
+            existing_locked.base_away_win = pred.base_away_win
+            existing_locked.scorelines = pred.scorelines
+            existing_locked.score_matrix = pred.score_matrix
+            existing_locked.confidence = pred.confidence
+            existing_locked.confidence_label = pred.confidence_label
+            existing_locked.model_inputs = pred.model_inputs
+            existing_locked.model_version = pred.model_version
+            existing_locked.snapshotted_at = now
+            existing_locked.revision_id = revision.id
+            session.add(existing_locked)
+
+            # Also update shadow snapshots
+            for shadow_pred in shadow_predictions.get(match.id, []):
+                existing_shadow_locked = session.scalar(
+                    select(PredictionSnapshot)
+                    .where(
+                        PredictionSnapshot.match_id == match.id,
+                        PredictionSnapshot.model_version == shadow_pred.model_version,
+                        (PredictionSnapshot.is_pre_match_locked.is_(True))
+                        | (PredictionSnapshot.is_fallback_locked.is_(True)),
+                    )
+                    .limit(1)
+                )
+                if existing_shadow_locked:
+                    existing_shadow_locked.home_win = shadow_pred.home_win
+                    existing_shadow_locked.draw = shadow_pred.draw
+                    existing_shadow_locked.away_win = shadow_pred.away_win
+                    existing_shadow_locked.home_xg = shadow_pred.home_xg
+                    existing_shadow_locked.away_xg = shadow_pred.away_xg
+                    existing_shadow_locked.has_auto_adjustments = shadow_pred.has_auto_adjustments
+                    existing_shadow_locked.base_home_win = shadow_pred.base_home_win
+                    existing_shadow_locked.base_draw = shadow_pred.base_draw
+                    existing_shadow_locked.base_away_win = shadow_pred.base_away_win
+                    existing_shadow_locked.scorelines = shadow_pred.scorelines
+                    existing_shadow_locked.score_matrix = shadow_pred.score_matrix
+                    existing_shadow_locked.confidence = shadow_pred.confidence
+                    existing_shadow_locked.confidence_label = shadow_pred.confidence_label
+                    existing_shadow_locked.model_inputs = shadow_pred.model_inputs
+                    existing_shadow_locked.model_version = shadow_pred.model_version
+                    existing_shadow_locked.snapshotted_at = now
+                    existing_shadow_locked.revision_id = revision.id
+                    session.add(existing_shadow_locked)
             continue
 
         # Update or create snapshot
@@ -414,26 +442,26 @@ def write_snapshots(session: Session, revision: DashboardRevision, now: datetime
             )
             shadow_is_locked = False
             shadow_is_fallback = False
-            if existing_shadow_locked:
-                # Locked shadow snapshots are immutable - skip this shadow model
+            if existing_shadow_locked and is_past_kickoff:
                 continue
-            if is_past_kickoff:
-                # Try to upgrade the latest pre-match shadow snapshot
-                latest_shadow_pre = session.scalar(
-                    select(PredictionSnapshot)
-                    .where(
-                        PredictionSnapshot.match_id == match.id,
-                        PredictionSnapshot.model_version == shadow_pred.model_version,
-                        PredictionSnapshot.snapshotted_at < kickoff,
+            if not existing_shadow_locked:
+                if is_past_kickoff:
+                    # Try to upgrade the latest pre-match shadow snapshot
+                    latest_shadow_pre = session.scalar(
+                        select(PredictionSnapshot)
+                        .where(
+                            PredictionSnapshot.match_id == match.id,
+                            PredictionSnapshot.model_version == shadow_pred.model_version,
+                            PredictionSnapshot.snapshotted_at < kickoff,
+                        )
+                        .order_by(desc(PredictionSnapshot.snapshotted_at))
+                        .limit(1)
                     )
-                    .order_by(desc(PredictionSnapshot.snapshotted_at))
-                    .limit(1)
-                )
-                if latest_shadow_pre and not latest_shadow_pre.is_fallback_locked:
-                    latest_shadow_pre.is_fallback_locked = True
-                    session.add(latest_shadow_pre)
-            elif is_within_lock_window:
-                shadow_is_locked = True
+                    if latest_shadow_pre and not latest_shadow_pre.is_fallback_locked:
+                        latest_shadow_pre.is_fallback_locked = True
+                        session.add(latest_shadow_pre)
+                elif is_within_lock_window:
+                    shadow_is_locked = True
 
             # Check if existing unlocked snapshot for this shadow model
             existing_shadow_snap = session.scalar(

@@ -614,7 +614,6 @@ class TestStageScoring:
         snap = PredictionSnapshot(
             match_id="m_g1", revision_id=rev.id,
             kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
-            snapshotted_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
             is_pre_match_locked=True,
             home_win=0.55, draw=0.25, away_win=0.20,
             home_xg=1.5, away_xg=0.8,
@@ -653,7 +652,6 @@ class TestStageScoring:
         snap = PredictionSnapshot(
             match_id="m_ko1", revision_id=rev.id,
             kickoff=datetime(2026, 7, 5, 18, tzinfo=timezone.utc),
-            snapshotted_at=datetime(2026, 7, 5, 16, tzinfo=timezone.utc),
             is_pre_match_locked=True,
             home_win=0.40, draw=0.30, away_win=0.30,
             home_xg=1.3, away_xg=1.1,
@@ -702,7 +700,6 @@ class TestAIModelScoring:
         sys_snap = PredictionSnapshot(
             match_id="m_ai1", revision_id=rev.id,
             kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
-            snapshotted_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
             is_pre_match_locked=True,
             home_win=0.55, draw=0.25, away_win=0.20,
             home_xg=1.5, away_xg=0.8,
@@ -748,7 +745,6 @@ class TestAIModelScoring:
         sys_snap = PredictionSnapshot(
             match_id="m_ens1", revision_id=rev.id,
             kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
-            snapshotted_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
             is_pre_match_locked=True,
             home_win=0.55, draw=0.25, away_win=0.20,
             home_xg=1.5, away_xg=0.8,

@@ -22,7 +22,6 @@ import type { StatusItem } from "./ui/StatusStrip";
 import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
 import EmptyState from "./ui/EmptyState";
-import DataHealthBadge from "./DataHealthBadge";
 
 const AUTO_DAILY_OPEN_PARAMS = {
   with_ai: true,
@@ -252,12 +251,6 @@ export default function DailyDashboard() {
   const aiBtn: ButtonState = btnStates?.ai_prediction ?? { enabled: true, reason: "" };
   const fullBtn: ButtonState = btnStates?.full ?? { enabled: true, reason: "" };
 
-  // Data freshness indicator
-  const dataAgeMinutes = (dashboardQuery.data as Record<string, unknown> | undefined)?.data_age_minutes as number | undefined;
-  const lastUpdated = (dashboardQuery.data as Record<string, unknown> | undefined)?.last_updated as string | undefined;
-  const nextMatchInfo = (dashboardQuery.data as Record<string, unknown> | undefined)?.next_match as { id: string; home_team: { id: string; name: string }; away_team: { id: string; name: string }; kickoff_china: string; venue: string } | undefined;
-  const currentTimeChina = (dashboardQuery.data as Record<string, unknown> | undefined)?.current_time_china as string | undefined;
-
   // ── Build status strip items ──
   const statusItems: StatusItem[] = useMemo(() => {
     if (!status) return [];
@@ -395,44 +388,9 @@ export default function DailyDashboard() {
 
   return (
     <div>
-      {/* Time & Freshness Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, fontSize: 13 }}>
-        <div>
-          <span style={{ color: "var(--text-secondary)" }}>当前时间：</span>
-          <span style={{ fontWeight: 600 }}>{currentTimeChina || "—"}</span>
-        </div>
-        <div>
-          {lastUpdated && (
-            <>
-              <span style={{ color: "var(--text-secondary)" }}>数据更新：</span>
-              <span style={{ fontWeight: 600, color: dataAgeMinutes && dataAgeMinutes > 120 ? "var(--risk-red)" : dataAgeMinutes && dataAgeMinutes > 30 ? "var(--accent-yellow)" : "var(--text)" }}>
-                {formatChinaTimeShort(lastUpdated)}
-              </span>
-              {dataAgeMinutes != null && (
-                <span style={{ marginLeft: 6, fontSize: 11, color: dataAgeMinutes > 120 ? "var(--risk-red)" : dataAgeMinutes > 30 ? "var(--accent-yellow)" : "var(--text-secondary)" }}>
-                  {dataAgeMinutes > 120 ? "⚠ 数据过期" : dataAgeMinutes > 30 ? "数据较旧" : `${Math.round(dataAgeMinutes)}分钟前`}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Next Match */}
-      {nextMatchInfo && (
-        <div style={{ marginBottom: 12, padding: "8px 12px", background: "var(--card-bg)", borderRadius: 8, border: "1px solid var(--card-border)" }}>
-          <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>下一场比赛：</span>
-          <span style={{ fontWeight: 600 }}>{getTeamDisplayFromRef(nextMatchInfo.home_team)} vs {getTeamDisplayFromRef(nextMatchInfo.away_team)}</span>
-          <span style={{ marginLeft: 8, fontSize: 12, color: "var(--text-secondary)" }}>{nextMatchInfo.kickoff_china} 北京时间</span>
-        </div>
-      )}
-
       {/* A. Status Summary Strip */}
       <SectionCard title="今日状态" badge={status ? formatChinaTimeShort(status.last_run_at ?? new Date().toISOString()) : "加载中"}>
         <StatusStrip items={statusItems} />
-        <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
-          <DataHealthBadge />
-        </div>
       </SectionCard>
 
       {/* B. Next Step Suggestion */}

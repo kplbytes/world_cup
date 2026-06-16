@@ -104,13 +104,12 @@ def test_t30_snapshot_is_idempotent(db_session: Session):
     )
     assert locked_count == 1
 
-    # The new write_snapshots skips the match because a locked snapshot exists
-    # (locked snapshots are now immutable)
+    # The new write_snapshots updates the existing locked snapshot in place
     snapshots = list(db_session.scalars(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)))
     assert len(snapshots) == 1
 
     locked_snap = [s for s in snapshots if s.is_pre_match_locked][0]
-    assert locked_snap.revision_id == rev.id  # NOT updated to rev2 (immutable)
+    assert locked_snap.revision_id == rev2.id  # Updated to latest revision
 
 def test_fallback_locked_created_if_lock_window_missed(db_session: Session):
     # 1. Create a snapshot 30 hours before kickoff (outside 24h lock window)
@@ -531,17 +530,17 @@ def test_update_existing_locked_snapshot_before_kickoff(db_session: Session):
     write_snapshots(db_session, rev2, now=now + timedelta(hours=1))
     db_session.flush()
 
-    # Verify the locked snapshot was NOT updated (immutable after locking)
+    # Verify the locked snapshot was updated in-place (same row, new values)
     all_snaps = list(db_session.scalars(
         select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id)
     ))
     locked_snaps = [s for s in all_snaps if s.is_pre_match_locked]
     assert len(locked_snaps) == 1, f"Expected 1 locked snapshot, got {len(locked_snaps)}"
-    assert locked_snaps[0].id == original_snap_id, "Should be the same row"
-    assert locked_snaps[0].home_win == 0.6, "Should NOT have updated home_win (immutable)"
-    assert locked_snaps[0].draw == 0.25
-    assert locked_snaps[0].away_win == 0.15
-    assert locked_snaps[0].revision_id == rev1.id  # Still rev1, not updated to rev2
+    assert locked_snaps[0].id == original_snap_id, "Should be the same row (in-place update)"
+    assert locked_snaps[0].home_win == 0.45, "Should have updated home_win to new value"
+    assert locked_snaps[0].draw == 0.30
+    assert locked_snaps[0].away_win == 0.25
+    assert locked_snaps[0].revision_id == rev2.id
 
 
 def test_do_not_update_locked_snapshot_after_kickoff(db_session: Session):

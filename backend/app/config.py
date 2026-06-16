@@ -44,7 +44,6 @@ class Settings(BaseSettings):
     ai_run_all_max_limit: int = 20
 
     # Local workflow settings
-    environment: str = "production"
     auto_run_daily_workflow_on_open: bool = True
     auto_run_ai_on_open: bool = True
     workflow_auto_run_cooldown_minutes: int = 60
