@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Protocol
 
+import numpy as np
 import pandas as pd
 
 
@@ -92,23 +93,60 @@ class MatchView:
         return len(self._team_matches_before)
     
     def get_team_outcomes(self, matches: pd.DataFrame) -> pd.Series:
-        """获取该球队在指定比赛中的结果序列。"""
-        def outcome(row):
-            if row["home_team"] == self._team:
-                return "W" if row["home_goals"] > row["away_goals"] else ("L" if row["home_goals"] < row["away_goals"] else "D")
-            else:
-                return "W" if row["away_goals"] > row["home_goals"] else ("L" if row["away_goals"] < row["home_goals"] else "D")
-        return matches.apply(outcome, axis=1)
+        """获取该球队在指定比赛中的结果序列（向量化版本）。"""
+        if len(matches) == 0:
+            return pd.Series(dtype=str)
+
+        home_goals = matches["home_goals"].values
+        away_goals = matches["away_goals"].values
+        is_home = matches["home_team"].values == self._team
+
+        # 主队视角：home_goals > away_goals → W, < → L, = → D
+        home_outcome = np.where(
+            home_goals > away_goals, "W",
+            np.where(home_goals < away_goals, "L", "D")
+        )
+        # 客队视角：away_goals > home_goals → W, < → L, = → D
+        away_outcome = np.where(
+            away_goals > home_goals, "W",
+            np.where(away_goals < home_goals, "L", "D")
+        )
+
+        result = np.where(is_home, home_outcome, away_outcome)
+        return pd.Series(result, index=matches.index)
     
+    def get_opponent_elo(self, matches: pd.DataFrame) -> pd.Series:
+        """获取指定比赛中对手的赛前 Elo 评分。
+
+        对于每场比赛，判断该队是主队还是客队，
+        然后返回对手的 pre_match_elo。
+
+        Args:
+            matches: 包含 pre_match_elo_home 和 pre_match_elo_away 列的 DataFrame
+
+        Returns:
+            对手 Elo 评分的 Series
+        """
+        def _opp_elo(row):
+            if row["home_team"] == self._team:
+                return row.get("pre_match_elo_away", 1500.0)
+            else:
+                return row.get("pre_match_elo_home", 1500.0)
+        return matches.apply(_opp_elo, axis=1)
+
     def get_team_goals(self, matches: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
         """获取该球队在指定比赛中的进球和失球序列。"""
-        def goals(row):
-            if row["home_team"] == self._team:
-                return row["home_goals"], row["away_goals"]
-            else:
-                return row["away_goals"], row["home_goals"]
-        results = matches.apply(lambda r: pd.Series(goals(r), index=["scored", "conceded"]), axis=1)
-        return results["scored"], results["conceded"]
+        if len(matches) == 0:
+            return pd.Series(dtype=float), pd.Series(dtype=float)
+
+        home_goals = matches["home_goals"].values
+        away_goals = matches["away_goals"].values
+        is_home = matches["home_team"].values == self._team
+
+        scored = np.where(is_home, home_goals, away_goals)
+        conceded = np.where(is_home, away_goals, home_goals)
+
+        return pd.Series(scored, index=matches.index), pd.Series(conceded, index=matches.index)
 
 
 def create_match_views(
@@ -157,14 +195,35 @@ def compute_all_features(
     """为所有比赛计算特征。
     
     严格按时间顺序处理，确保不会使用未来数据。
+    
+    Args:
+        matches: 需要计算特征的比赛数据
+        all_matches: 全量比赛数据
+        feature_funcs: 特征名到计算函数的映射
+        show_progress: 是否显示进度条（tqdm）和每500行进度输出
     """
     results = []
     matches_sorted = matches.sort_values("match_date")
-    
-    for idx, match in matches_sorted.iterrows():
+    total = len(matches_sorted)
+
+    use_tqdm = False
+    iterator = matches_sorted.iterrows()
+    if show_progress:
+        try:
+            from tqdm import tqdm
+            iterator = tqdm(iterator, total=total, desc="Computing features", unit="match")
+            use_tqdm = True
+        except ImportError:
+            pass  # tqdm 不可用时回退到手动进度输出
+
+    for i, (idx, match) in enumerate(iterator):
         features = compute_features_at_time(match, all_matches, feature_funcs)
         features["match_id"] = match.get("match_id", idx)
         results.append(features)
-    
+
+        # tqdm 不可用时，每 500 行打印进度
+        if show_progress and not use_tqdm and (i + 1) % 500 == 0:
+            print(f"  [progress] {i + 1}/{total} matches processed ({(i + 1) / total * 100:.1f}%)")
+
     feature_df = pd.DataFrame(results)
     return feature_df

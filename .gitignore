@@ -20,3 +20,8 @@ frontend/vite.config.d.ts
 data/logs/
 *.log
 *.jsonl
+
+# Database files
+*.db
+*.db-shm
+*.db-wal

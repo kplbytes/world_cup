@@ -69,28 +69,24 @@ def recent_form_5_opp_adjusted(home_view: MatchView, away_view: MatchView, match
     """对手强度修正后的近期状态(5场)"""
     home_matches = home_view.recent_matches(5)
     away_matches = away_view.recent_matches(5)
-    
+
     if len(home_matches) == 0 or len(away_matches) == 0:
         return None
-    
+
     def opp_adjusted_score(view: MatchView, matches) -> float:
         outcomes = view.get_team_outcomes(matches)
-        # 简化：用对手Elo差值作为权重（如果有）
         scores = outcomes.map({"W": 1.0, "D": 0.5, "L": 0.0}).values
-        # 如果有对手Elo信息，用Elo差值加权；否则退化为普通得分率
-        opp_elo = []
-        for _, m in matches.iterrows():
-            opponent = m["away_team"] if m["home_team"] == view.team else m["home_team"]
-            opp_elo.append(m.get(f"opponent_elo_{opponent}", 1500.0))
-        
-        weights = np.array(opp_elo) / 1500.0  # 归一化
+        # 使用 pre_match_elo_home/away 列获取对手赛前 Elo
+        opp_elo = view.get_opponent_elo(matches).values
+
+        weights = np.array(opp_elo, dtype=float) / 1500.0  # 归一化
         if weights.sum() == 0:
             return np.mean(scores)
         return np.average(scores, weights=weights)
-    
+
     home_score = opp_adjusted_score(home_view, home_matches)
     away_score = opp_adjusted_score(away_view, away_matches)
-    
+
     return home_score - away_score
 
 
@@ -143,26 +139,38 @@ def recent_goal_diff_5(home_view: MatchView, away_view: MatchView, match) -> flo
     return home_gd - away_gd
 
 
+def _compute_avg_goals_baseline(view: MatchView) -> float:
+    """从 _all_matches 计算 kickoff 前所有比赛的场均进球基线。"""
+    all_before = view._all_matches[view._all_matches["match_date"] < view._kickoff]
+    if len(all_before) == 0:
+        return 1.3  # 退化默认值
+    total_home = all_before["home_goals"].sum()
+    total_away = all_before["away_goals"].sum()
+    # 每场比赛产生 home_goals + away_goals 个进球，但 attack/defense 各看一端
+    # 返回单端场均（= 总进球 / (2 * 场次)），即每队每场平均进球
+    return (total_home + total_away) / (2.0 * len(all_before))
+
+
 def attack_strength(home_view: MatchView, away_view: MatchView, match) -> float | None:
     """进攻强度差值（主队 - 客队）"""
     home_matches = home_view.recent_matches(10)
     away_matches = away_view.recent_matches(10)
-    
+
     if len(home_matches) < 3 or len(away_matches) < 3:
         return None
-    
+
     home_scored, _ = home_view.get_team_goals(home_matches)
     away_scored, _ = away_view.get_team_goals(away_matches)
-    
+
     home_avg = home_scored.mean()
     away_avg = away_scored.mean()
-    
-    # 用全局平均作为基准（简化：1.3球/场）
-    baseline = 1.3
-    
+
+    # 用实际数据计算基线，而非硬编码
+    baseline = _compute_avg_goals_baseline(home_view)
+
     home_strength = home_avg / baseline if baseline > 0 else 1.0
     away_strength = away_avg / baseline if baseline > 0 else 1.0
-    
+
     return home_strength - away_strength
 
 
@@ -170,21 +178,22 @@ def defense_strength(home_view: MatchView, away_view: MatchView, match) -> float
     """防守强度差值（主队 - 客队，负值表示主队防守更好）"""
     home_matches = home_view.recent_matches(10)
     away_matches = away_view.recent_matches(10)
-    
+
     if len(home_matches) < 3 or len(away_matches) < 3:
         return None
-    
+
     _, home_conceded = home_view.get_team_goals(home_matches)
     _, away_conceded = away_view.get_team_goals(away_matches)
-    
+
     home_avg = home_conceded.mean()
     away_avg = away_conceded.mean()
-    
-    baseline = 1.1
-    
+
+    # 用实际数据计算基线，而非硬编码
+    baseline = _compute_avg_goals_baseline(home_view)
+
     home_strength = home_avg / baseline if baseline > 0 else 1.0
     away_strength = away_avg / baseline if baseline > 0 else 1.0
-    
+
     return home_strength - away_strength
 
 
@@ -219,15 +228,20 @@ def host_advantage(home_view: MatchView, away_view: MatchView, match) -> float:
     is_neutral = match.get("is_neutral", False)
     home_country = str(match.get("country", ""))
     home_team = match.get("home_team", "")
-    
+    away_team = match.get("away_team", "")
+
     if not is_neutral:
         # 非中立场，主队有主场优势
         return 1.0
-    
+
     # 中立场但比赛在主队国家进行
     if home_country and home_team and home_country == home_team:
         return 0.5
-    
+
+    # 中立场但比赛在客队国家进行（客队获得半主场优势，对主队为负效应）
+    if home_country and away_team and home_country == away_team:
+        return -0.5
+
     return 0.0
 
 
@@ -284,9 +298,21 @@ def tournament_experience(home_view: MatchView, away_view: MatchView, match) -> 
 
 
 def knockout_experience(home_view: MatchView, away_view: MatchView, match) -> float | None:
-    """淘汰赛经验差值（简化版：大赛场次作为代理）"""
-    # 简化：用世界杯和洲际杯场次作为淘汰赛经验的代理
-    return tournament_experience(home_view, away_view, match)
+    """淘汰赛经验差值（加权版：世界杯2x，洲际杯1.5x，与 tournament_experience 区分）"""
+    home_wc = home_view.matches_by_tournament_category("world_cup", 50)
+    home_cont = home_view.matches_by_tournament_category("continental", 50)
+
+    away_wc = away_view.matches_by_tournament_category("world_cup", 50)
+    away_cont = away_view.matches_by_tournament_category("continental", 50)
+
+    # 加权：世界杯 2x，洲际杯 1.5x（tournament_experience 是等权 1x）
+    home_exp = len(home_wc) * 2.0 + len(home_cont) * 1.5
+    away_exp = len(away_wc) * 2.0 + len(away_cont) * 1.5
+
+    if home_exp == 0.0 and away_exp == 0.0:
+        return None
+
+    return float(home_exp - away_exp)
 
 
 # ============================================================
@@ -294,23 +320,51 @@ def knockout_experience(home_view: MatchView, away_view: MatchView, match) -> fl
 # ============================================================
 
 def inter_confederation_form(home_view: MatchView, away_view: MatchView, match) -> float | None:
-    """同洲/跨洲表现差值"""
+    """跨洲表现差值：仅统计两队对阵另一洲球队的比赛表现"""
     is_cross = match.get("is_cross_confederation", False)
     if not is_cross:
         return 0.0  # 同洲比赛，此因子为0
-    
-    # 跨洲比赛：主队跨洲表现 - 客队跨洲表现
-    home_matches = home_view.recent_matches(20)
-    away_matches = away_view.recent_matches(20)
-    
-    if len(home_matches) == 0 or len(away_matches) == 0:
+
+    def cross_conf_form(view: MatchView) -> float | None:
+        """计算该队对阵另一洲球队的近期胜率。"""
+        recent = view.recent_matches(20)
+        if len(recent) == 0:
+            return None
+
+        team_conf = None
+        # 从 match 参数获取该队所属洲
+        if match.get("home_team") == view.team:
+            team_conf = match.get("home_confederation")
+        elif match.get("away_team") == view.team:
+            team_conf = match.get("away_confederation")
+
+        if team_conf is None:
+            return None
+
+        # 筛选跨洲比赛：对手来自不同洲
+        cross_matches = []
+        for _, m in recent.iterrows():
+            if m["home_team"] == view.team:
+                opp_conf = m.get("away_confederation", "Unknown")
+            else:
+                opp_conf = m.get("home_confederation", "Unknown")
+            if opp_conf != team_conf and opp_conf != "Unknown":
+                cross_matches.append(m)
+
+        if len(cross_matches) == 0:
+            return None
+
+        cross_df = pd.DataFrame(cross_matches)
+        outcomes = view.get_team_outcomes(cross_df).tolist()
+        return _form_score(outcomes)
+
+    home_score = cross_conf_form(home_view)
+    away_score = cross_conf_form(away_view)
+
+    if home_score is None or away_score is None:
         return None
-    
-    # 简化：用整体近期状态作为代理
-    home_outcomes = home_view.get_team_outcomes(home_matches).tolist()
-    away_outcomes = away_view.get_team_outcomes(away_matches).tolist()
-    
-    return _form_score(home_outcomes) - _form_score(away_outcomes)
+
+    return home_score - away_score
 
 
 # ============================================================

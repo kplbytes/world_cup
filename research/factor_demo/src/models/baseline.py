@@ -11,9 +11,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
+import lightgbm as lgb
 import numpy as np
 from scipy.special import softmax
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
 
 
 @dataclass
@@ -237,3 +242,138 @@ class MarketImpliedBaseline:
             draw=implied_draw / total,
             away_win=implied_away / total,
         )
+
+
+class RegularizedLogisticBaseline:
+    """L2 正则化 Logistic 回归基线。
+
+    使用 sklearn 的 LogisticRegression 对因子进行组合预测。
+    """
+
+    def __init__(self, C: float = 1.0, max_iter: int = 1000):
+        self.C = C
+        self.max_iter = max_iter
+        self._model: LogisticRegression | None = None
+        self._imputer: SimpleImputer | None = None
+
+    def fit(self, X_train: np.ndarray, y_train: np.ndarray) -> "RegularizedLogisticBaseline":
+        """训练模型，自动用列均值填充 NaN。"""
+        self._imputer = SimpleImputer(strategy="mean")
+        X_clean = self._imputer.fit_transform(X_train)
+
+        self._model = LogisticRegression(
+            C=self.C,
+            max_iter=self.max_iter,
+            solver="lbfgs",
+        )
+        self._model.fit(X_clean, y_train)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """返回 (N, 3) 概率数组。"""
+        X_clean = self._imputer.transform(X)
+        return self._model.predict_proba(X_clean)
+
+
+class LightGBMBaseline:
+    """LightGBM 基线模型。
+
+    使用 LightGBM 对因子进行组合预测，原生支持 NaN。
+    """
+
+    def __init__(
+        self,
+        n_estimators: int = 200,
+        max_depth: int = 5,
+        learning_rate: float = 0.05,
+        num_leaves: int = 31,
+        min_child_samples: int = 20,
+        subsample: float = 0.8,
+        colsample_bytree: float = 0.8,
+        random_state: int = 42,
+    ):
+        self.n_estimators = n_estimators
+        self.max_depth = max_depth
+        self.learning_rate = learning_rate
+        self.num_leaves = num_leaves
+        self.min_child_samples = min_child_samples
+        self.subsample = subsample
+        self.colsample_bytree = colsample_bytree
+        self.random_state = random_state
+        self._model: lgb.LGBMClassifier | None = None
+
+    def fit(self, X_train: np.ndarray, y_train: np.ndarray) -> "LightGBMBaseline":
+        """训练模型，LightGBM 原生处理 NaN。"""
+        self._model = lgb.LGBMClassifier(
+            n_estimators=self.n_estimators,
+            max_depth=self.max_depth,
+            learning_rate=self.learning_rate,
+            num_leaves=self.num_leaves,
+            min_child_samples=self.min_child_samples,
+            subsample=self.subsample,
+            colsample_bytree=self.colsample_bytree,
+            random_state=self.random_state,
+            verbose=-1,
+        )
+        self._model.fit(X_train, y_train)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """返回 (N, 3) 概率数组。"""
+        return self._model.predict_proba(X)
+
+
+class AblationModel:
+    """消融实验模型包装器。
+
+    仅使用指定特征子集训练基础模型，用于消融研究。
+    """
+
+    def __init__(self, base_model_class: type, feature_names: list[str], **model_kwargs: Any):
+        self.base_model_class = base_model_class
+        self.feature_names = feature_names
+        self.model_kwargs = model_kwargs
+        self._model = None
+
+    def fit(self, X_train_df, y_train: np.ndarray) -> "AblationModel":
+        """选择指定特征列后训练模型。"""
+        X_subset = X_train_df[self.feature_names]
+        if hasattr(X_subset, "values"):
+            X_subset = X_subset.values
+        self._model = self.base_model_class(**self.model_kwargs)
+        self._model.fit(X_subset, y_train)
+        return self
+
+    def predict(self, X_df) -> np.ndarray:
+        """选择指定特征列后预测，返回 (N, 3) 概率数组。"""
+        X_subset = X_df[self.feature_names]
+        if hasattr(X_subset, "values"):
+            X_subset = X_subset.values
+        return self._model.predict(X_subset)
+
+
+class CalibratedModel:
+    """校准模型包装器。
+
+    对任意基础模型应用 Platt 缩放或等距校准。
+    """
+
+    def __init__(self, base_model, method: str = "isotonic", cv: int = 5):
+        self.base_model = base_model
+        self.method = method
+        self.cv = cv
+        self._calibrator: CalibratedClassifierCV | None = None
+
+    def fit(self, X_train: np.ndarray, y_train: np.ndarray) -> "CalibratedModel":
+        """先拟合基础模型，再拟合校准器。"""
+        self._calibrator = CalibratedClassifierCV(
+            estimator=self.base_model,
+            method=self.method,
+            cv=self.cv,
+        )
+        self._calibrator.fit(X_train, y_train)
+        return self
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """返回校准后的 (N, 3) 概率数组。"""
+        return self._calibrator.predict_proba(X)

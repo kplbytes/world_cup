@@ -33,13 +33,13 @@ class TestFactorComputation:
             assert -1.0 <= val <= 1.0, f"recent_form_5 out of range: {val}"
 
     def test_host_advantage_range(self, match_data):
-        """host_advantage 应在 [0, 1] 范围内。"""
+        """host_advantage 应在 [-0.5, 1] 范围内。"""
         match = match_data.iloc[5000]
         home_view = MatchView(match_data, match["match_date"], match["home_team"])
         away_view = MatchView(match_data, match["match_date"], match["away_team"])
 
         val = FACTOR_FUNCTIONS["host_advantage"](home_view, away_view, match)
-        assert 0.0 <= val <= 1.0, f"host_advantage out of range: {val}"
+        assert -0.5 <= val <= 1.0, f"host_advantage out of range: {val}"
 
     def test_elo_diff_computed(self, match_data):
         """Elo 差值应该被正确注入。"""

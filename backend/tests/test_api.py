@@ -248,16 +248,22 @@ def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monk
 
         from app.models import PredictionSnapshot
         from sqlalchemy import select
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
 
         existing = session.scalar(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id, PredictionSnapshot.revision_id == dashboard["revision"]["id"]))
         if existing:
             existing.is_pre_match_locked = True
+            # Ensure snapshotted_at is before kickoff for scoring eligibility
+            snap_time = existing.snapshotted_at.replace(tzinfo=timezone.utc) if existing.snapshotted_at and existing.snapshotted_at.tzinfo is None else existing.snapshotted_at
+            kickoff_time = match.kickoff.replace(tzinfo=timezone.utc) if match.kickoff and match.kickoff.tzinfo is None else match.kickoff
+            if snap_time and kickoff_time and snap_time >= kickoff_time:
+                existing.snapshotted_at = match.kickoff - timedelta(hours=2)
         else:
             snap = PredictionSnapshot(
                 match_id=match_id,
                 revision_id=dashboard["revision"]["id"],
-                kickoff=datetime.now(timezone.utc),
+                kickoff=match.kickoff,
+                snapshotted_at=match.kickoff - timedelta(hours=2),
                 is_pre_match_locked=True,
                 home_win=0.5, draw=0.3, away_win=0.2, home_xg=1.0, away_xg=1.0,
                 scorelines=[], score_matrix=[],
@@ -281,11 +287,17 @@ def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monk
         existing2 = session.scalar(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id, PredictionSnapshot.revision_id == second_revision.id))
         if existing2:
             existing2.is_pre_match_locked = True
+            # Ensure snapshotted_at is before kickoff for scoring eligibility
+            snap_time2 = existing2.snapshotted_at.replace(tzinfo=timezone.utc) if existing2.snapshotted_at and existing2.snapshotted_at.tzinfo is None else existing2.snapshotted_at
+            kickoff_time2 = match.kickoff.replace(tzinfo=timezone.utc) if match.kickoff and match.kickoff.tzinfo is None else match.kickoff
+            if snap_time2 and kickoff_time2 and snap_time2 >= kickoff_time2:
+                existing2.snapshotted_at = match.kickoff - timedelta(hours=1)
         else:
             snap2 = PredictionSnapshot(
                 match_id=match_id,
                 revision_id=second_revision.id,
-                kickoff=datetime.now(timezone.utc),
+                kickoff=match.kickoff,
+                snapshotted_at=match.kickoff - timedelta(hours=1),
                 is_pre_match_locked=True,
                 home_win=0.6, draw=0.2, away_win=0.2, home_xg=1.2, away_xg=0.8,
                 scorelines=[], score_matrix=[],
