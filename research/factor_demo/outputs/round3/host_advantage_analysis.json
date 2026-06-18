@@ -1,0 +1,26 @@
+{
+  "venue_types": {
+    "home": {
+      "n_samples": 4666,
+      "home_win_rate": 0.5130732961851693,
+      "elo_poisson_brier": 0.4971834049893031,
+      "lr_full_brier": 0.49249131759948955,
+      "host_advantage_helps": null
+    },
+    "neutral": {
+      "n_samples": 2202,
+      "home_win_rate": 0.4055404178019982,
+      "elo_poisson_brier": 0.5484405837537571,
+      "lr_full_brier": 0.5355097656292253,
+      "host_advantage_helps": true
+    },
+    "host_nation": {
+      "n_samples": 0
+    },
+    "semi_home": {
+      "n_samples": 0
+    }
+  },
+  "verdict": "KEEP_WITH_RESERVATION",
+  "reason": "host_advantage 在中立场验证集有帮助，但东道主样本为零，中立场世界杯场景需进一步验证"
+}

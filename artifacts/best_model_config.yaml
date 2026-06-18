@@ -1,0 +1,16 @@
+best_experiment_id: E0001
+config:
+  draw_boost: 1.0
+  favorite_dampening: 0.0
+  market_blend_weight: 0.0
+  numerical_adjustment_weight: 0.0
+  underdog_boost: 0.0
+metrics:
+  brier: 0.5334
+  draw_brier: 0.8541
+  favorite_wrong_count: 2
+  hit_rate: 0.0
+  logloss: 0.9045
+  overconfident_wrong_count: 1
+  sample_count: 4
+model_version: exp-1.00-0.00-0.00-0.00-0.00

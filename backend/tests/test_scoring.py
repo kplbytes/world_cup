@@ -836,3 +836,184 @@ class TestModelComparison:
         # sample_count=4 means available=True but sample_sufficient=False (need >=20)
         assert 4 > 0  # available should be True
         assert 4 < 20  # sample_sufficient should be False
+
+
+# ---------------------------------------------------------------------------
+# Tests for get_match_count_breakdown has_pre_match_prediction logic
+# ---------------------------------------------------------------------------
+
+def _seed_finished_match_with_prediction(
+    session,
+    match_id: str,
+    kickoff: datetime,
+    revision_created_at: datetime,
+    home_score: int = 1,
+    away_score: int = 0,
+):
+    """Seed a finished match with a prediction tied to a revision created at the given time.
+
+    No snapshots are created - this isolates the has_pre_match_prediction logic
+    from has_pre_kickoff_snapshot.
+    """
+    from app.models import DashboardRevision, Match, MatchPrediction, Team
+
+    session.add_all([
+        Team(id=f"T1_{match_id}", name=f"T1_{match_id}", short_name=f"T1_{match_id}", code=f"T1_{match_id}", group_code="A"),
+        Team(id=f"T2_{match_id}", name=f"T2_{match_id}", short_name=f"T2_{match_id}", code=f"T2_{match_id}", group_code="A"),
+    ])
+    session.flush()
+
+    match = Match(
+        id=match_id,
+        group_code="A",
+        home_team_id=f"T1_{match_id}",
+        away_team_id=f"T2_{match_id}",
+        kickoff=kickoff,
+        status="final",
+        source="test",
+        home_score=home_score,
+        away_score=away_score,
+    )
+    session.add(match)
+    session.flush()
+
+    rev = DashboardRevision(
+        created_at=revision_created_at,
+        model_version="v1",
+        simulation_iterations=1,
+        simulation_seed=1,
+    )
+    session.add(rev)
+    session.flush()
+
+    pred = MatchPrediction(
+        revision_id=rev.id,
+        match_id=match_id,
+        home_win=0.5, draw=0.3, away_win=0.2,
+        home_xg=1.0, away_xg=1.0,
+        confidence=0.8, confidence_label="High",
+        data_confidence=0.9, data_confidence_label="High",
+        model_confidence=0.85, model_confidence_label="High",
+        explanation="Test", model_inputs={}, model_version="v1",
+        scorelines=[], score_matrix=[],
+    )
+    session.add(pred)
+    session.flush()
+    return match, rev
+
+
+def test_pre_match_prediction_counted_when_revision_before_kickoff(db_session):
+    """A prediction whose revision was created before kickoff counts as pre-match."""
+    from app.services.scoring import get_match_count_breakdown
+
+    kickoff = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+    _seed_finished_match_with_prediction(
+        db_session,
+        match_id="m_pre_pred",
+        kickoff=kickoff,
+        revision_created_at=kickoff - timedelta(hours=2),
+    )
+
+    breakdown = get_match_count_breakdown(db_session)
+    assert breakdown.total_finished == 1
+    assert breakdown.has_pre_match_prediction == 1
+    assert breakdown.details[0]["has_pre_match_prediction"] is True
+
+
+def test_post_match_prediction_not_counted_as_pre_match(db_session):
+    """A prediction whose revision was created after kickoff must NOT count as pre-match.
+
+    This is the core bug fix: previously has_pre_match_prediction counted ANY
+    MatchPrediction regardless of when it was created.
+    """
+    from app.services.scoring import get_match_count_breakdown
+
+    kickoff = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+    _seed_finished_match_with_prediction(
+        db_session,
+        match_id="m_post_pred",
+        kickoff=kickoff,
+        revision_created_at=kickoff + timedelta(hours=2),
+    )
+
+    breakdown = get_match_count_breakdown(db_session)
+    assert breakdown.total_finished == 1
+    assert breakdown.has_pre_match_prediction == 0
+    assert breakdown.details[0]["has_pre_match_prediction"] is False
+    # has_prediction should still be True (any prediction exists)
+    assert breakdown.details[0]["has_prediction"] is True
+
+
+def test_mixed_pre_and_post_match_predictions(db_session):
+    """With both pre-match and post-match predictions, only pre-match counts."""
+    from app.services.scoring import get_match_count_breakdown
+
+    kickoff = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+
+    # Match 1: pre-match prediction (revision before kickoff)
+    _seed_finished_match_with_prediction(
+        db_session,
+        match_id="m_pre",
+        kickoff=kickoff,
+        revision_created_at=kickoff - timedelta(hours=2),
+    )
+
+    # Match 2: post-match prediction (revision after kickoff)
+    _seed_finished_match_with_prediction(
+        db_session,
+        match_id="m_post",
+        kickoff=kickoff,
+        revision_created_at=kickoff + timedelta(hours=2),
+    )
+
+    breakdown = get_match_count_breakdown(db_session)
+    assert breakdown.total_finished == 2
+    assert breakdown.has_pre_match_prediction == 1  # Only m_pre counts
+    assert breakdown.missing_snapshot == 2  # Neither has a snapshot
+
+
+def test_has_pre_match_prediction_consistent_with_pre_kickoff_snapshot(db_session):
+    """When a pre-kickoff snapshot exists, has_pre_match_prediction should also be True.
+
+    A pre-kickoff snapshot implies a prediction existed before kickoff, so the
+    revision that produced it must have been created before kickoff.
+    """
+    from app.models import PredictionSnapshot
+    from app.services.scoring import get_match_count_breakdown
+
+    kickoff = datetime(2026, 6, 15, 12, 0, tzinfo=timezone.utc)
+
+    # Use the helper to create a match with a pre-kickoff revision
+    _match, rev = _seed_finished_match_with_prediction(
+        db_session,
+        match_id="m_consistent",
+        kickoff=kickoff,
+        revision_created_at=kickoff - timedelta(hours=2),
+    )
+
+    # Add a pre-kickoff snapshot tied to the same revision
+    snap = PredictionSnapshot(
+        match_id="m_consistent",
+        revision_id=rev.id,
+        kickoff=kickoff,
+        snapshotted_at=kickoff - timedelta(hours=2),
+        home_win=0.6,
+        draw=0.25,
+        away_win=0.15,
+        home_xg=1.2,
+        away_xg=0.7,
+        scorelines=[],
+        score_matrix=[],
+        confidence=0.8,
+        confidence_label="High",
+        model_inputs={},
+        model_version="v1",
+    )
+    db_session.add(snap)
+    db_session.flush()
+
+    breakdown = get_match_count_breakdown(db_session)
+    assert breakdown.total_finished == 1
+    assert breakdown.has_pre_match_prediction == 1
+    assert breakdown.has_pre_kickoff_snapshot == 1
+    assert breakdown.actually_scored == 1

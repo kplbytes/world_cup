@@ -231,10 +231,11 @@ def workflow_update_predictions(req: UpdatePredictionsRequest = UpdatePrediction
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
     # Return structured summary
-    from datetime import datetime, timezone
+    from datetime import datetime, timezone, timedelta
     from sqlalchemy import func
-    from app.models import Match
+    from app.models import Match, AIPrediction
     from app.services.snapshots import count_locked_matches
+    from app.ai.model_registry import list_enabled_models
 
     with session_scope() as session:
         run = session.get(WorkflowRun, run_id)
@@ -264,6 +265,48 @@ def workflow_update_predictions(req: UpdatePredictionsRequest = UpdatePrediction
         status_map = {"success": "ok", "partial_success": "partial", "failed": "failed"}
 
         errors = [s.error_message for s in steps if s.error_message]
+        # Also include run-level error if present
+        if run and run.error_message:
+            errors.insert(0, run.error_message)
+
+        # Determine AI skip reason
+        ai_skip_reason = None
+        ai_skipped_existing = 0
+        missing_ai_count = 0
+
+        if ai_step:
+            if ai_step.status == "skipped":
+                reason = (ai_step.summary_json or {}).get("reason", "")
+                if "with_ai=false" in reason:
+                    ai_skip_reason = "AI 未启用（with_ai=false）"
+                elif "not enabled" in reason:
+                    ai_skip_reason = "AI 预测未启用（ENABLE_AI_PREDICTION=false）"
+                else:
+                    ai_skip_reason = reason or "AI 步骤被跳过"
+            elif ai_step.status == "failed":
+                ai_skip_reason = ai_step.error_message or "AI 预测失败"
+            elif ai_step.status == "success":
+                ai_skipped_existing = ai_summary.get("skipped", 0)
+                # Count matches still missing AI
+                enabled_versions = {m.model_version for m in list_enabled_models()}
+                upcoming = list(session.scalars(
+                    select(Match)
+                    .where(Match.status != "final")
+                    .where(Match.kickoff >= now)
+                    .where(Match.kickoff <= now + timedelta(hours=48))
+                ))
+                for m in upcoming:
+                    existing = list(session.scalars(
+                        select(AIPrediction)
+                        .where(AIPrediction.match_id == m.id)
+                        .where(AIPrediction.error_code.is_(None))
+                        .where(AIPrediction.parsed_home_win.isnot(None))
+                    ))
+                    covered_versions = {p.model_version for p in existing}
+                    if enabled_versions - covered_versions:
+                        missing_ai_count += 1
+                if ai_summary.get("success", 0) == 0 and ai_summary.get("failed", 0) == 0:
+                    ai_skip_reason = "没有可预测的比赛" if matches_considered == 0 else "所有比赛已有 AI 预测"
 
         return {
             "status": status_map.get(overall, overall),
@@ -272,6 +315,9 @@ def workflow_update_predictions(req: UpdatePredictionsRequest = UpdatePrediction
             "predictions_updated": 1 if any(s.step_name == "pre_match_recompute" and s.status == "success" for s in steps) else 0,
             "ai_success": ai_summary.get("success", 0),
             "ai_failed": ai_summary.get("failed", 0),
+            "ai_skipped_existing": ai_skipped_existing,
+            "ai_skip_reason": ai_skip_reason,
+            "missing_ai_count": missing_ai_count,
             "ensemble_updated": ensemble_summary.get("success", 0),
             "locked_skipped": locked_skipped,
             "errors": errors,

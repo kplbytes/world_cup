@@ -22,6 +22,7 @@ def _configure_sqlite(engine: Engine) -> None:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
 def _upgrade_schema(engine: Engine) -> None:
@@ -271,7 +272,7 @@ def create_database(path: str | Path | None = None) -> Engine:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
         f"sqlite:///{database_path}",
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 30},
     )
     _configure_sqlite(engine)
     _upgrade_schema(engine)

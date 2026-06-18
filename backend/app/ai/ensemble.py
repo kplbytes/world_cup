@@ -171,8 +171,11 @@ def compute_ensemble(
     if match:
         lock = compute_match_lock_status(match, now)
         is_locked = lock.is_pre_match_locked
+        is_fallback_locked = lock.is_fallback_locked
         locked_at = lock.locked_at
         real_time_only = lock.real_time_only
+    else:
+        is_fallback_locked = False
 
     # 10. Save ensemble prediction
     ensemble = EnsemblePrediction(
@@ -191,6 +194,8 @@ def compute_ensemble(
         created_at=now,
         locked_at=locked_at,
         is_pre_match_locked=is_locked,
+        is_fallback_locked=is_fallback_locked,
+        real_time_only=real_time_only,
         source_status_json={
             "system": has_system,
             "market": has_market,

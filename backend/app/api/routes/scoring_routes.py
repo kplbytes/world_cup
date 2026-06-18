@@ -153,6 +153,15 @@ def decision_snapshot_status():
             .order_by(Match.kickoff)
         ))
 
+        snapshots_by_match: dict[str, list[PredictionSnapshot]] = {}
+        if matches:
+            for snapshot in session.scalars(
+                select(PredictionSnapshot)
+                .where(PredictionSnapshot.match_id.in_([m.id for m in matches]))
+                .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
+            ):
+                snapshots_by_match.setdefault(snapshot.match_id, []).append(snapshot)
+
         result = []
         matches_total = len(matches)
         snapshots_ready = 0
@@ -160,13 +169,7 @@ def decision_snapshot_status():
         last_snapshot_at = None
 
         for match in matches:
-            snapshots = list(session.scalars(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == match.id)
-                .order_by(PredictionSnapshot.snapshotted_at.desc())
-            ))
-
-            status = compute_decision_snapshot_status(match, snapshots, now)
+            status = compute_decision_snapshot_status(match, snapshots_by_match.get(match.id, []), now)
 
             if status.has_decision_snapshot:
                 snapshots_ready += 1

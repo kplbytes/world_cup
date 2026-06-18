@@ -1,0 +1,77 @@
+{
+  "EloPoisson": {
+    "validation": {
+      "brier_score": 0.5136173461132588,
+      "brier_home": 0.18712934761519356,
+      "brier_draw": 0.1709404187291424,
+      "brier_away": 0.15554757976892286,
+      "log_loss": 0.8756809247543069,
+      "accuracy": 0.6065812463599302,
+      "n_samples": 6868,
+      "home_win_accuracy": 0.8859142074840279,
+      "draw_accuracy": 0.0,
+      "away_win_accuracy": 0.6198714780029659,
+      "ece": 0.038569306254766345
+    }
+  },
+  "EloLogistic": {
+    "validation": {
+      "brier_score": 0.5169810473632485,
+      "brier_home": 0.18744985008013815,
+      "brier_draw": 0.17242826597463537,
+      "brier_away": 0.15710293130847494,
+      "log_loss": 0.8852529265871624,
+      "accuracy": 0.6058532323820618,
+      "n_samples": 6868,
+      "home_win_accuracy": 0.8421052631578947,
+      "draw_accuracy": 0.0,
+      "away_win_accuracy": 0.6885813148788927,
+      "ece": 0.03906078065736306
+    }
+  },
+  "LR_elo_only": {
+    "validation": {
+      "brier_score": 0.5124424962855066,
+      "brier_home": 0.18692994757850231,
+      "brier_draw": 0.17042155580751595,
+      "brier_away": 0.15509099289948833,
+      "log_loss": 0.8719590497097184,
+      "accuracy": 0.6025043680838672,
+      "n_samples": 6868,
+      "home_win_accuracy": 0.879221174323091,
+      "draw_accuracy": 0.0,
+      "away_win_accuracy": 0.6169055857637172,
+      "ece": 0.021919134908534907
+    }
+  },
+  "LR_new_only": {
+    "validation": {
+      "brier_score": 0.5254895601723016,
+      "brier_home": 0.1926494034808297,
+      "brier_draw": 0.17165097425626763,
+      "brier_away": 0.16118918243520436,
+      "log_loss": 0.8932268362263724,
+      "accuracy": 0.5926033779848573,
+      "n_samples": 6868,
+      "home_win_accuracy": 0.8673562519014298,
+      "draw_accuracy": 0.0,
+      "away_win_accuracy": 0.6025704399406822,
+      "ece": 0.014872364536501216
+    }
+  },
+  "LR_full": {
+    "validation": {
+      "brier_score": 0.5062837786596931,
+      "brier_home": 0.1839965643034785,
+      "brier_draw": 0.16971396045403683,
+      "brier_away": 0.15257325390217785,
+      "log_loss": 0.8628956120898433,
+      "accuracy": 0.6078916715200932,
+      "n_samples": 6868,
+      "home_win_accuracy": 0.8752662001825373,
+      "draw_accuracy": 0.0006418485237483953,
+      "away_win_accuracy": 0.6411270390509145,
+      "ece": 0.01954255102475468
+    }
+  }
+}

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from app.config import settings
 from app.db import session_scope
+from app.models import DashboardRevision
 from app.providers.football_data import FootballDataProvider, is_configured as fd_is_configured
 from app.providers.openfootball import OpenFootballProvider
 from app.providers.worldcup26 import WorldCup26Provider
@@ -24,11 +26,12 @@ def _build_providers():
 @router.get("/health")
 def health():
     with session_scope() as session:
-        try:
-            dashboard = build_dashboard(session)
-            revision_id = dashboard["revision"]["id"]
-        except LookupError:
-            revision_id = None
+        revision_id = session.scalar(
+            select(DashboardRevision.id)
+            .where(DashboardRevision.active.is_(True))
+            .order_by(DashboardRevision.id.desc())
+            .limit(1)
+        )
     return {"status": "ok", "revision_id": revision_id}
 
 

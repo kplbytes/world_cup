@@ -1,0 +1,9 @@
+match_id,home_team,away_team,kickoff,home_score,away_score,actual_result,baseline_probs,shadow_probs,brier_baseline,brier_shadow,delta_brier,is_pre_match_locked,has_prediction_snapshot,scorable_status,data_source
+hist_8108,Mexico,South Africa,2026-06-11,2,0,home_win,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8109,South Korea,Czech Republic,2026-06-11,2,1,home_win,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8110,Canada,Bosnia and Herzegovina,2026-06-12,1,1,draw,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8111,United States,Paraguay,2026-06-12,4,1,home_win,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8112,Qatar,Switzerland,2026-06-13,1,1,draw,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8113,Brazil,Morocco,2026-06-13,1,1,draw,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8114,Haiti,Scotland,2026-06-13,0,1,away_win,,,,,,False,False,not_scorable_no_snapshot,historical_matches
+hist_8115,Australia,Turkey,2026-06-13,2,0,home_win,,,,,,False,False,not_scorable_no_snapshot,historical_matches

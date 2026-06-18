@@ -1,0 +1,120 @@
+{
+  "checks": [
+    {
+      "factor": "elo_diff",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "recent_form_5",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "recent_form_10",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "recent_form_5_opp_adjusted",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "recent_goals_scored_5",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "recent_goals_conceded_5",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "recent_goal_diff_5",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "attack_strength",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "defense_strength",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "official_vs_friendly",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "home_away_neutral_form",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "rest_days",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "match_density_30d",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "match_density_90d",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "tournament_experience",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "knockout_experience",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "inter_confederation_form",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "host_advantage",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    },
+    {
+      "factor": "h2h_last_5",
+      "n_changed": 0,
+      "n_total": 100,
+      "status": "PASS"
+    }
+  ],
+  "overall_pass": true,
+  "overall_status": "PASS"
+}

@@ -1,0 +1,113 @@
+{
+  "full_model": 0.49201804899600915,
+  "elo_diff_feat": {
+    "brier_without": 0.5085340717263878,
+    "delta": 0.01651602273037861,
+    "direction": "worse"
+  },
+  "fifa_rank_diff": {
+    "brier_without": 0.49201804899600915,
+    "delta": 0.0,
+    "direction": "better"
+  },
+  "recent_form_5": {
+    "brier_without": 0.49200810496483965,
+    "delta": -9.944031169495382e-06,
+    "direction": "better"
+  },
+  "recent_form_10": {
+    "brier_without": 0.49235699232392033,
+    "delta": 0.00033894332791117865,
+    "direction": "worse"
+  },
+  "recent_form_5_opp_adjusted": {
+    "brier_without": 0.49200810496483965,
+    "delta": -9.944031169495382e-06,
+    "direction": "better"
+  },
+  "recent_goals_scored_5": {
+    "brier_without": 0.4920366443603195,
+    "delta": 1.859536431036979e-05,
+    "direction": "worse"
+  },
+  "recent_goals_conceded_5": {
+    "brier_without": 0.4919986118015359,
+    "delta": -1.9437194473226338e-05,
+    "direction": "better"
+  },
+  "recent_goal_diff_5": {
+    "brier_without": 0.49201996563093026,
+    "delta": 1.916634921106386e-06,
+    "direction": "worse"
+  },
+  "attack_strength": {
+    "brier_without": 0.4920796941346007,
+    "delta": 6.16451385915262e-05,
+    "direction": "worse"
+  },
+  "defense_strength": {
+    "brier_without": 0.49205053034542184,
+    "delta": 3.2481349412694094e-05,
+    "direction": "worse"
+  },
+  "official_vs_friendly": {
+    "brier_without": 0.4920905377510164,
+    "delta": 7.24887550072606e-05,
+    "direction": "worse"
+  },
+  "home_away_neutral_form": {
+    "brier_without": 0.4920072134727388,
+    "delta": -1.0835523270358305e-05,
+    "direction": "better"
+  },
+  "rest_days": {
+    "brier_without": 0.49199103146002937,
+    "delta": -2.701753597977863e-05,
+    "direction": "better"
+  },
+  "match_density_30d": {
+    "brier_without": 0.4920346626186229,
+    "delta": 1.6613622613737e-05,
+    "direction": "worse"
+  },
+  "match_density_90d": {
+    "brier_without": 0.4919205819975247,
+    "delta": -9.746699848445228e-05,
+    "direction": "better"
+  },
+  "tournament_experience": {
+    "brier_without": 0.4920270578827852,
+    "delta": 9.008886776074032e-06,
+    "direction": "worse"
+  },
+  "knockout_experience": {
+    "brier_without": 0.4920270578827852,
+    "delta": 9.008886776074032e-06,
+    "direction": "worse"
+  },
+  "inter_confederation_form": {
+    "brier_without": 0.49210494076036293,
+    "delta": 8.689176435378032e-05,
+    "direction": "worse"
+  },
+  "host_advantage": {
+    "brier_without": 0.4960534173792084,
+    "delta": 0.004035368383199234,
+    "direction": "worse"
+  },
+  "h2h_last_5": {
+    "brier_without": 0.49192713542597033,
+    "delta": -9.091357003881972e-05,
+    "direction": "better"
+  },
+  "odds_implied_prob": {
+    "brier_without": 0.49201804899600915,
+    "delta": 0.0,
+    "direction": "better"
+  },
+  "odds_movement": {
+    "brier_without": 0.49201804899600915,
+    "delta": 0.0,
+    "direction": "better"
+  }
+}

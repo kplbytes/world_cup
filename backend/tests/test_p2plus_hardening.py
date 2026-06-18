@@ -417,6 +417,27 @@ class TestEnsemble:
         assert ens.ai_weights_json is not None
         assert ens.source_status_json is not None
 
+    def test_ensemble_persists_lock_status_fields(self, session):
+        """Ensemble rows must persist non-null lock status fields."""
+        _make_team(session, "T21", "Team21", "K", 1600)
+        _make_team(session, "T22", "Team22", "K", 1500)
+        _make_match(session, "M_ENS9", "T21", "T22", kickoff_offset_hours=-1)
+        _make_snapshot(session, "M_ENS9", home_win=0.5, draw=0.25, away_win=0.25, is_pre_match_locked=False)
+
+        from app.ai.ensemble import compute_ensemble
+        result = compute_ensemble(session, "M_ENS9")
+        assert result["status"] == "success"
+
+        ens = session.scalar(
+            select(EnsemblePrediction)
+            .where(EnsemblePrediction.match_id == "M_ENS9")
+            .order_by(EnsemblePrediction.id.desc())
+        )
+        assert ens is not None
+        assert ens.is_pre_match_locked is False
+        assert ens.is_fallback_locked is False
+        assert ens.real_time_only is True
+
 
 # ── 4. Tournament Tests ──────────────────────────────────────────
 

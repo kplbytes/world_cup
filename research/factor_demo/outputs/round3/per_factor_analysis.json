@@ -1,0 +1,236 @@
+{
+  "recent_form_5": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": 0.6210811398845426
+    },
+    "spearman_with_elo": {
+      "r": 0.6013066631444065
+    },
+    "stability_cv": 0.4516944098668174,
+    "ablation_brier_delta": -5.226509221301079e-06,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "recent_form_10": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": 0.7070044231835988
+    },
+    "spearman_with_elo": {
+      "r": 0.6903252379850142
+    },
+    "stability_cv": 0.3336097326316088,
+    "ablation_brier_delta": 0.00017082429901316143,
+    "is_redundant": true,
+    "factor_classification": "new_candidate"
+  },
+  "recent_form_5_opp_adjusted": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": 0.6210811398845426
+    },
+    "spearman_with_elo": {
+      "r": 0.6013066631444065
+    },
+    "stability_cv": 0.4516944098668174,
+    "ablation_brier_delta": -5.226509221301079e-06,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "recent_goals_scored_5": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": 0.5214371224212113
+    },
+    "spearman_with_elo": {
+      "r": 0.5166033576518492
+    },
+    "stability_cv": 0.817827894669397,
+    "ablation_brier_delta": 6.350357923068373e-06,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "recent_goals_conceded_5": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": -0.5258788736817432
+    },
+    "spearman_with_elo": {
+      "r": -0.513884177116238
+    },
+    "stability_cv": 0.5768961782532371,
+    "ablation_brier_delta": -1.558299919413031e-05,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "recent_goal_diff_5": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": 0.6300649888613735
+    },
+    "spearman_with_elo": {
+      "r": 0.6207058055053224
+    },
+    "stability_cv": 0.6056798396545137,
+    "ablation_brier_delta": 3.912009421958018e-07,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "attack_strength": {
+    "coverage_rate": 0.9957775189283634,
+    "pearson_with_elo": {
+      "r": 0.5918636074401403
+    },
+    "spearman_with_elo": {
+      "r": 0.5849706579643378
+    },
+    "stability_cv": 0.4656998709018077,
+    "ablation_brier_delta": 2.0741902407750423e-05,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "defense_strength": {
+    "coverage_rate": 0.9957775189283634,
+    "pearson_with_elo": {
+      "r": -0.5925591844352149
+    },
+    "spearman_with_elo": {
+      "r": -0.599556548078547
+    },
+    "stability_cv": 0.45022190860584027,
+    "ablation_brier_delta": -0.00010437643455374346,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "official_vs_friendly": {
+    "coverage_rate": 0.9283634245777519,
+    "pearson_with_elo": {
+      "r": 0.09715232826572587
+    },
+    "spearman_with_elo": {
+      "r": 0.07894132237341539
+    },
+    "stability_cv": 29.613296018853944,
+    "ablation_brier_delta": 0.00046215803575089254,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "home_away_neutral_form": {
+    "coverage_rate": 0.9963599301106582,
+    "pearson_with_elo": {
+      "r": 0.6303318108238204
+    },
+    "spearman_with_elo": {
+      "r": 0.6005604261747922
+    },
+    "stability_cv": 0.05753887160182645,
+    "ablation_brier_delta": 4.5715986758620986e-05,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "rest_days": {
+    "coverage_rate": 0.9983983692486895,
+    "pearson_with_elo": {
+      "r": -0.05449929986839482
+    },
+    "spearman_with_elo": {
+      "r": -0.07724774054317282
+    },
+    "stability_cv": 1.8433362265155335,
+    "ablation_brier_delta": 0.00022430233445824843,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "match_density_30d": {
+    "coverage_rate": 1.0,
+    "pearson_with_elo": {
+      "r": 0.012640467569013604
+    },
+    "spearman_with_elo": {
+      "r": 0.009376295055646367
+    },
+    "stability_cv": 2.9852957092876458,
+    "ablation_brier_delta": -0.00015040439351021728,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "match_density_90d": {
+    "coverage_rate": 1.0,
+    "pearson_with_elo": {
+      "r": 0.13683445426009375
+    },
+    "spearman_with_elo": {
+      "r": 0.11320364711370202
+    },
+    "stability_cv": 0.4399214604045639,
+    "ablation_brier_delta": -0.000248761151771526,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "tournament_experience": {
+    "coverage_rate": 0.8632789749563191,
+    "pearson_with_elo": {
+      "r": 0.7503062423734149
+    },
+    "spearman_with_elo": {
+      "r": 0.8035020717267728
+    },
+    "stability_cv": 0.1904730093228452,
+    "ablation_brier_delta": 9.035037532911794e-06,
+    "is_redundant": true,
+    "factor_classification": "new_candidate"
+  },
+  "knockout_experience": {
+    "coverage_rate": 0.8632789749563191,
+    "pearson_with_elo": {
+      "r": 0.7503062423734149
+    },
+    "spearman_with_elo": {
+      "r": 0.8035020717267728
+    },
+    "stability_cv": 0.1904730093228452,
+    "ablation_brier_delta": 9.035037532911794e-06,
+    "is_redundant": true,
+    "factor_classification": "new_candidate"
+  },
+  "inter_confederation_form": {
+    "coverage_rate": 1.0,
+    "pearson_with_elo": {
+      "r": 0.6862267580296955
+    },
+    "spearman_with_elo": {
+      "r": 0.5743014664854249
+    },
+    "stability_cv": 0.5024973153477584,
+    "ablation_brier_delta": 1.0974249567086147e-05,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "host_advantage": {
+    "coverage_rate": 1.0,
+    "pearson_with_elo": {
+      "r": 0.045120541608599546
+    },
+    "spearman_with_elo": {
+      "r": 0.048324055624094656
+    },
+    "stability_cv": 0.12591559129838542,
+    "ablation_brier_delta": 0.002930687945540411,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  },
+  "h2h_last_5": {
+    "coverage_rate": 0.873179965055329,
+    "pearson_with_elo": {
+      "r": 0.6994709331670429
+    },
+    "spearman_with_elo": {
+      "r": 0.7137766175554384
+    },
+    "stability_cv": 0.4576778312982845,
+    "ablation_brier_delta": 0.0001258171754892068,
+    "is_redundant": false,
+    "factor_classification": "new_candidate"
+  }
+}

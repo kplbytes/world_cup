@@ -1,0 +1,9 @@
+{
+  "total_val": 6868,
+  "included": 6868,
+  "excluded": 0,
+  "excluded_pct": 0.0,
+  "excluded_by_tournament": {},
+  "excluded_by_year": {},
+  "fallback_strategy": "EloPoisson使用历史平均胜率作为回退；LR模型用0填充缺失特征；排除无Elo比赛时报告选择偏差"
+}

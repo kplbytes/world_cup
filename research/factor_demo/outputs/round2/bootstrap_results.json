@@ -1,0 +1,38 @@
+{
+  "EloLogistic": {
+    "mean_brier_diff": -0.0034216095150972335,
+    "ci_95_low": -0.0051733224144130605,
+    "ci_95_high": -0.0016836517915456465,
+    "significant": true,
+    "n_bootstrap": 1000,
+    "interpretation": "显著退化 (ΔBrier=-0.00342, CI: [-0.00517, -0.00168])",
+    "direction": "worse"
+  },
+  "LR_elo_only": {
+    "mean_brier_diff": 0.0011698578213881104,
+    "ci_95_low": -0.0007591020314365228,
+    "ci_95_high": 0.0030564910989262788,
+    "significant": false,
+    "n_bootstrap": 1000,
+    "interpretation": "不显著 (ΔBrier=+0.00117, CI: [-0.00076, 0.00306])",
+    "direction": "better"
+  },
+  "LR_new_only": {
+    "mean_brier_diff": -0.0119284960538534,
+    "ci_95_low": -0.015918582104076248,
+    "ci_95_high": -0.007976802809410396,
+    "significant": true,
+    "n_bootstrap": 1000,
+    "interpretation": "显著退化 (ΔBrier=-0.01193, CI: [-0.01592, -0.00798])",
+    "direction": "worse"
+  },
+  "LR_full": {
+    "mean_brier_diff": 0.007325251383098794,
+    "ci_95_low": 0.005124513980030664,
+    "ci_95_high": 0.009624011766409896,
+    "significant": true,
+    "n_bootstrap": 1000,
+    "interpretation": "显著改善 (ΔBrier=+0.00733, CI: [0.00512, 0.00962])",
+    "direction": "better"
+  }
+}

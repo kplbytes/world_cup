@@ -547,6 +547,9 @@ def test_update_predictions_endpoint_returns_structured_summary(tmp_path):
     assert "predictions_updated" in data
     assert "ai_success" in data
     assert "ai_failed" in data
+    assert "ai_skipped_existing" in data
+    assert "ai_skip_reason" in data
+    assert "missing_ai_count" in data
     assert "ensemble_updated" in data
     assert "locked_skipped" in data
     assert "errors" in data
@@ -564,6 +567,8 @@ def test_update_predictions_endpoint_returns_structured_summary(tmp_path):
     assert data["locked_skipped"] >= 0
     # errors should be a list
     assert isinstance(data["errors"], list)
+    # ai_skip_reason should be present when with_ai=False
+    assert data["ai_skip_reason"] is not None or data["ai_success"] > 0
 
 
 def test_update_predictions_does_not_overwrite_locked_snapshots(tmp_path):
@@ -697,3 +702,39 @@ def test_match_detail_ai_ensemble_prediction_are_distinct(tmp_path):
         detail["ensemble_prediction"]["home_win"],
     }
     assert len(probs) == 3, "Baseline, AI, and Ensemble must have distinct probabilities"
+
+
+def test_update_predictions_concurrent_request_rejected(tmp_path):
+    """Second update-predictions request while one is running should return 409."""
+    from unittest.mock import patch
+    from app.workflows.state import set_current_run
+
+    client = api_client(tmp_path)
+
+    # Simulate a running workflow
+    set_current_run(999)
+
+    try:
+        response = client.post("/api/workflows/update-predictions", json={})
+        assert response.status_code == 409
+        assert "already running" in response.json()["detail"].lower()
+    finally:
+        set_current_run(None)
+
+
+def test_update_predictions_returns_failed_status_on_workflow_failure(tmp_path):
+    """When workflow fails, the endpoint should return status='failed' with errors."""
+    from unittest.mock import patch
+
+    client = api_client(tmp_path)
+    with patch("app.workflows.service._run_refresh_step", side_effect=Exception("Database is locked")), \
+         patch("app.workflows.service._run_recompute_step"), \
+         patch("app.workflows.service._run_ensemble_step"), \
+         patch("app.workflows.service._run_accuracy_update_step"), \
+         patch("app.workflows.service._run_artifact_step"):
+        response = client.post("/api/workflows/update-predictions", json={"with_ai": False, "with_ensemble": True})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert len(data["errors"]) > 0

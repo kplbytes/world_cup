@@ -159,11 +159,17 @@ export default function DailyDashboard() {
 
   const updatePredictionsMutation = useMutation({
     mutationFn: triggerUpdatePredictions,
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
       queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      setUpdateSuccessTime(new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }));
+      // Only show success time if backend actually succeeded
+      const result = data as Record<string, unknown>;
+      if (result.status === "ok" || result.status === "partial") {
+        setUpdateSuccessTime(new Date().toLocaleTimeString("zh-CN", { timeZone: "Asia/Shanghai", hour: "2-digit", minute: "2-digit" }));
+      } else {
+        setUpdateSuccessTime(null);
+      }
     },
   });
 
@@ -299,6 +305,7 @@ export default function DailyDashboard() {
       const aiFailed = aiStatus.failed ?? 0;
       const aiParseError = aiStatus.parse_error ?? 0;
       const aiAttempted = aiStatus.attempted ?? 0;
+      const aiDisabledReason = btnStates?.ai_prediction?.enabled === false ? btnStates.ai_prediction.reason : null;
 
       if (aiConfigured > 0) {
         // Count today's matches needing AI
@@ -311,13 +318,17 @@ export default function DailyDashboard() {
         if (missing > 0 && aiFailed > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场，${missing} 场缺失；成功 ${aiStatus.success}，失败 ${aiFailed}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
         } else if (missing > 0) {
-          aiValue = `有效覆盖 ${covered}/${totalToday} 场，${missing} 场缺失；成功 ${aiStatus.success}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
+          aiValue = aiDisabledReason
+            ? `有效覆盖 ${covered}/${totalToday} 场，${missing} 场缺失；${aiDisabledReason}`
+            : `有效覆盖 ${covered}/${totalToday} 场，${missing} 场缺失；成功 ${aiStatus.success}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
         } else if (aiFailed > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场；成功 ${aiStatus.success}，失败 ${aiFailed}，参与 Ensemble ${aiEffective}`;
         } else if (aiParseError > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场；成功 ${aiStatus.success}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
         } else if (aiEffective > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场；成功 ${aiStatus.success}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
+        } else if (aiDisabledReason) {
+          aiValue = `有效覆盖 ${covered}/${totalToday} 场；${aiDisabledReason}`;
         } else if (aiAttempted > 0) {
           aiValue = `${aiAttempted} 场已调用，暂无有效结果`;
         } else {
@@ -428,7 +439,7 @@ export default function DailyDashboard() {
             {updatePredictionsMutation.isPending
               ? "更新中..."
               : updateSuccessTime
-                ? `预测已更新 ${updateSuccessTime}`
+                ? `工作流已更新 ${updateSuccessTime}`
                 : "更新预测"}
           </button>
         }
@@ -439,19 +450,32 @@ export default function DailyDashboard() {
             更新失败：{updatePredictionsMutation.error instanceof Error ? updatePredictionsMutation.error.message : "未知错误"}
           </div>
         )}
-        {updatePredictionsMutation.isSuccess && updatePredictionsMutation.data && (
-          <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {(() => {
-              const d = updatePredictionsMutation.data as Record<string, unknown>;
-              const items: string[] = [];
-              if (d.ai_success != null) items.push(`AI 成功 ${d.ai_success}`);
-              if (d.ai_failed != null && (d.ai_failed as number) > 0) items.push(`AI 失败 ${d.ai_failed}`);
-              if (d.ensemble_updated != null) items.push(`Ensemble ${d.ensemble_updated}`);
-              if (d.locked_skipped != null && (d.locked_skipped as number) > 0) items.push(`锁定跳过 ${d.locked_skipped}`);
-              return items.length > 0 ? items.join(" / ") : null;
-            })()}
-          </div>
-        )}
+        {updatePredictionsMutation.isSuccess && updatePredictionsMutation.data && (() => {
+          const d = updatePredictionsMutation.data as Record<string, unknown>;
+          const isFailed = d.status === "failed";
+          if (isFailed) {
+            const errors = (d.errors as string[]) ?? [];
+            return (
+              <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>
+                更新失败：{errors.length > 0 ? errors.join("; ") : "工作流执行失败，请稍后重试"}
+              </div>
+            );
+          }
+          const items: string[] = [];
+          if (d.ai_success != null) items.push(`AI 成功 ${d.ai_success}`);
+          if (d.ai_failed != null && (d.ai_failed as number) > 0) items.push(`AI 失败 ${d.ai_failed}`);
+          if (d.ensemble_updated != null) items.push(`Ensemble ${d.ensemble_updated}`);
+          if (d.locked_skipped != null && (d.locked_skipped as number) > 0) items.push(`锁定跳过 ${d.locked_skipped}`);
+          // Show AI=0 reason
+          const aiSuccess = d.ai_success as number ?? 0;
+          if (aiSuccess === 0 && d.ai_skip_reason) items.push(`AI 未运行：${d.ai_skip_reason}`);
+          if (aiSuccess === 0 && !d.ai_skip_reason && d.missing_ai_count == null && d.ai_skipped_existing != null) items.push(`AI 跳过已有 ${d.ai_skipped_existing}`);
+          return items.length > 0 ? (
+            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 6, display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {items.join(" / ")}
+            </div>
+          ) : null;
+        })()}
       </SectionCard>
 
       {/* B. Next Step Suggestion */}

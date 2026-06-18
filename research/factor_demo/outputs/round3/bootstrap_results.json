@@ -1,0 +1,118 @@
+{
+  "EloLogistic": {
+    "iid": {
+      "mean_brier_diff": -0.003377594641533426,
+      "ci_95_low": -0.00505629902484089,
+      "ci_95_high": -0.0015062664270899377,
+      "significant": true,
+      "direction": "worse",
+      "n_bootstrap": 1000,
+      "method": "iid"
+    },
+    "block_by_year": {
+      "mean_brier_diff": -0.003364446571061624,
+      "ci_95_low": -0.004469928542173642,
+      "ci_95_high": -0.002112363676182215,
+      "significant": true,
+      "direction": "worse",
+      "n_bootstrap": 1000,
+      "method": "block_by_year"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": -0.0031022125064339837,
+      "ci_95_low": -0.006010883514143231,
+      "ci_95_high": 0.002300847580165308,
+      "significant": false,
+      "direction": "worse",
+      "n_bootstrap": 1000,
+      "method": "block_by_tournament"
+    }
+  },
+  "LR_elo_only": {
+    "iid": {
+      "mean_brier_diff": 0.001124335588524775,
+      "ci_95_low": -0.0007251760565274995,
+      "ci_95_high": 0.002960725768711816,
+      "significant": false,
+      "direction": "better",
+      "n_bootstrap": 1000,
+      "method": "iid"
+    },
+    "block_by_year": {
+      "mean_brier_diff": 0.0011205347348450464,
+      "ci_95_low": -0.0006947133291851043,
+      "ci_95_high": 0.0027506566807964593,
+      "significant": false,
+      "direction": "better",
+      "n_bootstrap": 1000,
+      "method": "block_by_year"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": 0.0008031606710751414,
+      "ci_95_low": -0.00429958105116142,
+      "ci_95_high": 0.004733778881258412,
+      "significant": false,
+      "direction": "better",
+      "n_bootstrap": 1000,
+      "method": "block_by_tournament"
+    }
+  },
+  "LR_new_only": {
+    "iid": {
+      "mean_brier_diff": -0.011861921751834217,
+      "ci_95_low": -0.015892916962432696,
+      "ci_95_high": -0.008040207313648785,
+      "significant": true,
+      "direction": "worse",
+      "n_bootstrap": 1000,
+      "method": "iid"
+    },
+    "block_by_year": {
+      "mean_brier_diff": -0.011816974819545379,
+      "ci_95_low": -0.017185370819031317,
+      "ci_95_high": -0.006569514506088967,
+      "significant": true,
+      "direction": "worse",
+      "n_bootstrap": 1000,
+      "method": "block_by_year"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": -0.01143576050362156,
+      "ci_95_low": -0.015204787426011735,
+      "ci_95_high": -0.004991044974786218,
+      "significant": true,
+      "direction": "worse",
+      "n_bootstrap": 1000,
+      "method": "block_by_tournament"
+    }
+  },
+  "LR_full": {
+    "iid": {
+      "mean_brier_diff": 0.007367441307882138,
+      "ci_95_low": 0.005107212379391328,
+      "ci_95_high": 0.009674295554568177,
+      "significant": true,
+      "direction": "better",
+      "n_bootstrap": 1000,
+      "method": "iid"
+    },
+    "block_by_year": {
+      "mean_brier_diff": 0.007306893675622824,
+      "ci_95_low": 0.003734443833227393,
+      "ci_95_high": 0.011137959874735391,
+      "significant": true,
+      "direction": "better",
+      "n_bootstrap": 1000,
+      "method": "block_by_year"
+    },
+    "block_by_tournament": {
+      "mean_brier_diff": 0.007389172629014309,
+      "ci_95_low": 0.004727948994852006,
+      "ci_95_high": 0.010058848590143695,
+      "significant": true,
+      "direction": "better",
+      "n_bootstrap": 1000,
+      "method": "block_by_tournament"
+    }
+  }
+}

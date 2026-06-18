@@ -477,6 +477,9 @@ class EnsemblePrediction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     is_pre_match_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_fallback_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+    real_time_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    source_ids_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     source_status_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 

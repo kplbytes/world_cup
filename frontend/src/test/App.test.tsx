@@ -392,7 +392,7 @@ it("shows success feedback after update predictions succeeds", async () => {
   // Should show success details
   expect(await screen.findByText(/AI 成功 3/)).toBeVisible();
   // Button should show updated time
-  expect(await screen.findByRole("button", { name: /预测已更新/ })).toBeVisible();
+  expect(await screen.findByRole("button", { name: /工作流已更新/ })).toBeVisible();
 });
 
 // Error feedback is shown after mutation fails
@@ -412,4 +412,47 @@ it("shows error feedback after update predictions fails", async () => {
   await userEvent.click(btn);
 
   expect(await screen.findByText(/更新失败/)).toBeVisible();
+});
+
+// When backend returns status=failed, button should NOT show "预测已更新"
+it("does not show 预测已更新 when backend returns status=failed", async () => {
+  const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/workflows/update-predictions")) {
+      return { ok: true, json: async () => ({ status: "failed", updated_at: "2026-06-13T08:00:00Z", matches_considered: 0, predictions_updated: 0, ai_success: 0, ai_failed: 1, ai_skipped_existing: 0, ai_skip_reason: "AI 预测失败", missing_ai_count: 0, ensemble_updated: 0, locked_skipped: 0, errors: ["AI 预测失败"], run_id: 42 }) };
+    }
+    return defaultFetchHandler(url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  const btn = await screen.findByRole("button", { name: "更新预测" });
+  await userEvent.click(btn);
+
+  // Should show the failure message from backend
+  expect(await screen.findByText(/更新失败/)).toBeVisible();
+  // Button should NOT show "预测已更新"
+  const updatedBtn = screen.queryByRole("button", { name: /预测已更新/ });
+  expect(updatedBtn).toBeNull();
+});
+
+// When AI success=0 with skip reason, shows the reason
+it("shows AI skip reason when ai_success=0", async () => {
+  const fetchMock = vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.includes("/api/workflows/update-predictions")) {
+      return { ok: true, json: async () => ({ status: "ok", updated_at: "2026-06-13T08:00:00Z", matches_considered: 3, predictions_updated: 1, ai_success: 0, ai_failed: 0, ai_skipped_existing: 0, ai_skip_reason: "AI 未启用（with_ai=false）", missing_ai_count: 3, ensemble_updated: 0, locked_skipped: 0, errors: [], run_id: 42 }) };
+    }
+    return defaultFetchHandler(url);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  const btn = await screen.findByRole("button", { name: "更新预测" });
+  await userEvent.click(btn);
+
+  // Should show the AI skip reason
+  expect(await screen.findByText(/AI 未启用/)).toBeVisible();
 });

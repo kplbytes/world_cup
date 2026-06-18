@@ -43,67 +43,99 @@ STEP_NAMES = [
 
 
 def _create_run(workflow_type: str, trigger_source: str, options: dict | None = None) -> int:
-    """Create a new WorkflowRun with all steps."""
-    with session_scope() as session:
-        run = WorkflowRun(
-            workflow_type=workflow_type,
-            trigger_source=trigger_source,
-            status="running",
-            options_json=options,
-        )
-        session.add(run)
-        session.flush()
-        run_id = run.id
-        for step_name in STEP_NAMES:
-            step = WorkflowStep(workflow_run_id=run_id, step_name=step_name, status="pending")
-            session.add(step)
-        session.commit()
-    set_workflow_context(run_id)
-    return run_id
+    """Create a new WorkflowRun with all steps, with retry on database lock."""
+    import time
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with session_scope() as session:
+                run = WorkflowRun(
+                    workflow_type=workflow_type,
+                    trigger_source=trigger_source,
+                    status="running",
+                    options_json=options,
+                )
+                session.add(run)
+                session.flush()
+                run_id = run.id
+                for step_name in STEP_NAMES:
+                    step = WorkflowStep(workflow_run_id=run_id, step_name=step_name, status="pending")
+                    session.add(step)
+                session.commit()
+            set_workflow_context(run_id)
+            return run_id
+        except Exception as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                logger.warning(f"Database locked on _create_run attempt {attempt + 1}, retrying in 1s...")
+                time.sleep(1)
+                continue
+            raise
 
 
 def _update_step(run_id: int, step_name: str, status: str, summary: dict | None = None, error: str | None = None):
-    """Update a workflow step's status."""
-    with session_scope() as session:
-        step = session.scalar(
-            select(WorkflowStep)
-            .where(WorkflowStep.workflow_run_id == run_id)
-            .where(WorkflowStep.step_name == step_name)
-        )
-        if step:
-            step.status = status
-            if status == "running":
-                step.started_at = datetime.now(timezone.utc)
-            elif status in ("success", "failed", "skipped"):
-                step.finished_at = datetime.now(timezone.utc)
-                started = _ensure_utc(step.started_at)
-                if started:
-                    step.duration_seconds = (step.finished_at - started).total_seconds()
-            if summary:
-                step.summary_json = summary
-            if error:
-                step.error_message = error
-            session.commit()
+    """Update a workflow step's status, with retry on database lock."""
+    import time
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with session_scope() as session:
+                step = session.scalar(
+                    select(WorkflowStep)
+                    .where(WorkflowStep.workflow_run_id == run_id)
+                    .where(WorkflowStep.step_name == step_name)
+                )
+                if step:
+                    step.status = status
+                    if status == "running":
+                        step.started_at = datetime.now(timezone.utc)
+                    elif status in ("success", "failed", "skipped"):
+                        step.finished_at = datetime.now(timezone.utc)
+                        started = _ensure_utc(step.started_at)
+                        if started:
+                            step.duration_seconds = (step.finished_at - started).total_seconds()
+                    if summary:
+                        step.summary_json = summary
+                    if error:
+                        step.error_message = error
+                    session.commit()
+            return
+        except Exception as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                logger.warning(f"Database locked on _update_step attempt {attempt + 1}, retrying in 0.5s...")
+                time.sleep(0.5)
+                continue
+            raise
 
 
 def _finish_run(run_id: int, status: str, summary: dict | None = None, error: str | None = None):
-    """Finish a workflow run."""
+    """Finish a workflow run, with retry on database lock."""
+    import time
     set_current_run(None)
     clear_workflow_context()
-    with session_scope() as session:
-        run = session.get(WorkflowRun, run_id)
-        if run:
-            run.status = status
-            finished = datetime.now(timezone.utc)
-            run.finished_at = finished
-            started = _ensure_utc(run.started_at)
-            if started:
-                run.duration_seconds = (finished - started).total_seconds()
-            if summary:
-                run.summary_json = summary
-            if error:
-                run.error_message = error
-            session.commit()
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            with session_scope() as session:
+                run = session.get(WorkflowRun, run_id)
+                if run:
+                    run.status = status
+                    finished = datetime.now(timezone.utc)
+                    run.finished_at = finished
+                    started = _ensure_utc(run.started_at)
+                    if started:
+                        run.duration_seconds = (finished - started).total_seconds()
+                    if summary:
+                        run.summary_json = summary
+                    if error:
+                        run.error_message = error
+                    session.commit()
+            return
+        except Exception as e:
+            if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                logger.warning(f"Database locked on _finish_run attempt {attempt + 1}, retrying in 0.5s...")
+                time.sleep(0.5)
+                continue
+            raise
 
 
 def _get_upcoming_matches_info() -> dict:
@@ -132,39 +164,45 @@ def _get_upcoming_matches_info() -> dict:
             .where(Match.kickoff <= now + timedelta(hours=48))
         ))
 
-        baseline_ready = 0
-        ai_ready = 0
-        ensemble_ready = 0
-        needs_ai = 0
+        if not upcoming:
+            return {
+                "count_24h": count_24h,
+                "count_48h": count_48h,
+                "baseline_ready": 0,
+                "ai_ready": 0,
+                "ensemble_ready": 0,
+                "needs_ai": 0,
+            }
 
-        for m in upcoming:
-            snap = session.scalar(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == m.id)
-                .order_by(PredictionSnapshot.snapshotted_at.desc())
-                .limit(1)
+        upcoming_ids = [m.id for m in upcoming]
+        baseline_ids = set(
+            session.scalars(
+                select(PredictionSnapshot.match_id)
+                .where(PredictionSnapshot.match_id.in_(upcoming_ids))
+                .group_by(PredictionSnapshot.match_id)
             )
-            if snap:
-                baseline_ready += 1
-
-            ai_preds = list(session.scalars(
-                select(AIPrediction)
-                .where(AIPrediction.match_id == m.id)
+        )
+        ai_ids = set(
+            session.scalars(
+                select(AIPrediction.match_id)
+                .where(AIPrediction.match_id.in_(upcoming_ids))
                 .where(AIPrediction.error_code.is_(None))
-            ))
-            ai_versions = {p.model_version for p in ai_preds}
-            if ai_versions:
-                ai_ready += 1
-            else:
-                needs_ai += 1
-
-            ens = session.scalar(
-                select(EnsemblePrediction)
-                .where(EnsemblePrediction.match_id == m.id)
-                .limit(1)
+                .where(AIPrediction.parsed_home_win.isnot(None))
+                .group_by(AIPrediction.match_id)
             )
-            if ens:
-                ensemble_ready += 1
+        )
+        ensemble_ids = set(
+            session.scalars(
+                select(EnsemblePrediction.match_id)
+                .where(EnsemblePrediction.match_id.in_(upcoming_ids))
+                .group_by(EnsemblePrediction.match_id)
+            )
+        )
+
+        baseline_ready = len(baseline_ids)
+        ai_ready = len(ai_ids)
+        ensemble_ready = len(ensemble_ids)
+        needs_ai = len(upcoming_ids) - ai_ready
 
         return {
             "count_24h": count_24h,
@@ -211,24 +249,27 @@ def _get_lock_status_info() -> dict:
             .where(Match.kickoff <= window_end)
         ))
 
-        locked = 0
-        needs_lock = 0
-        real_time_only = 0
+        if not near_kickoff:
+            return {
+                "matches_near_kickoff": 0,
+                "locked": 0,
+                "needs_lock": 0,
+                "real_time_only": 0,
+            }
 
-        for m in near_kickoff:
-            lock = compute_match_lock_status(m, now)
-            snap = session.scalar(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == m.id)
+        near_ids = [m.id for m in near_kickoff]
+        locked_ids = set(
+            session.scalars(
+                select(PredictionSnapshot.match_id)
+                .where(PredictionSnapshot.match_id.in_(near_ids))
                 .where(PredictionSnapshot.is_pre_match_locked == True)
-                .limit(1)
+                .group_by(PredictionSnapshot.match_id)
             )
-            if snap:
-                locked += 1
-            else:
-                needs_lock += 1
-            if lock.real_time_only:
-                real_time_only += 1
+        )
+
+        locked = len(locked_ids)
+        needs_lock = len(near_ids) - locked
+        real_time_only = sum(1 for m in near_kickoff if compute_match_lock_status(m, now).real_time_only)
 
         return {
             "matches_near_kickoff": len(near_kickoff),
@@ -258,19 +299,31 @@ def _get_decision_snapshot_status_info() -> dict:
             .order_by(Match.kickoff)
         ))
 
+        if not matches:
+            return {
+                "status": "none",
+                "matches_total": 0,
+                "snapshots_ready": 0,
+                "missing": 0,
+                "last_snapshot_at": None,
+                "rule": "latest_pre_match_snapshot_before_kickoff",
+            }
+
+        snapshots_by_match: dict[str, list[PredictionSnapshot]] = {}
+        for snapshot in session.scalars(
+            select(PredictionSnapshot)
+            .where(PredictionSnapshot.match_id.in_([m.id for m in matches]))
+            .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
+        ):
+            snapshots_by_match.setdefault(snapshot.match_id, []).append(snapshot)
+
         matches_total = len(matches)
         snapshots_ready = 0
         missing = 0
         last_snapshot_at = None
 
         for match in matches:
-            snapshots = list(session.scalars(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == match.id)
-                .order_by(PredictionSnapshot.snapshotted_at.desc())
-            ))
-
-            status = compute_decision_snapshot_status(match, snapshots, now)
+            status = compute_decision_snapshot_status(match, snapshots_by_match.get(match.id, []), now)
 
             if status.has_decision_snapshot:
                 snapshots_ready += 1
@@ -798,7 +851,7 @@ def _run_ensemble_step(run_id: int):
                 failed += 1
                 logger.error(f"Ensemble failed for {m.id}: {e}")
 
-        _update_step(run_id, "ensemble_generation", "success" if failed == 0 else "success",
+        _update_step(run_id, "ensemble_generation", "success" if failed == 0 else "partial_success",
                      {"success": success, "failed": failed})
     except Exception as e:
         logger.error(f"Ensemble step failed: {e}")

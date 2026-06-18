@@ -1042,21 +1042,27 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
     for match in finished_matches:
         kickoff = _ensure_utc(match.kickoff)
 
-        # Check for MatchPrediction
+        # Check for MatchPrediction (any prediction, regardless of timing)
         has_prediction = session.scalar(
             select(MatchPrediction.match_id)
             .where(MatchPrediction.match_id == match.id)
             .limit(1)
         ) is not None
 
-        # Check for pre-match prediction (created before kickoff)
-        has_pre_match_pred = session.scalar(
-            select(MatchPrediction.match_id)
-            .where(
-                MatchPrediction.match_id == match.id,
-            )
-            .limit(1)
-        ) is not None
+        # Check for pre-match prediction (revision created before kickoff).
+        # MatchPrediction has no created_at column, so we join through
+        # DashboardRevision.created_at to determine when the prediction was generated.
+        has_pre_match_pred = False
+        if kickoff:
+            has_pre_match_pred = session.scalar(
+                select(MatchPrediction.match_id)
+                .join(DashboardRevision, MatchPrediction.revision_id == DashboardRevision.id)
+                .where(
+                    MatchPrediction.match_id == match.id,
+                    DashboardRevision.created_at < kickoff,
+                )
+                .limit(1)
+            ) is not None
 
         # Check for snapshots
         snapshots = list(session.scalars(
@@ -1134,6 +1140,7 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
             "status": status,
             "status_label": status_label,
             "has_prediction": has_prediction,
+            "has_pre_match_prediction": has_pre_match_pred,
             "has_snapshot": has_any_snap,
             "has_pre_kickoff_snapshot": has_pre_kickoff_snap,
             "has_locked_snapshot": has_locked_snap,

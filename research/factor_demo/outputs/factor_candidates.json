@@ -1,0 +1,90 @@
+{
+  "elo_diff": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "fifa_rank_diff": {
+    "decision": "needs_more_data",
+    "reason": "\u8986\u76d6\u7387\u4e0d\u8db3 (0.0%)"
+  },
+  "recent_form_5": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0000)"
+  },
+  "recent_form_10": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0003)"
+  },
+  "recent_form_5_opp_adjusted": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0000)"
+  },
+  "recent_goals_scored_5": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "recent_goals_conceded_5": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0000)"
+  },
+  "recent_goal_diff_5": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "attack_strength": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0001)"
+  },
+  "defense_strength": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "official_vs_friendly": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0001)"
+  },
+  "home_away_neutral_form": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0000)"
+  },
+  "rest_days": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0000)"
+  },
+  "match_density_30d": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "match_density_90d": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0001)"
+  },
+  "tournament_experience": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "knockout_experience": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0000)"
+  },
+  "inter_confederation_form": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=+0.0001)"
+  },
+  "host_advantage": {
+    "decision": "candidate",
+    "reason": "\u6d88\u878d\u663e\u793a\u6b63\u5411\u8d21\u732e (\u0394=+0.0040)"
+  },
+  "h2h_last_5": {
+    "decision": "needs_more_data",
+    "reason": "\u8d21\u732e\u4e0d\u663e\u8457 (\u0394=-0.0001)"
+  },
+  "odds_implied_prob": {
+    "decision": "needs_more_data",
+    "reason": "\u8986\u76d6\u7387\u4e0d\u8db3 (0.0%)"
+  },
+  "odds_movement": {
+    "decision": "needs_more_data",
+    "reason": "\u8986\u76d6\u7387\u4e0d\u8db3 (0.0%)"
+  }
+}

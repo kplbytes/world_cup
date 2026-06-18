@@ -1,0 +1,50 @@
+[
+  {
+    "holdout_tournament": "FIFA World Cup 2014",
+    "holdout_year": 2014,
+    "n_test": 64,
+    "EloPoisson_brier": 0.5890289521073876,
+    "LR_full_brier": 0.5771539924882166,
+    "delta_brier": 0.011874959619170955,
+    "EloPoisson_logloss": 0.9841708996158676,
+    "LR_full_logloss": 0.9658745597293728,
+    "EloPoisson_acc": 0.59375,
+    "LR_full_acc": 0.5625,
+    "EloPoisson_ece": 0.07838740425364518,
+    "LR_full_ece": 0.13634273620356321,
+    "validation_type": "historical_out_of_sample",
+    "NOT_blind_test": true
+  },
+  {
+    "holdout_tournament": "FIFA World Cup 2018",
+    "holdout_year": 2018,
+    "n_test": 64,
+    "EloPoisson_brier": 0.6030840636445443,
+    "LR_full_brier": 0.5994873800346598,
+    "delta_brier": 0.00359668360988441,
+    "EloPoisson_logloss": 1.0063184499227618,
+    "LR_full_logloss": 1.0029525751918396,
+    "EloPoisson_acc": 0.515625,
+    "LR_full_acc": 0.578125,
+    "EloPoisson_ece": 0.09320622385806922,
+    "LR_full_ece": 0.08225216086611412,
+    "validation_type": "historical_out_of_sample",
+    "NOT_blind_test": true
+  },
+  {
+    "holdout_tournament": "FIFA World Cup 2022",
+    "holdout_year": 2022,
+    "n_test": 64,
+    "EloPoisson_brier": 0.6125173774809898,
+    "LR_full_brier": 0.6142357789360628,
+    "delta_brier": -0.0017184014550730708,
+    "EloPoisson_logloss": 1.0366751139804293,
+    "LR_full_logloss": 1.0444182023309625,
+    "EloPoisson_acc": 0.5,
+    "LR_full_acc": 0.5,
+    "EloPoisson_ece": 0.12074312587630978,
+    "LR_full_ece": 0.08840497915046294,
+    "validation_type": "historical_out_of_sample",
+    "NOT_blind_test": true
+  }
+]
