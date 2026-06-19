@@ -109,3 +109,25 @@ def test_rebuild_creates_profile_for_every_team(db_session):
     assert len(profiles) == 2
     assert len(histories) >= 24
     assert all(profile.source_summary_json["mode"] == "seed_mock_v1" for profile in profiles)
+
+
+def test_rebuild_keeps_real_history_clean_for_teams_with_enough_real_samples(db_session):
+    db_session.add_all([
+        Team(id="BRA", name="Brazil", short_name="Brazil", code="BRA", group_code="A"),
+        Team(id="QAT", name="Qatar", short_name="Qatar", code="QAT", group_code="A"),
+    ])
+    db_session.add_all([
+        TeamRating(team_id="BRA", effective_date=date(2025, 1, 1), elo=1900, source="test"),
+        TeamRating(team_id="QAT", effective_date=date(2025, 1, 1), elo=1400, source="test"),
+    ])
+    db_session.flush()
+
+    rebuild_team_profiles(db_session, use_seed=True)
+
+    brazil_profile = db_session.scalar(select(TeamProfile).where(TeamProfile.team_id == "BRA"))
+    qatar_profile = db_session.scalar(select(TeamProfile).where(TeamProfile.team_id == "QAT"))
+
+    assert brazil_profile.source_summary_json["mode"] == "historical_real"
+    assert brazil_profile.source_summary_json["sources"] == ["historical_real"]
+    assert qatar_profile.source_summary_json["mode"] == "mixed"
+    assert qatar_profile.source_summary_json["sources"] == ["historical_real", "seed_mock_v1"]
