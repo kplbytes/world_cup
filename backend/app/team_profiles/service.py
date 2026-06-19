@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Team, TeamProfile, TeamProfileMatchHistory
 from app.team_profiles import PROFILE_VERSION
-from app.team_profiles.data_loader import seed_mock_history
+from app.team_profiles.data_loader import seed_combined_history
 from app.team_profiles.feature_engineering import generate_traits, rate, tier_statistics
 
 
@@ -75,6 +75,7 @@ def compute_team_profile(session: Session, team_id: str, as_of_date: datetime) -
         "third_match_rotation_risk": 0.0,
         "must_win_match_performance": rate(knockout, lambda row: row.result == "win"),
     }
+    sources = {row.source for row in rows}
     profile = TeamProfile(
         team_id=team.id, team_code=team.code, profile_version=PROFILE_VERSION,
         profile_as_of=cutoff, data_cutoff=cutoff,
@@ -83,7 +84,7 @@ def compute_team_profile(session: Session, team_id: str, as_of_date: datetime) -
         sample_count=len(rows), world_cup_sample_count=len(world_cup),
         qualifier_sample_count=sum(row.is_qualifier for row in rows), competitive_sample_count=n,
         tier_stats_json=tier_stats, traits_json=generate_traits(metrics, n, tier_stats),
-        source_summary_json={"mode": "seed_mock_v1" if rows and all(row.source == "seed_mock_v1" for row in rows) else "mixed", "sources": sorted({row.source for row in rows}), "friendly_weight": 0.0},
+        source_summary_json={"mode": _source_mode(sources), "sources": sorted(sources), "friendly_weight": 0.0},
         **metrics,
     )
     session.add(profile)
@@ -104,10 +105,18 @@ def profile_payload(profile: TeamProfile | None) -> dict | None:
     return {column.name: getattr(profile, column.name) for column in TeamProfile.__table__.columns if column.name not in {"created_at", "updated_at"}}
 
 
+def _source_mode(sources: set[str]) -> str:
+    if sources == {"historical_real"}:
+        return "historical_real"
+    if sources == {"seed_mock_v1"}:
+        return "seed_mock_v1"
+    return "mixed"
+
+
 def rebuild_team_profiles(session: Session, as_of_date: datetime | None = None, use_seed: bool = True) -> dict:
     cutoff = _as_utc(as_of_date or datetime.now(timezone.utc))
     if use_seed:
-        seed_mock_history(session)
+        seed_combined_history(session)
     session.execute(delete(TeamProfile))
     profiles = [compute_team_profile(session, team.id, cutoff) for team in session.scalars(select(Team).order_by(Team.id))]
     return {"profiles": len(profiles), "profile_version": PROFILE_VERSION, "profile_as_of": cutoff.isoformat(), "data_mode": "seed_mock_v1" if use_seed else "existing_history"}
