@@ -62,8 +62,8 @@ export default function BracketView() {
         return (
           <SectionCard title={STAGE_LABELS[currentStage] || currentStage} badge={`${matchups.length} 场`}>
             <div className="metric-grid">
-              {matchups.map((m: BracketMatchup) => (
-                <div key={m.match_position} className="bracket-card">
+              {matchups.map((m: BracketMatchup, i: number) => (
+                <div key={m.match_position ?? i} className="bracket-card">
                   <div className="bracket-card__teams">
                     <span className="bracket-card__team">
                       {m.home_team ? getTeamDisplayNameFromAny(m.home_team.team_id || m.home_team.team_name) : m.home_source ? getTeamDisplayNameFromAny(m.home_source) : "待定"}
