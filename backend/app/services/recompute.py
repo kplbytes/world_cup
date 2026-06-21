@@ -462,14 +462,17 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
     for mid in market_by_match:
         market_by_match[mid].pop("_fetched_at", None)
 
-    # Config with market blend weight for when market data is available
-    # Research-enhanced: increased market blend weight from 0.10 to 0.20
-    # Odds data has proven 8.7% Brier improvement over pure Elo+Poisson on WC2026
+    # Config for v3-profile-enhanced predictions
+    # Profile features are loaded from TeamProfile data and blended at 15% weight
+    # FIFA rank weight reduced to 10% since profile attack/defense now carries more signal
     _market_blend_config = type("Config", (), {
         "market_blend_weight": 0.20,
         "smart_market_blend": True,
         "dynamic_draw_boost": True,
-        "profile_weight": 0.0,
+        "profile_weight": 0.15,
+        "profile_adjust_attack_defense": True,
+        "profile_adjust_form": True,
+        "fifa_rank_weight": 0.10,
     })()
 
     # Load team profiles for profile-enhanced predictions
@@ -676,6 +679,17 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
                         serialize_adjustment(adjustment, team_names)
                         for adjustment in match_manual
                     ],
+                    "profile_adjustments": {
+                        "home_attack": prof.get("profile_home_attack", 0.0),
+                        "home_defense": prof.get("profile_home_defense", 0.0),
+                        "away_attack": prof.get("profile_away_attack", 0.0),
+                        "away_defense": prof.get("profile_away_defense", 0.0),
+                        "home_form": prof.get("profile_home_form", 0.0),
+                        "away_form": prof.get("profile_away_form", 0.0),
+                        "draw_adjustment": prof.get("profile_draw_adjustment", 0.0),
+                        "risk_flags": prof.get("profile_risk_flags", []),
+                        "profile_available": prof.get("profile_available", False),
+                    },
                 },
                 model_version=prediction.model_version,
             )
