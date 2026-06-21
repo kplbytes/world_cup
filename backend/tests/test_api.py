@@ -240,6 +240,7 @@ def test_ai_independence_endpoint_returns_summary(tmp_path):
 
 
 def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.config.settings.enable_numerical_adjustments", False)
     client = api_client(tmp_path)
     with session_scope() as session:
         dashboard = client.get("/api/dashboard").json()
@@ -282,6 +283,7 @@ def test_model_score_exposes_model_version_history_and_comparison(tmp_path, monk
 
         monkeypatch.setattr("app.services.recompute.MODEL_VERSION", "elo-poisson-v1.1")
         monkeypatch.setattr("app.prediction.poisson.MODEL_VERSION", "elo-poisson-v1.1")
+        monkeypatch.setattr("app.config.settings.enable_numerical_adjustments", False)
         second_revision = recompute_all(session, iterations=100, seed=11)
 
         existing2 = session.scalar(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match_id, PredictionSnapshot.revision_id == second_revision.id))

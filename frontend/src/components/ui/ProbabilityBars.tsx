@@ -1,3 +1,5 @@
+import { memo } from "react";
+
 type ProbabilityBarsProps = {
   homeWin: number;
   draw: number;
@@ -5,7 +7,7 @@ type ProbabilityBarsProps = {
   size?: "normal" | "compact";
 };
 
-export default function ProbabilityBars({ homeWin, draw, awayWin, size = "normal" }: ProbabilityBarsProps) {
+export default memo(function ProbabilityBars({ homeWin, draw, awayWin, size = "normal" }: ProbabilityBarsProps) {
   return (
     <div className={`prob-bars${size === "compact" ? " prob-bars--compact" : ""}`}>
       <div className="prob-bars__row">
@@ -31,4 +33,4 @@ export default function ProbabilityBars({ homeWin, draw, awayWin, size = "normal
       </div>
     </div>
   );
-}
+});

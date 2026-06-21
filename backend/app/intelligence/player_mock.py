@@ -1,8 +1,12 @@
 """Player importance lookup.
 
-Production stub: returns None for all queries.
-When a real player data source is integrated, replace this module's implementation.
+Loads curated player importance data from data/seed/player_importance_curated.json.
 """
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
 from pydantic import BaseModel
 
 
@@ -15,11 +19,25 @@ class PlayerMock(BaseModel):
     source: str
 
 
-def load_player_mocks() -> list[PlayerMock]:
-    """No mock data in production. Returns empty list."""
-    return []
+_DATA_PATH = Path(__file__).resolve().parents[3] / "data" / "seed" / "player_importance_curated.json"
+
+_cache: list[PlayerMock] | None = None
+
+
+def load_player_importance() -> list[PlayerMock]:
+    """Load curated player importance data from JSON file (cached after first call)."""
+    global _cache
+    if _cache is not None:
+        return _cache
+    with open(_DATA_PATH, encoding="utf-8") as f:
+        raw = json.load(f)
+    _cache = [PlayerMock(**item) for item in raw]
+    return _cache
 
 
 def get_player_importance(player_name: str, team_id: str) -> PlayerMock | None:
-    """No mock data in production. Always returns None."""
+    """Look up a player by name and team_id."""
+    for player in load_player_importance():
+        if player.player_name == player_name and player.team_id == team_id:
+            return player
     return None

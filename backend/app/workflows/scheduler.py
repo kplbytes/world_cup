@@ -16,6 +16,6 @@ def should_auto_run_daily() -> bool:
         return False
     if is_workflow_running():
         return False
-    if get_today_status() == "already_run":
+    if get_today_status().get("status") == "already_run":
         return False
     return can_auto_run()

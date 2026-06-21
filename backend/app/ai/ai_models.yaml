@@ -37,10 +37,10 @@ providers:
         display_name: DeepSeek V4 Flash (Independent)
         cost_tier: low
         latency_tier: fast
-        role: shadow
-        ensemble_weight: 0
+        role: independent_judge
+        ensemble_weight: 0.33
         prompt_version: worldcup-ai-v2
-        include_in_ensemble: false
+        include_in_ensemble: true
 
       - model_id: deepseek-v4-pro
         enabled: false
@@ -112,25 +112,27 @@ providers:
         include_in_ensemble: false
 
       - model_id: mimo-v2-pro
-        enabled: false
+        enabled: true
         model_version: ai-xiaomi-mimo-v2-pro-v2
         display_name: MiMo V2 Pro (Independent)
         cost_tier: low
         latency_tier: fast
-        role: shadow
-        ensemble_weight: 0
+        role: independent_judge
+        ensemble_weight: 0.33
         prompt_version: worldcup-ai-v2
-        include_in_ensemble: false
+        include_in_ensemble: true
 
 ensemble_defaults:
-  system_weight: 0.50
-  market_weight: 0.20
-  total_ai_weight: 0.30
+  # Research-enhanced: increased market weight from 0.20 to 0.30
+  # Odds data has proven 8.7% Brier improvement and 13.3% accuracy improvement over Elo+Poisson
+  system_weight: 0.35
+  market_weight: 0.30
+  total_ai_weight: 0.35
   # When market is missing
-  system_weight_no_market: 0.60
-  total_ai_weight_no_market: 0.40
+  system_weight_no_market: 0.50
+  total_ai_weight_no_market: 0.50
   # When AI is missing
-  system_weight_no_ai: 0.80
-  market_weight_no_ai: 0.20
+  system_weight_no_ai: 0.55
+  market_weight_no_ai: 0.45
   # When both are missing
   system_weight_only: 1.00

@@ -1,0 +1,29 @@
+{
+  "source": {
+    "provider": "curated_host_venue_registry_v1",
+    "basis": [
+      "FIFA 2026 match schedule venue city labels",
+      "public stadium city coordinates",
+      "IANA time zone database"
+    ],
+    "note": "Coordinates are stadium/city coordinates for travel and time-zone burden estimates only. Weather and climate are not inferred from this file."
+  },
+  "venues": {
+    "Atlanta": {"city": "Atlanta", "stadium": "Mercedes-Benz Stadium", "country": "USA", "latitude": 33.7554, "longitude": -84.4008, "timezone": "America/New_York"},
+    "Boston (Foxborough)": {"city": "Foxborough", "stadium": "Gillette Stadium", "country": "USA", "latitude": 42.0909, "longitude": -71.2643, "timezone": "America/New_York"},
+    "Dallas (Arlington)": {"city": "Arlington", "stadium": "AT&T Stadium", "country": "USA", "latitude": 32.7473, "longitude": -97.0945, "timezone": "America/Chicago"},
+    "Guadalajara (Zapopan)": {"city": "Zapopan", "stadium": "Estadio Akron", "country": "Mexico", "latitude": 20.6819, "longitude": -103.4628, "timezone": "America/Mexico_City"},
+    "Houston": {"city": "Houston", "stadium": "NRG Stadium", "country": "USA", "latitude": 29.6847, "longitude": -95.4107, "timezone": "America/Chicago"},
+    "Kansas City": {"city": "Kansas City", "stadium": "Arrowhead Stadium", "country": "USA", "latitude": 39.0490, "longitude": -94.4839, "timezone": "America/Chicago"},
+    "Los Angeles (Inglewood)": {"city": "Inglewood", "stadium": "SoFi Stadium", "country": "USA", "latitude": 33.9535, "longitude": -118.3392, "timezone": "America/Los_Angeles"},
+    "Mexico City": {"city": "Mexico City", "stadium": "Estadio Azteca", "country": "Mexico", "latitude": 19.3029, "longitude": -99.1505, "timezone": "America/Mexico_City"},
+    "Miami (Miami Gardens)": {"city": "Miami Gardens", "stadium": "Hard Rock Stadium", "country": "USA", "latitude": 25.9580, "longitude": -80.2389, "timezone": "America/New_York"},
+    "Monterrey (Guadalupe)": {"city": "Guadalupe", "stadium": "Estadio BBVA", "country": "Mexico", "latitude": 25.6682, "longitude": -100.2446, "timezone": "America/Monterrey"},
+    "New York/New Jersey (East Rutherford)": {"city": "East Rutherford", "stadium": "MetLife Stadium", "country": "USA", "latitude": 40.8135, "longitude": -74.0745, "timezone": "America/New_York"},
+    "Philadelphia": {"city": "Philadelphia", "stadium": "Lincoln Financial Field", "country": "USA", "latitude": 39.9008, "longitude": -75.1675, "timezone": "America/New_York"},
+    "San Francisco Bay Area (Santa Clara)": {"city": "Santa Clara", "stadium": "Levi's Stadium", "country": "USA", "latitude": 37.4030, "longitude": -121.9700, "timezone": "America/Los_Angeles"},
+    "Seattle": {"city": "Seattle", "stadium": "Lumen Field", "country": "USA", "latitude": 47.5952, "longitude": -122.3316, "timezone": "America/Los_Angeles"},
+    "Toronto": {"city": "Toronto", "stadium": "BMO Field", "country": "Canada", "latitude": 43.6332, "longitude": -79.4186, "timezone": "America/Toronto"},
+    "Vancouver": {"city": "Vancouver", "stadium": "BC Place", "country": "Canada", "latitude": 49.2768, "longitude": -123.1119, "timezone": "America/Vancouver"}
+  }
+}

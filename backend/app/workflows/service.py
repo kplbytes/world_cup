@@ -7,6 +7,7 @@ import logging
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, func
 
@@ -18,6 +19,10 @@ from app.ai.lock_status import compute_match_lock_status
 from app.workflows.state import set_current_run, is_workflow_running, try_start_workflow
 
 logger = logging.getLogger(__name__)
+
+# China timezone — "today" should be determined by the user's local calendar.
+# See state.py for rationale.
+_CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
 
 def _ensure_utc(dt: datetime | None) -> datetime | None:
@@ -190,6 +195,7 @@ def _get_yesterday_matches_info() -> dict:
         scored = session.scalar(
             select(func.count(PredictionSnapshot.match_id))
             .where(PredictionSnapshot.is_pre_match_locked == True)
+            .where(PredictionSnapshot.kickoff >= yesterday)
         ) or 0
 
         return {"count": count, "scored": min(scored, count), "needs_review": count > scored}
@@ -292,9 +298,15 @@ def _get_decision_snapshot_status_info() -> dict:
 
 
 def _get_today_ai_stats() -> dict:
-    """Get today's AI call statistics with detailed validity breakdown."""
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    """Get today's AI call statistics with detailed validity breakdown.
+
+    "Today" is determined by China Standard Time (UTC+8), not UTC, so that AI
+    calls made in the early morning hours (CST) don't vanish at 8:00 AM CST.
+    """
+    now_utc = datetime.now(timezone.utc)
+    now_china = now_utc.astimezone(_CHINA_TZ)
+    today_start_china = now_china.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = today_start_china.astimezone(timezone.utc)
 
     with session_scope() as session:
         from app.models import AIPrediction
@@ -702,17 +714,29 @@ def _run_score_step(run_id: int):
                 save_model_score(session, report, revision.id)
                 saved = True
 
-        _update_step(
-            run_id,
-            "post_match_score",
-            "success",
-            {
-                "revision_id": revision.id,
-                "matches_scored": report.matches_scored,
-                "saved": saved,
-                "reason": "already_saved" if existing is not None else None,
-            },
-        )
+            # Update adaptive weights after scoring
+            adaptive_result = None
+            if saved:
+                try:
+                    from app.services.adaptive_weights import compute_adaptive_weights
+                    adaptive_result = compute_adaptive_weights(session)
+                except Exception as aw_err:
+                    logger.warning(f"Adaptive weights update failed (non-critical): {aw_err}")
+
+        summary = {
+            "revision_id": revision.id,
+            "matches_scored": report.matches_scored,
+            "saved": saved,
+            "reason": "already_saved" if existing is not None else None,
+        }
+        if adaptive_result and adaptive_result.get("is_adaptive"):
+            summary["adaptive_weights"] = {
+                "system": adaptive_result["weights"].get("system"),
+                "market": adaptive_result["weights"].get("market"),
+                "is_adaptive": True,
+            }
+
+        _update_step(run_id, "post_match_score", "success", summary)
     except Exception as e:
         logger.error(f"Score step failed: {e}")
         _update_step(run_id, "post_match_score", "failed", error=str(e))
@@ -729,9 +753,24 @@ def _run_ai_prediction_step(run_id: int, limit: int = 10, only_missing: bool = T
 
         clamped_limit = min(limit, settings.ai_run_all_max_limit)
         with session_scope() as session:
-            results = asyncio.run(run_ai_predictions_batch(
-                session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed
-            ))
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    results = pool.submit(
+                        asyncio.run,
+                        run_ai_predictions_batch(
+                            session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed
+                        )
+                    ).result()
+            else:
+                results = asyncio.run(run_ai_predictions_batch(
+                    session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed
+                ))
 
         success = sum(1 for r in results if r.get("status") != "error" and r.get("status") != "skipped")
         failed = sum(1 for r in results if r.get("status") == "error")
@@ -798,7 +837,7 @@ def _run_ensemble_step(run_id: int):
                 failed += 1
                 logger.error(f"Ensemble failed for {m.id}: {e}")
 
-        _update_step(run_id, "ensemble_generation", "success" if failed == 0 else "success",
+        _update_step(run_id, "ensemble_generation", "success" if failed == 0 else "partial_success",
                      {"success": success, "failed": failed})
     except Exception as e:
         logger.error(f"Ensemble step failed: {e}")
@@ -817,7 +856,7 @@ def _run_lock_step(run_id: int, window_hours: int = 24):
             run_id,
             "lock_predictions",
             "success",
-            {**counts, "locked_count": counts["baseline"] + counts["ai"] + counts["ensemble"] + counts.get("profile", 0)},
+            {**counts, "locked_count": counts["baseline"] + counts["ai"] + counts["ensemble"]},
         )
     except Exception as e:
         logger.error(f"Lock step failed: {e}")

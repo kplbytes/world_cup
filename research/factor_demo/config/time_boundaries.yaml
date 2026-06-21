@@ -31,6 +31,20 @@ rolling_validation:
 # 数据起始点（用于计算历史特征）
 data_start: "2000-01-01"
 
+# 外部数据路径
+fifa_ranking_path: "data/external/fifa_ranking.csv"
+odds_data_path: "data/external/odds_data.csv"
+
+# 流水线版本
+pipeline_version: "5.0"
+
+# 新增模型类型
+new_model_types:
+  - "regularized_logistic"
+  - "lightgbm"
+  - "calibrated_logistic"
+  - "calibrated_lightgbm"
+
 # 因子分类
 factor_classification:
   baseline_factors:

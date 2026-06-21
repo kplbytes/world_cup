@@ -1,4 +1,4 @@
-import type { Match, AIPredictionItem, EnsemblePredictionItem } from "../types";
+import type { Match, AIPredictionItem, AIPredictionSummary, EnsemblePredictionItem, EnsemblePredictionSummary, Scoreline } from "../types";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -71,8 +71,8 @@ function hasValidAI(aiPredictions: AIPredictionItem[]): AIPredictionItem | null 
  */
 export function getMatchRecommendation(
   match: Match,
-  aiPredictions?: AIPredictionItem[],
-  ensemble?: EnsemblePredictionItem | null
+  aiPredictions?: AIPredictionItem[] | AIPredictionSummary | null,
+  ensemble?: EnsemblePredictionItem | EnsemblePredictionSummary | null
 ): MatchRecommendation {
   const baseline = match.prediction;
 
@@ -90,14 +90,14 @@ export function getMatchRecommendation(
   }
 
   // 2. 有效 AI
-  const validAI = aiPredictions ? hasValidAI(aiPredictions) : null;
+  const validAI = getValidAIFromInput(aiPredictions);
   if (validAI) {
     return {
       source: "ai",
-      label: directionLabel(validAI.parsed_home_win!, validAI.parsed_draw!, validAI.parsed_away_win!),
-      homeWin: validAI.parsed_home_win!,
-      draw: validAI.parsed_draw!,
-      awayWin: validAI.parsed_away_win!,
+      label: directionLabel(validAI.home_win, validAI.draw, validAI.away_win),
+      homeWin: validAI.home_win,
+      draw: validAI.draw,
+      awayWin: validAI.away_win,
       modelVersion: validAI.model_version,
       valid: true,
     };
@@ -128,6 +128,27 @@ export function getMatchRecommendation(
   };
 }
 
+/** Extract valid AI prediction from either full AIPredictionItem[] or AIPredictionSummary */
+function getValidAIFromInput(
+  aiPredictions?: AIPredictionItem[] | AIPredictionSummary | null
+): { home_win: number; draw: number; away_win: number; model_version: string } | null {
+  if (!aiPredictions) return null;
+  // Summary object (not an array)
+  if (!Array.isArray(aiPredictions)) {
+    const s = aiPredictions;
+    if (isValidProb(s.home_win) && isValidProb(s.draw) && isValidProb(s.away_win)) {
+      return s;
+    }
+    return null;
+  }
+  // Full AIPredictionItem array
+  const valid = hasValidAI(aiPredictions);
+  if (valid) {
+    return { home_win: valid.parsed_home_win!, draw: valid.parsed_draw!, away_win: valid.parsed_away_win!, model_version: valid.model_version };
+  }
+  return null;
+}
+
 /**
  * 带队名的推荐标签（用于卡片显示）
  */
@@ -150,4 +171,29 @@ export function getSourceDisplayName(source: RecommendationSource): string {
     case "baseline": return "Baseline";
     case "none": return "";
   }
+}
+
+/**
+ * 根据推荐方向过滤比分列表，确保"比分倾向"与推荐方向一致。
+ *
+ * 当推荐来源为 Ensemble/AI 时，Baseline 的最高概率比分可能与推荐方向不同
+ * （如 Baseline 最高概率比分是 1-1 平局，但 Ensemble 认为客胜概率最高），
+ * 导致"比分倾向"与"推荐"矛盾。此函数按推荐方向过滤比分，只保留方向一致的比分。
+ */
+export function filterScorelinesByDirection(
+  scorelines: Scoreline[],
+  rec: MatchRecommendation
+): Scoreline[] {
+  if (!rec.valid || scorelines.length === 0) return scorelines;
+
+  const direction = rec.label;
+  const filtered = scorelines.filter((s) => {
+    if (direction === "主胜") return s.home_goals > s.away_goals;
+    if (direction === "平局") return s.home_goals === s.away_goals;
+    if (direction === "客胜") return s.home_goals < s.away_goals;
+    return true;
+  });
+
+  // 如果过滤后为空（极端情况），回退到原始列表
+  return filtered.length > 0 ? filtered : scorelines;
 }

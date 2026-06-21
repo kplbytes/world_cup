@@ -1,0 +1,46 @@
+{
+  "2010": {
+    "n_test": 75,
+    "n_train": 9757,
+    "model_brier": 0.5411324537794762,
+    "model_log_loss": 0.9142388348730308,
+    "model_accuracy": 0.5733333333333334,
+    "model_draw_accuracy": 0.0,
+    "baseline_brier": 0.5725993267730286,
+    "baseline_accuracy": 0.6,
+    "brier_improvement": 0.03146687299355244
+  },
+  "2014": {
+    "n_test": 64,
+    "n_train": 13799,
+    "model_brier": 0.5581767976872625,
+    "model_log_loss": 0.9434564960102292,
+    "model_accuracy": 0.59375,
+    "model_draw_accuracy": 0.07692307692307693,
+    "baseline_brier": 0.5795986451341157,
+    "baseline_accuracy": 0.578125,
+    "brier_improvement": 0.02142184744685327
+  },
+  "2018": {
+    "n_test": 64,
+    "n_train": 17577,
+    "model_brier": 0.6003663548251112,
+    "model_log_loss": 0.999586102990816,
+    "model_accuracy": 0.5,
+    "model_draw_accuracy": 0.0,
+    "baseline_brier": 0.5902974305937286,
+    "baseline_accuracy": 0.546875,
+    "brier_improvement": -0.010068924231382614
+  },
+  "2022": {
+    "n_test": 64,
+    "n_train": 21638,
+    "model_brier": 0.5971061223637424,
+    "model_log_loss": 1.0278574004258174,
+    "model_accuracy": 0.53125,
+    "model_draw_accuracy": 0.0,
+    "baseline_brier": 0.61028453453799,
+    "baseline_accuracy": 0.5,
+    "brier_improvement": 0.013178412174247645
+  }
+}

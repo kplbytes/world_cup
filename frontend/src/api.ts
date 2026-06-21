@@ -8,6 +8,7 @@ import type {
   Match, ProfileEvaluation, TeamProfileEnvelope,
   MatchCountBreakdown, ErrorAttributionSummary,
   DecisionSnapshotStatus, ModelComparisonItem,
+  MatchScoreDetailItem, WorkflowStatus, WorkflowRunInfo,
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -62,6 +63,12 @@ export async function getDecision(): Promise<DecisionData> {
 export async function getModelScore(): Promise<ModelScoreData> {
   const response = await fetchWithTimeout("/api/model-score");
   if (!response.ok) throw new Error(`Model score request failed: ${response.status}`);
+  return response.json();
+}
+
+export async function getModelScoreDetails(): Promise<{ details: MatchScoreDetailItem[]; exclusions: Array<{ match_id: string; home_team: string; away_team: string; reason: string }> }> {
+  const response = await fetchWithTimeout("/api/model-score/details");
+  if (!response.ok) throw new Error(`Model score details request failed: ${response.status}`);
   return response.json();
 }
 
@@ -164,13 +171,13 @@ export async function getAccuracyCommandCenter(): Promise<AccuracyCommandCenter>
 }
 
 // Workflow APIs
-export async function getWorkflowStatus(): Promise<Record<string, unknown>> {
+export async function getWorkflowStatus(): Promise<WorkflowStatus> {
   const res = await fetchWithTimeout("/api/workflows/status");
   if (!res.ok) throw new Error(`Workflow status failed: ${res.status}`);
   return res.json();
 }
 
-export async function triggerDailyOpen(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function triggerDailyOpen(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
   const res = await fetchWithTimeout("/api/workflows/daily-open", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -181,7 +188,7 @@ export async function triggerDailyOpen(params?: Record<string, unknown>): Promis
   return res.json();
 }
 
-export async function triggerPreMatch(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function triggerPreMatch(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
   const res = await fetchWithTimeout("/api/workflows/pre-match", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -192,7 +199,7 @@ export async function triggerPreMatch(params?: Record<string, unknown>): Promise
   return res.json();
 }
 
-export async function triggerPostMatch(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function triggerPostMatch(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
   const res = await fetchWithTimeout("/api/workflows/post-match", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -203,7 +210,7 @@ export async function triggerPostMatch(params?: Record<string, unknown>): Promis
   return res.json();
 }
 
-export async function triggerLock(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function triggerLock(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
   const res = await fetchWithTimeout("/api/workflows/lock", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -214,7 +221,7 @@ export async function triggerLock(params?: Record<string, unknown>): Promise<Rec
   return res.json();
 }
 
-export async function triggerFullWorkflow(params?: Record<string, unknown>): Promise<Record<string, unknown>> {
+export async function triggerFullWorkflow(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
   const res = await fetchWithTimeout("/api/workflows/full", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -225,7 +232,7 @@ export async function triggerFullWorkflow(params?: Record<string, unknown>): Pro
   return res.json();
 }
 
-export async function getWorkflowRuns(limit?: number): Promise<Record<string, unknown>> {
+export async function getWorkflowRuns(limit?: number): Promise<{ runs: WorkflowRunInfo[] }> {
   const url = `/api/workflows/runs${limit ? `?limit=${limit}` : ""}`;
   const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error(`Workflow runs failed: ${res.status}`);
@@ -241,7 +248,10 @@ export async function getMatchCountBreakdown(): Promise<MatchCountBreakdown> {
 export async function getErrorAttributionSummary(): Promise<ErrorAttributionSummary> {
   const res = await fetchWithTimeout("/api/error-attribution-summary");
   if (!res.ok) throw new Error("Failed to fetch error attribution summary");
-  return res.json();
+  const data = await res.json();
+  // API returns { total_scored, counts: { ... }, rates: { ... } };
+  // frontend expects counts fields at top level
+  return data.counts ?? data;
 }
 
 export async function getDecisionSnapshotStatus(): Promise<DecisionSnapshotStatus> {
@@ -253,5 +263,18 @@ export async function getDecisionSnapshotStatus(): Promise<DecisionSnapshotStatu
 export async function getModelComparison(): Promise<{ comparison: ModelComparisonItem[]; sample_sufficient: boolean; sample_count: number }> {
   const res = await fetchWithTimeout("/api/model-comparison");
   if (!res.ok) throw new Error("Failed to fetch model comparison");
+  return res.json();
+}
+
+export async function getAdaptiveWeights(): Promise<{
+  weights: Record<string, number>;
+  performance: Record<string, { sample_count: number; effective_n?: number; brier: number | null; brier_var?: number; hit_rate: number | null; posterior_mu?: number; posterior_se?: number; ci_95?: [number, number] }>;
+  is_adaptive: boolean;
+  significance: Record<string, { diff_mean: number; t_stat: number; p_value: number; significant: boolean; better_source: string; n_pairs: number }>;
+  last_updated: string;
+  config: { algorithm: string; min_sample_size: number; max_weight_shift: number; hedge_eta: number; time_decay_half_life: number; significance_level: number; floor_weight: number; max_lookback: number };
+}> {
+  const res = await fetchWithTimeout("/api/adaptive-weights");
+  if (!res.ok) throw new Error("Failed to fetch adaptive weights");
   return res.json();
 }

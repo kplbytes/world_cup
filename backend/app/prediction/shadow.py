@@ -244,6 +244,105 @@ def low_score(
     )
 
 
+# --- research-draw-boost shadow ---
+# Based on factor research: WC group stage draw rate ~37.5% vs model ~20%
+
+def research_draw_boost(
+    home_win: float, draw: float, away_win: float,
+    home_xg: float, away_xg: float,
+) -> ShadowPrediction:
+    """Research-calibrated draw boost for group stage.
+
+    Based on analysis of 24 WC2026 matches showing 37.5% draw rate
+    vs model's ~20% prediction. Applies a stronger draw boost (1.15)
+    with a 8pp cap, targeting the observed gap.
+    """
+    original_draw = draw
+    new_draw = draw * 1.15
+
+    # Cap: draw increase cannot exceed 8 percentage points
+    if new_draw - original_draw > 0.08:
+        new_draw = original_draw + 0.08
+
+    # Don't boost if draw is already very high
+    if original_draw >= 0.40:
+        new_draw = original_draw
+
+    # Reduce favorite proportionally
+    if home_win >= away_win:
+        reduction = new_draw - original_draw
+        new_home = home_win - reduction * (home_win / (home_win + away_win)) if (home_win + away_win) > 0 else home_win
+        new_away = away_win - reduction * (away_win / (home_win + away_win)) if (home_win + away_win) > 0 else away_win
+    else:
+        reduction = new_draw - original_draw
+        new_away = away_win - reduction * (away_win / (home_win + away_win)) if (home_win + away_win) > 0 else away_win
+        new_home = home_win - reduction * (home_win / (home_win + away_win)) if (home_win + away_win) > 0 else home_win
+
+    # Re-normalize
+    total = new_home + new_draw + new_away
+    new_home /= total
+    new_draw /= total
+    new_away /= total
+
+    return ShadowPrediction(
+        model_version="elo-poisson-v2-research-draw-shadow",
+        home_win=new_home,
+        draw=new_draw,
+        away_win=new_away,
+        home_xg=home_xg,
+        away_xg=away_xg,
+        label="Research Draw+15%",
+    )
+
+
+# --- market-heavy shadow ---
+# Based on odds research: market odds 8.7% Brier improvement over Elo+Poisson
+
+def market_heavy(
+    home_win: float, draw: float, away_win: float,
+    home_xg: float, away_xg: float,
+    market_probs: dict[str, float] | None = None,
+) -> ShadowPrediction:
+    """Market-heavy blend: 40% model + 60% market.
+
+    Based on research showing odds-implied probabilities significantly
+    outperform pure Elo+Poisson. Only active when market data is available.
+    """
+    if market_probs is None:
+        return ShadowPrediction(
+            model_version="elo-poisson-v2-market-heavy-shadow",
+            home_win=home_win,
+            draw=draw,
+            away_win=away_win,
+            home_xg=home_xg,
+            away_xg=away_xg,
+            label="Market Heavy (no data)",
+        )
+
+    model_probs = {"home_win": home_win, "draw": draw, "away_win": away_win}
+    weight = 0.60  # 60% market
+    blended = {}
+    for key in ("home_win", "draw", "away_win"):
+        m = model_probs.get(key, 1.0 / 3)
+        k = market_probs.get(key, 1.0 / 3)
+        blended[key] = (1 - weight) * m + weight * k
+
+    total = sum(blended.values())
+    if total > 0:
+        for key in blended:
+            blended[key] /= total
+
+    return ShadowPrediction(
+        model_version="elo-poisson-v2-market-heavy-shadow",
+        home_win=blended["home_win"],
+        draw=blended["draw"],
+        away_win=blended["away_win"],
+        home_xg=home_xg,
+        away_xg=away_xg,
+        label="Market Heavy 60%",
+    )
+
+
 # --- Registry ---
 
 SHADOW_MODELS = {
@@ -251,6 +350,8 @@ SHADOW_MODELS = {
     "elo-poisson-v1-drawboost-110-shadow": draw_boost_110,
     "elo-poisson-v1-favorite-dampened-shadow": favorite_dampened,
     "elo-poisson-v1-low-score-shadow": low_score,
+    "elo-poisson-v2-research-draw-shadow": research_draw_boost,
+    "elo-poisson-v2-market-heavy-shadow": market_heavy,
 }
 
 SHADOW_MODEL_VERSIONS = list(SHADOW_MODELS.keys())
@@ -259,9 +360,13 @@ SHADOW_MODEL_VERSIONS = list(SHADOW_MODELS.keys())
 def compute_shadow_predictions(
     home_win: float, draw: float, away_win: float,
     home_xg: float, away_xg: float,
+    market_probs: dict[str, float] | None = None,
 ) -> list[ShadowPrediction]:
     """Compute all shadow model predictions from baseline."""
-    return [
-        func(home_win, draw, away_win, home_xg, away_xg)
-        for func in SHADOW_MODELS.values()
-    ]
+    results = []
+    for name, func in SHADOW_MODELS.items():
+        if name == "elo-poisson-v2-market-heavy-shadow":
+            results.append(func(home_win, draw, away_win, home_xg, away_xg, market_probs=market_probs))
+        else:
+            results.append(func(home_win, draw, away_win, home_xg, away_xg))
+    return results

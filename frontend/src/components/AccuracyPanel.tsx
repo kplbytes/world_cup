@@ -3,6 +3,7 @@ import {
   getModelScoreByVersion, getCalibration,
   getMarketComparison, getModelRecommendation, getDataQuality, getAIEvaluation,
 } from "../api";
+import { fmt, pct } from "../utils/format";
 import type {
   VersionScoreSummary, CalibrationBucket,
   MarketComparisonData, ModelRecommendation, DataQualityReport,
@@ -15,13 +16,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       {children}
     </section>
   );
-}
-
-function fmt(n: number, digits = 4) {
-  return n.toFixed(digits);
-}
-function pct(n: number) {
-  return (n * 100).toFixed(1) + "%";
 }
 
 function QueryWrapper({ isLoading, isError, error, children }: {
@@ -60,8 +54,8 @@ function VersionTable({ versions }: { versions: VersionScoreSummary[] }) {
   return (
     <>
       {insufficient && (
-        <div className="sample-warning" style={{ color: "var(--coral)", fontSize: "13px", marginBottom: "8px", padding: "8px 12px", border: "2px solid var(--coral)", borderRadius: "4px", background: "oklch(34% .05 25 / .1)", fontWeight: 600 }}>
-          ⚠️ 样本不足，暂不能下结论。当前最少仅 {minSample} 场样本，建议至少5场已结束比赛后再做判断。当前默认推荐使用 baseline 模型。
+        <div className="banner-error">
+          样本不足，暂不能下结论。当前最少仅 {minSample} 场样本，建议至少5场已结束比赛后再做判断。当前默认推荐使用 baseline 模型。
         </div>
       )}
       <div className="table-wrap">

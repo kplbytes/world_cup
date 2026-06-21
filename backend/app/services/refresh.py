@@ -117,7 +117,7 @@ def refresh_tournament(
                 if payload.source.provider in _SCORE_ONLY_PROVIDERS:
                     continue
                 # Update status to "live" if the incoming data says so
-                if incoming.status == "live" and stored.status == "scheduled":
+                if incoming.status in ("live", "in_progress") and stored.status == "scheduled":
                     stored.status = "live"
                     if incoming.home_score is not None:
                         stored.home_score = incoming.home_score

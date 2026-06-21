@@ -1,0 +1,492 @@
+{
+  "source": {
+    "provider": "open_meteo_historical_archive",
+    "source_url": "https://archive-api.open-meteo.com/v1/archive",
+    "retrieved_at": "2026-06-19T13:05:13.060352+00:00",
+    "years": [
+      2015,
+      2024
+    ],
+    "months": [
+      6,
+      7
+    ],
+    "daily_fields": [
+      "temperature_2m_max",
+      "temperature_2m_min",
+      "temperature_2m_mean",
+      "relative_humidity_2m_mean",
+      "precipitation_sum",
+      "wind_speed_10m_max"
+    ],
+    "note": "Historical climate baseline only. This is not a match-day forecast.",
+    "source_hashes_sha256": {
+      "Atlanta": "04a72c836cf2ea432003cb600e69cdb7c045d8c0940f1e771366b0805cb99a12",
+      "Boston (Foxborough)": "3d042796b87187cc318d275a5d6640bd0101c36acbb7d13c485c24112fc2f160",
+      "Dallas (Arlington)": "b9ab319d1d9ee9f08fb81ccfdac32db7fcb1c52c8f2d624b4ff33969e27e0e8d",
+      "Guadalajara (Zapopan)": "c6a4a30e6327cd0787f95360450bbdcfd7ed0e2e1054bbfbb9014c35144bb487",
+      "Houston": "9cfe7e1848945aeb2d6c25a5b8ae14b11de314904dde4d13bff3dbfd80e6adeb",
+      "Kansas City": "9db07a4b4cdea1e8806d673c9faf53dd3bbdfc31a4c3032031012f82da6e6625",
+      "Los Angeles (Inglewood)": "7d89ad9cc414876cea3e8f399a0eba2bbd4e1d90a4fe496aff4a19a526600253",
+      "Mexico City": "db3ac9e0ac12595804ac09e078cf44f67c48705ea0a3a1a15db5c9e5fe6c8fb1",
+      "Miami (Miami Gardens)": "a3c0c413ffaa1cc91250eba20305dbeef3a5075a8160a4ca7943ac054e37371a",
+      "Monterrey (Guadalupe)": "88cb7fc8e0396f084a941deb2bae886028891a97cd9b14949f3891b06bfac6f2",
+      "New York/New Jersey (East Rutherford)": "076d4e8bb3e0ba869e9a70d3aed4215dbf9807cf35730ef8e034fc3c41bd86af",
+      "Philadelphia": "5fd9b953b2bb213fb86f1afd56fbec54961026819ebefd39320868b212ab7e0f",
+      "San Francisco Bay Area (Santa Clara)": "e151b0575283aa3c7ee86615acbc5d1eb224dc8788a63eda5c8d58021d9afbe7",
+      "Seattle": "0541f9b0a7ccca01cb0bae3477d4f4ad5a5072c6a4d93a290dfcdad69f5e65f0",
+      "Toronto": "e3de43b38b8b4cb5b1bacb96b04a79b2c32c1e070309e6ad687f1a4b288cc29d",
+      "Vancouver": "d6b71968fdcc1ebe42dc511f2fecbc7694000afe90eb46b63bf9d4b467795d82"
+    }
+  },
+  "venues": {
+    "Atlanta": {
+      "city": "Atlanta",
+      "timezone": "America/New_York",
+      "latitude": 33.7554,
+      "longitude": -84.4008,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 24.5,
+          "temperature_2m_max_mean_c": 29.7,
+          "temperature_2m_min_mean_c": 19.9,
+          "relative_humidity_2m_mean_pct": 72.1,
+          "precipitation_sum_mean_mm": 3.9,
+          "rain_day_rate": 0.49,
+          "wind_speed_10m_max_mean_kmh": 15.8
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 26.0,
+          "temperature_2m_max_mean_c": 30.9,
+          "temperature_2m_min_mean_c": 21.8,
+          "relative_humidity_2m_mean_pct": 76.4,
+          "precipitation_sum_mean_mm": 5.8,
+          "rain_day_rate": 0.568,
+          "wind_speed_10m_max_mean_kmh": 13.7
+        }
+      }
+    },
+    "Boston (Foxborough)": {
+      "city": "Foxborough",
+      "timezone": "America/New_York",
+      "latitude": 42.0909,
+      "longitude": -71.2643,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 19.4,
+          "temperature_2m_max_mean_c": 25.0,
+          "temperature_2m_min_mean_c": 14.8,
+          "relative_humidity_2m_mean_pct": 72.1,
+          "precipitation_sum_mean_mm": 3.1,
+          "rain_day_rate": 0.397,
+          "wind_speed_10m_max_mean_kmh": 16.7
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 23.1,
+          "temperature_2m_max_mean_c": 28.3,
+          "temperature_2m_min_mean_c": 18.8,
+          "relative_humidity_2m_mean_pct": 74.7,
+          "precipitation_sum_mean_mm": 4.0,
+          "rain_day_rate": 0.439,
+          "wind_speed_10m_max_mean_kmh": 15.8
+        }
+      }
+    },
+    "Dallas (Arlington)": {
+      "city": "Arlington",
+      "timezone": "America/Chicago",
+      "latitude": 32.7473,
+      "longitude": -97.0945,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 27.5,
+          "temperature_2m_max_mean_c": 32.7,
+          "temperature_2m_min_mean_c": 23.0,
+          "relative_humidity_2m_mean_pct": 68.1,
+          "precipitation_sum_mean_mm": 3.5,
+          "rain_day_rate": 0.357,
+          "wind_speed_10m_max_mean_kmh": 20.6
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 30.3,
+          "temperature_2m_max_mean_c": 35.5,
+          "temperature_2m_min_mean_c": 25.6,
+          "relative_humidity_2m_mean_pct": 58.5,
+          "precipitation_sum_mean_mm": 1.4,
+          "rain_day_rate": 0.213,
+          "wind_speed_10m_max_mean_kmh": 20.1
+        }
+      }
+    },
+    "Guadalajara (Zapopan)": {
+      "city": "Zapopan",
+      "timezone": "America/Mexico_City",
+      "latitude": 20.6819,
+      "longitude": -103.4628,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 21.9,
+          "temperature_2m_max_mean_c": 29.1,
+          "temperature_2m_min_mean_c": 16.5,
+          "relative_humidity_2m_mean_pct": 64.1,
+          "precipitation_sum_mean_mm": 4.0,
+          "rain_day_rate": 0.517,
+          "wind_speed_10m_max_mean_kmh": 17.2
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 19.7,
+          "temperature_2m_max_mean_c": 25.5,
+          "temperature_2m_min_mean_c": 15.8,
+          "relative_humidity_2m_mean_pct": 79.7,
+          "precipitation_sum_mean_mm": 6.8,
+          "rain_day_rate": 0.806,
+          "wind_speed_10m_max_mean_kmh": 12.8
+        }
+      }
+    },
+    "Houston": {
+      "city": "Houston",
+      "timezone": "America/Chicago",
+      "latitude": 29.6847,
+      "longitude": -95.4107,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 27.3,
+          "temperature_2m_max_mean_c": 31.8,
+          "temperature_2m_min_mean_c": 23.7,
+          "relative_humidity_2m_mean_pct": 78.5,
+          "precipitation_sum_mean_mm": 5.6,
+          "rain_day_rate": 0.527,
+          "wind_speed_10m_max_mean_kmh": 18.7
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 28.3,
+          "temperature_2m_max_mean_c": 32.8,
+          "temperature_2m_min_mean_c": 24.7,
+          "relative_humidity_2m_mean_pct": 78.3,
+          "precipitation_sum_mean_mm": 5.6,
+          "rain_day_rate": 0.503,
+          "wind_speed_10m_max_mean_kmh": 17.6
+        }
+      }
+    },
+    "Kansas City": {
+      "city": "Kansas City",
+      "timezone": "America/Chicago",
+      "latitude": 39.049,
+      "longitude": -94.4839,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 24.9,
+          "temperature_2m_max_mean_c": 30.6,
+          "temperature_2m_min_mean_c": 20.1,
+          "relative_humidity_2m_mean_pct": 67.2,
+          "precipitation_sum_mean_mm": 4.4,
+          "rain_day_rate": 0.36,
+          "wind_speed_10m_max_mean_kmh": 17.3
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 26.3,
+          "temperature_2m_max_mean_c": 31.6,
+          "temperature_2m_min_mean_c": 21.9,
+          "relative_humidity_2m_mean_pct": 70.0,
+          "precipitation_sum_mean_mm": 4.1,
+          "rain_day_rate": 0.358,
+          "wind_speed_10m_max_mean_kmh": 15.1
+        }
+      }
+    },
+    "Los Angeles (Inglewood)": {
+      "city": "Inglewood",
+      "timezone": "America/Los_Angeles",
+      "latitude": 33.9535,
+      "longitude": -118.3392,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 20.2,
+          "temperature_2m_max_mean_c": 26.2,
+          "temperature_2m_min_mean_c": 15.8,
+          "relative_humidity_2m_mean_pct": 68.4,
+          "precipitation_sum_mean_mm": 0.1,
+          "rain_day_rate": 0.013,
+          "wind_speed_10m_max_mean_kmh": 21.9
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 22.3,
+          "temperature_2m_max_mean_c": 28.7,
+          "temperature_2m_min_mean_c": 17.8,
+          "relative_humidity_2m_mean_pct": 68.4,
+          "precipitation_sum_mean_mm": 0.1,
+          "rain_day_rate": 0.013,
+          "wind_speed_10m_max_mean_kmh": 21.8
+        }
+      }
+    },
+    "Mexico City": {
+      "city": "Mexico City",
+      "timezone": "America/Mexico_City",
+      "latitude": 19.3029,
+      "longitude": -99.1505,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 18.3,
+          "temperature_2m_max_mean_c": 24.5,
+          "temperature_2m_min_mean_c": 13.1,
+          "relative_humidity_2m_mean_pct": 65.0,
+          "precipitation_sum_mean_mm": 6.3,
+          "rain_day_rate": 0.65,
+          "wind_speed_10m_max_mean_kmh": 15.4
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 16.9,
+          "temperature_2m_max_mean_c": 22.2,
+          "temperature_2m_min_mean_c": 12.4,
+          "relative_humidity_2m_mean_pct": 74.6,
+          "precipitation_sum_mean_mm": 7.3,
+          "rain_day_rate": 0.835,
+          "wind_speed_10m_max_mean_kmh": 11.8
+        }
+      }
+    },
+    "Miami (Miami Gardens)": {
+      "city": "Miami Gardens",
+      "timezone": "America/New_York",
+      "latitude": 25.958,
+      "longitude": -80.2389,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 26.7,
+          "temperature_2m_max_mean_c": 30.3,
+          "temperature_2m_min_mean_c": 23.9,
+          "relative_humidity_2m_mean_pct": 82.1,
+          "precipitation_sum_mean_mm": 8.3,
+          "rain_day_rate": 0.813,
+          "wind_speed_10m_max_mean_kmh": 15.2
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 27.6,
+          "temperature_2m_max_mean_c": 31.2,
+          "temperature_2m_min_mean_c": 24.7,
+          "relative_humidity_2m_mean_pct": 81.2,
+          "precipitation_sum_mean_mm": 6.1,
+          "rain_day_rate": 0.797,
+          "wind_speed_10m_max_mean_kmh": 14.4
+        }
+      }
+    },
+    "Monterrey (Guadalupe)": {
+      "city": "Guadalupe",
+      "timezone": "America/Monterrey",
+      "latitude": 25.6682,
+      "longitude": -100.2446,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 27.1,
+          "temperature_2m_max_mean_c": 33.1,
+          "temperature_2m_min_mean_c": 21.9,
+          "relative_humidity_2m_mean_pct": 66.7,
+          "precipitation_sum_mean_mm": 2.2,
+          "rain_day_rate": 0.27,
+          "wind_speed_10m_max_mean_kmh": 16.4
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 27.9,
+          "temperature_2m_max_mean_c": 34.0,
+          "temperature_2m_min_mean_c": 22.5,
+          "relative_humidity_2m_mean_pct": 61.7,
+          "precipitation_sum_mean_mm": 1.6,
+          "rain_day_rate": 0.177,
+          "wind_speed_10m_max_mean_kmh": 17.0
+        }
+      }
+    },
+    "New York/New Jersey (East Rutherford)": {
+      "city": "East Rutherford",
+      "timezone": "America/New_York",
+      "latitude": 40.8135,
+      "longitude": -74.0745,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 21.3,
+          "temperature_2m_max_mean_c": 26.3,
+          "temperature_2m_min_mean_c": 17.0,
+          "relative_humidity_2m_mean_pct": 70.1,
+          "precipitation_sum_mean_mm": 3.4,
+          "rain_day_rate": 0.357,
+          "wind_speed_10m_max_mean_kmh": 19.5
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 24.8,
+          "temperature_2m_max_mean_c": 29.5,
+          "temperature_2m_min_mean_c": 20.8,
+          "relative_humidity_2m_mean_pct": 72.8,
+          "precipitation_sum_mean_mm": 4.4,
+          "rain_day_rate": 0.442,
+          "wind_speed_10m_max_mean_kmh": 17.7
+        }
+      }
+    },
+    "Philadelphia": {
+      "city": "Philadelphia",
+      "timezone": "America/New_York",
+      "latitude": 39.9008,
+      "longitude": -75.1675,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 22.6,
+          "temperature_2m_max_mean_c": 28.1,
+          "temperature_2m_min_mean_c": 17.7,
+          "relative_humidity_2m_mean_pct": 67.6,
+          "precipitation_sum_mean_mm": 3.6,
+          "rain_day_rate": 0.4,
+          "wind_speed_10m_max_mean_kmh": 18.0
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 25.8,
+          "temperature_2m_max_mean_c": 30.9,
+          "temperature_2m_min_mean_c": 21.2,
+          "relative_humidity_2m_mean_pct": 70.9,
+          "precipitation_sum_mean_mm": 3.9,
+          "rain_day_rate": 0.471,
+          "wind_speed_10m_max_mean_kmh": 15.8
+        }
+      }
+    },
+    "San Francisco Bay Area (Santa Clara)": {
+      "city": "Santa Clara",
+      "timezone": "America/Los_Angeles",
+      "latitude": 37.403,
+      "longitude": -121.97,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 19.4,
+          "temperature_2m_max_mean_c": 27.1,
+          "temperature_2m_min_mean_c": 14.0,
+          "relative_humidity_2m_mean_pct": 61.3,
+          "precipitation_sum_mean_mm": 0.0,
+          "rain_day_rate": 0.013,
+          "wind_speed_10m_max_mean_kmh": 21.7
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 20.2,
+          "temperature_2m_max_mean_c": 28.0,
+          "temperature_2m_min_mean_c": 14.8,
+          "relative_humidity_2m_mean_pct": 63.8,
+          "precipitation_sum_mean_mm": 0.1,
+          "rain_day_rate": 0.01,
+          "wind_speed_10m_max_mean_kmh": 21.2
+        }
+      }
+    },
+    "Seattle": {
+      "city": "Seattle",
+      "timezone": "America/Los_Angeles",
+      "latitude": 47.5952,
+      "longitude": -122.3316,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 16.3,
+          "temperature_2m_max_mean_c": 21.8,
+          "temperature_2m_min_mean_c": 12.3,
+          "relative_humidity_2m_mean_pct": 70.2,
+          "precipitation_sum_mean_mm": 1.7,
+          "rain_day_rate": 0.283,
+          "wind_speed_10m_max_mean_kmh": 17.4
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 19.2,
+          "temperature_2m_max_mean_c": 25.2,
+          "temperature_2m_min_mean_c": 14.6,
+          "relative_humidity_2m_mean_pct": 65.8,
+          "precipitation_sum_mean_mm": 0.5,
+          "rain_day_rate": 0.116,
+          "wind_speed_10m_max_mean_kmh": 16.5
+        }
+      }
+    },
+    "Toronto": {
+      "city": "Toronto",
+      "timezone": "America/Toronto",
+      "latitude": 43.6332,
+      "longitude": -79.4186,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 18.7,
+          "temperature_2m_max_mean_c": 22.9,
+          "temperature_2m_min_mean_c": 14.8,
+          "relative_humidity_2m_mean_pct": 70.0,
+          "precipitation_sum_mean_mm": 3.0,
+          "rain_day_rate": 0.363,
+          "wind_speed_10m_max_mean_kmh": 20.3
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 22.2,
+          "temperature_2m_max_mean_c": 26.3,
+          "temperature_2m_min_mean_c": 18.1,
+          "relative_humidity_2m_mean_pct": 71.1,
+          "precipitation_sum_mean_mm": 2.4,
+          "rain_day_rate": 0.377,
+          "wind_speed_10m_max_mean_kmh": 18.3
+        }
+      }
+    },
+    "Vancouver": {
+      "city": "Vancouver",
+      "timezone": "America/Vancouver",
+      "latitude": 49.2768,
+      "longitude": -123.1119,
+      "baseline_by_month": {
+        "6": {
+          "sample_days": 300,
+          "temperature_2m_mean_c": 15.9,
+          "temperature_2m_max_mean_c": 19.8,
+          "temperature_2m_min_mean_c": 12.5,
+          "relative_humidity_2m_mean_pct": 74.3,
+          "precipitation_sum_mean_mm": 2.3,
+          "rain_day_rate": 0.32,
+          "wind_speed_10m_max_mean_kmh": 16.0
+        },
+        "7": {
+          "sample_days": 310,
+          "temperature_2m_mean_c": 18.8,
+          "temperature_2m_max_mean_c": 22.9,
+          "temperature_2m_min_mean_c": 15.0,
+          "relative_humidity_2m_mean_pct": 72.0,
+          "precipitation_sum_mean_mm": 1.0,
+          "rain_day_rate": 0.168,
+          "wind_speed_10m_max_mean_kmh": 14.9
+        }
+      }
+    }
+  }
+}

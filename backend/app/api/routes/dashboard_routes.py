@@ -5,7 +5,7 @@ from app.db import session_scope
 from app.providers.football_data import FootballDataProvider, is_configured as fd_is_configured
 from app.providers.openfootball import OpenFootballProvider
 from app.providers.worldcup26 import WorldCup26Provider
-from app.services.dashboard import build_dashboard, build_decision, build_match_detail, build_team_detail, list_data_sources, list_sync_runs
+from app.services.dashboard import build_dashboard, build_decision, build_match_detail, build_team_detail, list_data_sources, list_intelligence_providers, list_sync_runs
 from app.services.refresh import refresh_tournament
 
 
@@ -23,13 +23,56 @@ def _build_providers():
 
 @router.get("/health")
 def health():
+    from app.ai.model_registry import get_provider_config, list_enabled_models
+    from app.main import _scheduler
+
+    # Database check
     with session_scope() as session:
         try:
             dashboard = build_dashboard(session)
             revision_id = dashboard["revision"]["id"]
         except LookupError:
             revision_id = None
-    return {"status": "ok", "revision_id": revision_id}
+
+    # AI providers availability
+    ai_models = list_enabled_models()
+    ai_available = False
+    for model in ai_models:
+        provider_config = get_provider_config(model.provider_name)
+        if provider_config:
+            from app.config import settings as _settings
+            attr = provider_config.api_key_env.lower()
+            key = getattr(_settings, attr, "")
+            if len(key) > 0:
+                ai_available = True
+                break
+
+    # APScheduler running status
+    scheduler_running = _scheduler is not None and _scheduler.running
+
+    # Last successful workflow run time
+    last_successful_run = None
+    with session_scope() as session:
+        from sqlalchemy import select as _select
+        from app.models import SyncRun
+        row = session.scalar(
+            _select(SyncRun)
+            .where(SyncRun.status == "success")
+            .order_by(SyncRun.id.desc())
+            .limit(1)
+        )
+        if row and row.finished_at:
+            last_successful_run = row.finished_at.isoformat()
+
+    dependencies = {
+        "database": "ok" if revision_id is not None else "no_revision",
+        "ai_providers": "available" if ai_available else "no_api_keys",
+        "apscheduler": "running" if scheduler_running else "stopped",
+        "last_successful_run": last_successful_run,
+    }
+
+    overall = "ok" if (revision_id is not None and scheduler_running) else "degraded"
+    return {"status": overall, "revision_id": revision_id, "dependencies": dependencies}
 
 
 @router.get("/dashboard")
@@ -80,7 +123,10 @@ def team_detail(team_id: str):
 @router.get("/data-sources")
 def data_sources():
     with session_scope() as session:
-        return list_data_sources(session)
+        return {
+            "data_sources": list_data_sources(session),
+            "intelligence_providers": list_intelligence_providers(session),
+        }
 
 
 @router.get("/sync-runs")

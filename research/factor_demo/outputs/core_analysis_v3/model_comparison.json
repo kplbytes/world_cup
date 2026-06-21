@@ -1,0 +1,80 @@
+{
+  "stacking_ensemble": {
+    "brier_score": 0.5091018890336577,
+    "accuracy": 0.6092020966802563,
+    "draw_accuracy": 0.0012836970474967907,
+    "log_loss": 0.8697581599394838,
+    "ece": 0.024351113424023452
+  },
+  "calibrated_isotonic": {
+    "brier_score": 0.5094375677149333,
+    "accuracy": 0.6084740827023879,
+    "draw_accuracy": 0.006418485237483954,
+    "log_loss": 0.868395316451998
+  },
+  "calibrated_platt": {
+    "brier_score": 0.5130898456033139,
+    "accuracy": 0.6090564938846826,
+    "draw_accuracy": 0.028883183568677792,
+    "log_loss": 0.878227202737608
+  },
+  "feature_selected_lgb": {
+    "brier_score": 0.517365413561344,
+    "accuracy": 0.5993011065812464,
+    "draw_accuracy": 0.057766367137355584,
+    "log_loss": 0.8851400210569452,
+    "n_features": 24,
+    "selected_features": [
+      "elo_diff",
+      "recent_form_5",
+      "recent_form_10",
+      "recent_form_5_opp_adjusted",
+      "recent_goals_scored_5",
+      "recent_goals_conceded_5",
+      "recent_goal_diff_5",
+      "attack_strength",
+      "defense_strength",
+      "official_vs_friendly",
+      "home_away_neutral_form",
+      "rest_days",
+      "match_density_30d",
+      "match_density_90d",
+      "tournament_experience",
+      "knockout_experience",
+      "host_advantage",
+      "draw_tendency_home",
+      "draw_tendency_away",
+      "draw_tendency_diff",
+      "tournament_draw_rate",
+      "fifa_rank_diff_factor",
+      "fifa_points_diff",
+      "must_win_situation"
+    ]
+  },
+  "time_weighted_lgb": {
+    "brier_score": 0.5316318819253313,
+    "accuracy": 0.5867792661619103,
+    "draw_accuracy": 0.1116816431322208,
+    "log_loss": 0.9131574500210514
+  },
+  "wc_specialized": {
+    "brier_score": 0.8601994569053049,
+    "accuracy": 0.421875,
+    "draw_accuracy": 0.0,
+    "log_loss": 1.5785172200902002,
+    "n_train_wc": 380,
+    "n_test_wc": 64
+  },
+  "standard_lgb": {
+    "brier_score": 0.5095260458930138,
+    "accuracy": 0.6068724519510774,
+    "draw_accuracy": 0.029525032092426188,
+    "log_loss": 0.868646951791032
+  },
+  "standard_lr": {
+    "brier_score": 0.5088825825766624,
+    "accuracy": 0.6077460687245195,
+    "draw_accuracy": 0.013478818998716302,
+    "log_loss": 0.8662262033514119
+  }
+}

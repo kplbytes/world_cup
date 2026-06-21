@@ -1,13 +1,18 @@
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from collections import defaultdict
+import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.api.routes import router
 from app.api.routes.dashboard_routes import _build_providers
@@ -24,6 +29,100 @@ from app.services.snapshots import lock_due_predictions, repair_invalid_predicti
 
 # Initialize logging before anything else
 setup_logging()
+
+# ---------------------------------------------------------------------------
+# In-memory rate limiter (per-IP, sliding window)
+# ---------------------------------------------------------------------------
+_rate_limit_store: dict[str, list[float]] = defaultdict(list)
+_RATE_WINDOW = 60  # seconds
+_RATE_CLEANUP_THRESHOLD = 120  # seconds - remove IPs with no requests in this period
+
+# Module-level reference to the scheduler, set during create_app()
+_scheduler: BackgroundScheduler | None = None
+
+
+def _check_rate_limit(client_ip: str, method: str) -> int | None:
+    """Return None if allowed, or the retry-after seconds if rate limited."""
+    if method == "GET":
+        limit = 120
+    else:
+        limit = 60
+    now = time.monotonic()
+    window_start = now - _RATE_WINDOW
+    # Periodic cleanup: remove entries with no requests in the last 120 seconds
+    cleanup_threshold = now - _RATE_CLEANUP_THRESHOLD
+    stale_ips = [ip for ip, timestamps in _rate_limit_store.items() if not timestamps or timestamps[-1] < cleanup_threshold]
+    for ip in stale_ips:
+        del _rate_limit_store[ip]
+    timestamps = _rate_limit_store[client_ip]
+    # Prune old entries
+    _rate_limit_store[client_ip] = timestamps = [
+        t for t in timestamps if t > window_start
+    ]
+    if len(timestamps) >= limit:
+        return int(timestamps[0] + _RATE_WINDOW - now) + 1
+    timestamps.append(now)
+    return None
+
+
+class RateLimitMiddleware:
+    """Simple per-IP rate limiter using an in-memory sliding window."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        request = Request(scope, receive)
+        client_ip = request.client.host if request.client else "unknown"
+        retry_after = _check_rate_limit(client_ip, request.method)
+        if retry_after is not None:
+            response = JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+                headers={"Retry-After": str(retry_after)},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
+class ApiKeyMiddleware:
+    """API key authentication for write endpoints (POST/DELETE/PATCH).
+
+    If ``settings.admin_api_key`` is empty or not configured, auth is skipped
+    (backward compatible).  GET endpoints are always open.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        method = scope.get("method", "GET")
+        if method not in ("POST", "DELETE", "PATCH"):
+            await self.app(scope, receive, send)
+            return
+        api_key = settings.admin_api_key
+        if not api_key:
+            # No key configured → auth disabled
+            await self.app(scope, receive, send)
+            return
+        # Extract X-API-Key header from raw headers
+        headers = dict(scope.get("headers", []))
+        provided = headers.get(b"x-api-key", b"").decode("utf-8", errors="replace")
+        if provided != api_key:
+            response = JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing API key"},
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 def _is_live_window(session: Session, now: datetime | None = None) -> bool:
@@ -72,7 +171,9 @@ def initialize_database() -> None:
 
 
 def create_app(start_background: bool = True) -> FastAPI:
+    global _scheduler
     scheduler = BackgroundScheduler(timezone="UTC")
+    _scheduler = scheduler
 
     def scheduled_refresh() -> None:
         with session_scope() as session:
@@ -130,7 +231,19 @@ def create_app(start_background: bool = True) -> FastAPI:
 
     app = FastAPI(title="2026 World Cup Predictor", lifespan=lifespan)
 
+    # CORS middleware (origins configurable via CORS_ALLOWED_ORIGINS env var)
+    cors_origins = [o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     # Add middleware (order matters: outermost first)
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(ApiKeyMiddleware)
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(AccessLogMiddleware)
 
@@ -148,8 +261,11 @@ def create_app(start_background: bool = True) -> FastAPI:
             if full_path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="not found")
             file_path = frontend_dist / full_path
-            if file_path.is_file():
-                return FileResponse(file_path)
+            resolved_path = file_path.resolve()
+            if not resolved_path.is_relative_to(frontend_dist):
+                return Response(status_code=404)
+            if resolved_path.is_file():
+                return FileResponse(resolved_path)
             return FileResponse(index_html)
 
     return app

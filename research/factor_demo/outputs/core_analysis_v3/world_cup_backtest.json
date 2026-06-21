@@ -1,0 +1,54 @@
+{
+  "2010": {
+    "lgb": {
+      "brier_score": 0.5706073557971871,
+      "accuracy": 0.56,
+      "draw_accuracy": 0.0,
+      "n_test": 75
+    },
+    "elo_poisson": {
+      "brier_score": 0.6661007776573151,
+      "accuracy": 0.4,
+      "draw_accuracy": 0.0
+    }
+  },
+  "2014": {
+    "lgb": {
+      "brier_score": 0.5770050644699469,
+      "accuracy": 0.5625,
+      "draw_accuracy": 0.07692307692307693,
+      "n_test": 64
+    },
+    "elo_poisson": {
+      "brier_score": 0.6457380014653888,
+      "accuracy": 0.453125,
+      "draw_accuracy": 0.0
+    }
+  },
+  "2018": {
+    "lgb": {
+      "brier_score": 0.6080987975577186,
+      "accuracy": 0.5,
+      "draw_accuracy": 0.0,
+      "n_test": 64
+    },
+    "elo_poisson": {
+      "brier_score": 0.6697815610569097,
+      "accuracy": 0.390625,
+      "draw_accuracy": 0.0
+    }
+  },
+  "2022": {
+    "lgb": {
+      "brier_score": 0.6218305862124659,
+      "accuracy": 0.53125,
+      "draw_accuracy": 0.06666666666666667,
+      "n_test": 64
+    },
+    "elo_poisson": {
+      "brier_score": 0.6515215970953101,
+      "accuracy": 0.4375,
+      "draw_accuracy": 0.0
+    }
+  }
+}

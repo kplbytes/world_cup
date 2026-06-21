@@ -1,0 +1,194 @@
+{
+  "elo": {
+    "factors_removed": [
+      "elo_diff"
+    ],
+    "brier_score": 0.5112143132181547,
+    "brier_delta": 0.0025081628558906166,
+    "log_loss": 0.8705202065399464,
+    "accuracy": 0.6035235876528829,
+    "draw_accuracy": 0.036585365853658534,
+    "is_critical": true
+  },
+  "fifa_ranking": {
+    "factors_removed": [
+      "fifa_rank_diff_factor",
+      "fifa_points_diff",
+      "fifa_rank_trend_home",
+      "fifa_rank_trend_away",
+      "elo_fifa_disagreement"
+    ],
+    "brier_score": 0.5112254511697356,
+    "brier_delta": 0.002519300807471536,
+    "log_loss": 0.8721435448554576,
+    "accuracy": 0.6070180547466512,
+    "draw_accuracy": 0.03530166880616174,
+    "is_critical": true
+  },
+  "draw_specific": {
+    "factors_removed": [
+      "draw_tendency_home",
+      "draw_tendency_away",
+      "draw_tendency_diff",
+      "elo_closeness",
+      "defensive_matchup",
+      "tournament_draw_rate",
+      "neutral_draw_rate",
+      "low_scoring_matchup"
+    ],
+    "brier_score": 0.5093673461591005,
+    "brier_delta": 0.0006611957968364335,
+    "log_loss": 0.8680970302252861,
+    "accuracy": 0.6030867792661619,
+    "draw_accuracy": 0.02374839537869063,
+    "is_critical": false
+  },
+  "form_basic": {
+    "factors_removed": [
+      "recent_form_5",
+      "recent_form_10",
+      "recent_form_5_opp_adjusted"
+    ],
+    "brier_score": 0.5090120873819362,
+    "brier_delta": 0.00030593701967207565,
+    "log_loss": 0.8677833442170917,
+    "accuracy": 0.6062900407687828,
+    "draw_accuracy": 0.030166880616174584,
+    "is_critical": false
+  },
+  "form_enhanced": {
+    "factors_removed": [
+      "form_volatility_home",
+      "form_volatility_away",
+      "win_streak_home",
+      "win_streak_away",
+      "unbeaten_streak_home",
+      "goal_form_trend_home",
+      "clean_sheet_rate_home",
+      "comeback_rate_home"
+    ],
+    "brier_score": 0.5084250237268318,
+    "brier_delta": -0.00028112663543222727,
+    "log_loss": 0.8665436816026063,
+    "accuracy": 0.6036691904484566,
+    "draw_accuracy": 0.028883183568677792,
+    "is_critical": false
+  },
+  "attack_defense": {
+    "factors_removed": [
+      "recent_goals_scored_5",
+      "recent_goals_conceded_5",
+      "recent_goal_diff_5",
+      "attack_strength",
+      "defense_strength"
+    ],
+    "brier_score": 0.5093422755078253,
+    "brier_delta": 0.0006361251455612171,
+    "log_loss": 0.8683696262726428,
+    "accuracy": 0.6039603960396039,
+    "draw_accuracy": 0.03465982028241335,
+    "is_critical": false
+  },
+  "venue": {
+    "factors_removed": [
+      "home_away_neutral_form",
+      "host_advantage"
+    ],
+    "brier_score": 0.5111507207251218,
+    "brier_delta": 0.002444570362857723,
+    "log_loss": 0.8711392279065248,
+    "accuracy": 0.6042516016307513,
+    "draw_accuracy": 0.03209242618741977,
+    "is_critical": true
+  },
+  "fatigue": {
+    "factors_removed": [
+      "rest_days",
+      "match_density_30d",
+      "match_density_90d"
+    ],
+    "brier_score": 0.508873637666699,
+    "brier_delta": 0.00016748730443494342,
+    "log_loss": 0.8676472330731937,
+    "accuracy": 0.6043972044263249,
+    "draw_accuracy": 0.025673940949935817,
+    "is_critical": false
+  },
+  "experience": {
+    "factors_removed": [
+      "tournament_experience",
+      "knockout_experience"
+    ],
+    "brier_score": 0.509413893174772,
+    "brier_delta": 0.000707742812507961,
+    "log_loss": 0.8688735056692951,
+    "accuracy": 0.6059988351776354,
+    "draw_accuracy": 0.03337612323491656,
+    "is_critical": false
+  },
+  "confederation": {
+    "factors_removed": [
+      "inter_confederation_form"
+    ],
+    "brier_score": 0.5085093915874693,
+    "brier_delta": -0.00019675877479474746,
+    "log_loss": 0.8667594307683119,
+    "accuracy": 0.6059988351776354,
+    "draw_accuracy": 0.031450577663671375,
+    "is_critical": false
+  },
+  "context": {
+    "factors_removed": [
+      "tournament_stage_pressure",
+      "opening_match_effect",
+      "must_win_situation",
+      "dead_rubber",
+      "altitude_effect",
+      "travel_distance_proxy"
+    ],
+    "brier_score": 0.5101566697694904,
+    "brier_delta": 0.0014505194072262917,
+    "log_loss": 0.8692872980131696,
+    "accuracy": 0.6030867792661619,
+    "draw_accuracy": 0.02503209242618742,
+    "is_critical": false
+  },
+  "h2h": {
+    "factors_removed": [
+      "h2h_last_5",
+      "h2h_draw_rate",
+      "h2h_avg_goals",
+      "h2h_recency"
+    ],
+    "brier_score": 0.508031292071206,
+    "brier_delta": -0.0006748582910580669,
+    "log_loss": 0.8660701882488238,
+    "accuracy": 0.6081828771112405,
+    "draw_accuracy": 0.031450577663671375,
+    "is_critical": false
+  },
+  "momentum": {
+    "factors_removed": [
+      "recent_upset_home",
+      "goal_difference_momentum",
+      "scoring_consistency"
+    ],
+    "brier_score": 0.5100500402715598,
+    "brier_delta": 0.0013438899092956813,
+    "log_loss": 0.8693851045475702,
+    "accuracy": 0.6054164239953407,
+    "draw_accuracy": 0.03594351732991014,
+    "is_critical": false
+  },
+  "official_friendly": {
+    "factors_removed": [
+      "official_vs_friendly"
+    ],
+    "brier_score": 0.5096297839407526,
+    "brier_delta": 0.0009236335784885696,
+    "log_loss": 0.8687318512166307,
+    "accuracy": 0.6067268491555038,
+    "draw_accuracy": 0.03465982028241335,
+    "is_critical": false
+  }
+}

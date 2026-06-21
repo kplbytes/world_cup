@@ -1,30 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAIModels, getAIEvaluation } from "../api";
 import { formatChinaTimeShort } from "../utils/time";
-
-const STATUS_LABELS: Record<string, string> = {
-  ready: "就绪",
-  disabled: "已禁用",
-  disabled_no_key: "未配置密钥",
-  error: "错误",
-  unconfigured: "未配置",
-};
-
-const STATUS_CLASS: Record<string, string> = {
-  ready: "good",
-  disabled: "warn",
-  disabled_no_key: "bad",
-  error: "bad",
-  unconfigured: "bad",
-};
-
-const STATUS_ICON: Record<string, string> = {
-  ready: "🟢",
-  disabled: "🟡",
-  disabled_no_key: "🔴",
-  error: "🔴",
-  unconfigured: "⚪",
-};
+import { STATUS_CLASS, STATUS_LABELS, STATUS_ICON } from "../utils/constants";
 
 export default function AIModelComparisonView() {
   const models = useQuery({ queryKey: ["ai-models"], queryFn: getAIModels });
@@ -143,7 +120,7 @@ export default function AIModelComparisonView() {
                     </tr>
                   )}
                   {/* AI models */}
-                  {Object.entries(aiByVersion).map(([version, data]: [string, any]) => {
+                  {Object.entries(aiByVersion).map(([version, data]) => {
                     const effect = evaluation.data?.ai_effect?.[version];
                     const successRate = (data.helped + data.hurt) > 0 ? (data.helped / (data.helped + data.hurt) * 100).toFixed(1) + "%" : "-";
                     return (
@@ -185,7 +162,7 @@ export default function AIModelComparisonView() {
             {/* Average Brier/LogLoss summary */}
             {Object.keys(aiByVersion).length > 0 && (
               <div style={{ marginTop: "8px", fontSize: "12px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                {Object.entries(aiByVersion).map(([version, data]: [string, any]) => (
+                {Object.entries(aiByVersion).map(([version, data]) => (
                   <span key={version} style={{ padding: "4px 8px", borderRadius: "3px", background: "oklch(34% .025 250 / .1)" }}>
                     {version}: Brier {data.brier?.toFixed(4) ?? "-"} / LogLoss {data.logloss?.toFixed(4) ?? "-"}
                   </span>
@@ -199,7 +176,7 @@ export default function AIModelComparisonView() {
             )}
 
             {/* Parse error info */}
-            {Object.entries(aiByVersion).some(([, data]: [string, any]) => data.hurt > 0) && (
+            {Object.entries(aiByVersion).some(([, data]) => data.hurt > 0) && (
               <div style={{ marginTop: "8px", fontSize: "12px", color: "var(--coral)" }}>
                 ⚠️ 部分模型存在预测失败（损害场次 &gt; 0），可能包含解析错误或异常输出。建议检查各模型 error_code 分布。
               </div>

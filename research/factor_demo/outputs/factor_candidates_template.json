@@ -1,0 +1,214 @@
+{
+  "metadata": {
+    "generated_at": "",
+    "data_version": "2025-12-31",
+    "pipeline_version": "5.0",
+    "n_matches": 0,
+    "n_features": 21
+  },
+  "factors": {
+    "elo_diff": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "fifa_rank_diff": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "recent_form_5": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "recent_form_10": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "recent_form_5_opp_adjusted": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "recent_goals_scored_5": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "recent_goals_conceded_5": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "recent_goal_diff_5": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "attack_strength": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "defense_strength": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "official_vs_friendly": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "home_away_neutral_form": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "rest_days": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "match_density_30d": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "match_density_90d": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "tournament_experience": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "knockout_experience": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "inter_confederation_form": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "host_advantage": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "h2h_last_5": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "odds_implied_prob": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    },
+    "odds_movement": {
+      "status": "pending_evaluation",
+      "coverage": null,
+      "brier_contribution": null,
+      "direction_stability": null,
+      "correlation_with_elo": null,
+      "cross_year_stability": null,
+      "promotion_recommendation": null
+    }
+  },
+  "promotion_summary": {
+    "accepted_shadow_candidate": [],
+    "rejected": [],
+    "needs_more_data": []
+  }
+}

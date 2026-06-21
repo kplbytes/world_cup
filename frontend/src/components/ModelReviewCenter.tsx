@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getAccuracyCommandCenter, getAIEvaluation, getModelScore, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion } from "../api";
+import { getAccuracyCommandCenter, getAIEvaluation, getModelScore, getModelScoreDetails, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion, getAdaptiveWeights } from "../api";
 import { formatChinaTimeShort } from "../utils/time";
 import { getTeamDisplayNameFromAny } from "../utils/teamNames";
+import { fmt, pct } from "../utils/format";
 import type { MatchScoreDetailItem, VersionScoreSummary, MatchCountBreakdown, ErrorAttributionSummary, ShadowModelRow, ModelComparisonItem } from "../types";
 import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
@@ -67,9 +68,6 @@ function ScoringExclusions({ exclusions }: { exclusions: Array<{ match_id: strin
     </section>
   );
 }
-
-function fmt(n: number, digits = 4) { return n.toFixed(digits); }
-function pct(n: number) { return (n * 100).toFixed(1) + "%"; }
 
 // ─── Section A: 当前结论 ────────────────────────────────────────────
 function CurrentConclusion({
@@ -398,13 +396,18 @@ function ErrorAttribution({ versions, errorSummary }: { versions: VersionScoreSu
 }
 
 // ─── Section E: 历史比赛复盘 ────────────────────────────────────────
-function MatchReviewItem({ match }: { match: MatchScoreDetailItem }) {
+function MatchReviewItem({ matchId, models }: { matchId: string; models: MatchScoreDetailItem[] }) {
   const [expanded, setExpanded] = useState(false);
+  const first = models[0];
 
-  const homeZh = getTeamDisplayNameFromAny(match.home_team);
-  const awayZh = getTeamDisplayNameFromAny(match.away_team);
+  const homeZh = getTeamDisplayNameFromAny(first.home_team);
+  const awayZh = getTeamDisplayNameFromAny(first.away_team);
 
-  const resultLabel = match.actual_result === "home" ? `${homeZh}胜` : match.actual_result === "draw" ? "平局" : `${awayZh}胜`;
+  const resultLabel = first.actual_result === "home" ? `${homeZh}胜` : first.actual_result === "draw" ? "平局" : `${awayZh}胜`;
+
+  // Summary: best model hit rate across models
+  const anyHit = models.some((m) => m.outcome_hit);
+  const modelCount = models.length;
 
   return (
     <div
@@ -417,7 +420,7 @@ function MatchReviewItem({ match }: { match: MatchScoreDetailItem }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(120px, 1fr) auto minmax(120px, 1fr) 60px 40px",
+          gridTemplateColumns: "minmax(120px, 1fr) auto minmax(120px, 1fr) 60px 50px 40px",
           gap: "10px",
           alignItems: "center",
           padding: "12px 8px",
@@ -427,48 +430,59 @@ function MatchReviewItem({ match }: { match: MatchScoreDetailItem }) {
         <span style={{ color: "var(--amber)", fontWeight: 600, fontSize: "12px" }}>vs</span>
         <span style={{ fontWeight: 600, fontSize: "13px", textAlign: "right" }}>{awayZh}</span>
         <span style={{ fontSize: "12px", color: "var(--muted)", textAlign: "center" }}>{resultLabel}</span>
+        <span style={{ fontSize: "11px", color: "var(--muted)", textAlign: "center" }}>{modelCount}模型</span>
         <span style={{ fontSize: "14px", color: "var(--muted)", textAlign: "center" }}>{expanded ? "▲" : "▼"}</span>
       </div>
 
       {expanded && (
         <div style={{ padding: "0 8px 16px", fontSize: "12px" }}>
-          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", marginBottom: "8px", color: "var(--muted)" }}>
-            <span>时间: {formatChinaTimeShort(match.kickoff)}</span>
-            <span>模型: {match.model_version}</span>
+          <div style={{ marginBottom: "8px", color: "var(--muted)", fontSize: "11px" }}>
+            时间: {formatChinaTimeShort(first.kickoff)}
           </div>
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "8px" }}>
-            <span style={{ padding: "3px 8px", borderRadius: "3px", background: "oklch(34% .025 160 / .2)", fontSize: "11px" }}>
-              主胜 {pct(match.home_win_prob)}
-            </span>
-            <span style={{ padding: "3px 8px", borderRadius: "3px", background: "oklch(34% .025 160 / .2)", fontSize: "11px" }}>
-              平 {pct(match.draw_prob)}
-            </span>
-            <span style={{ padding: "3px 8px", borderRadius: "3px", background: "oklch(34% .025 160 / .2)", fontSize: "11px" }}>
-              客胜 {pct(match.away_win_prob)}
-            </span>
-          </div>
-          <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-            <span className={match.outcome_hit ? "good" : "bad"} style={{ fontWeight: 600 }}>
-              {match.outcome_hit ? "✅ 命中" : "❌ 未中"}
-            </span>
-            <span style={{ color: "var(--muted)" }}>Brier: {fmt(match.brier)}</span>
-            <span style={{ color: "var(--muted)" }}>LogLoss: {fmt(match.logloss)}</span>
-          </div>
-          {match.error_types?.length > 0 && (
-            <div style={{ marginTop: "6px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {match.error_types.map((et) => (
-                <span
-                  key={et}
-                  style={{
-                    padding: "2px 8px", borderRadius: "3px", fontSize: "10px",
-                    background: "oklch(34% .05 25 / .1)", color: "var(--coral)",
-                  }}
-                >
-                  {et}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Per-model breakdown */}
+          {models.map((m) => {
+            const versionLabel = m.model_version.replace("elo-poisson-v1", "系统").replace("ai-", "AI:");
+            return (
+              <div key={`${matchId}-${m.model_version}`} style={{ padding: "8px 10px", marginBottom: "6px", borderRadius: "4px", background: "oklch(34% .015 260 / .06)", border: "1px solid var(--line)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <span style={{ fontWeight: 600, fontSize: "11px" }}>{versionLabel}</span>
+                  <span className={m.outcome_hit ? "good" : "bad"} style={{ fontWeight: 600, fontSize: "11px" }}>
+                    {m.outcome_hit ? "✅ 命中" : "❌ 未中"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+                  <span style={{ padding: "2px 6px", borderRadius: "3px", background: "oklch(34% .025 160 / .2)", fontSize: "10px" }}>
+                    主 {pct(m.home_win_prob)}
+                  </span>
+                  <span style={{ padding: "2px 6px", borderRadius: "3px", background: "oklch(34% .025 160 / .2)", fontSize: "10px" }}>
+                    平 {pct(m.draw_prob)}
+                  </span>
+                  <span style={{ padding: "2px 6px", borderRadius: "3px", background: "oklch(34% .025 160 / .2)", fontSize: "10px" }}>
+                    客 {pct(m.away_win_prob)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "12px", color: "var(--muted)", fontSize: "10px" }}>
+                  <span>Brier: {fmt(m.brier)}</span>
+                  <span>LogLoss: {fmt(m.logloss)}</span>
+                </div>
+                {m.error_types?.length > 0 && (
+                  <div style={{ marginTop: "4px", display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                    {m.error_types.map((et) => (
+                      <span
+                        key={et}
+                        style={{
+                          padding: "1px 6px", borderRadius: "3px", fontSize: "9px",
+                          background: "oklch(34% .05 25 / .1)", color: "var(--coral)",
+                        }}
+                      >
+                        {et}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -478,12 +492,24 @@ function MatchReviewItem({ match }: { match: MatchScoreDetailItem }) {
 function HistoricalMatchReview({ perMatch }: { perMatch: MatchScoreDetailItem[] }) {
   if (!perMatch.length) return <div className="empty">暂无已结束比赛复盘数据</div>;
 
+  // Group by match_id to avoid duplicates — show one row per match, expand to see all models
+  const grouped = new Map<string, MatchScoreDetailItem[]>();
+  for (const m of perMatch) {
+    const items = grouped.get(m.match_id) ?? [];
+    items.push(m);
+    grouped.set(m.match_id, items);
+  }
+  // Sort by kickoff descending (most recent first)
+  const matchGroups = [...grouped.entries()].sort(
+    (a, b) => new Date(b[1][0].kickoff).getTime() - new Date(a[1][0].kickoff).getTime()
+  );
+
   return (
     <section className="accuracy-section">
       <h3>历史比赛复盘</h3>
       <div style={{ background: "var(--paper-2)", border: "1px solid var(--line)", borderRadius: "4px" }}>
-        {perMatch.map((m) => (
-          <MatchReviewItem key={m.match_id} match={m} />
+        {matchGroups.map(([matchId, models]) => (
+          <MatchReviewItem key={matchId} matchId={matchId} models={models} />
         ))}
       </div>
     </section>
@@ -692,18 +718,42 @@ export default function ModelReviewCenter() {
   const cmd = useQuery({ queryKey: ["accuracy-command-center"], queryFn: getAccuracyCommandCenter });
   const aiEval = useQuery({ queryKey: ["ai-evaluation"], queryFn: getAIEvaluation });
   const modelScore = useQuery({ queryKey: ["model-score"], queryFn: getModelScore });
+  const modelScoreDetails = useQuery({ queryKey: ["model-score-details"], queryFn: getModelScoreDetails });
   const profileEval = useQuery({ queryKey: ["profile-evaluation"], queryFn: getProfileEvaluation });
   const matchCountBreakdownQuery = useQuery({ queryKey: ["match-count-breakdown"], queryFn: getMatchCountBreakdown });
   const matchCountBreakdownData = matchCountBreakdownQuery.data;
   const errorAttributionSummary = useQuery({ queryKey: ["error-attribution-summary"], queryFn: getErrorAttributionSummary });
   const versionScoreData = useQuery({ queryKey: ["model-score-by-version"], queryFn: getModelScoreByVersion });
+  const adaptiveWeightsQuery = useQuery({ queryKey: ["adaptive-weights"], queryFn: getAdaptiveWeights, staleTime: 60_000 });
 
   if (cmd.isLoading || aiEval.isLoading || modelScore.isLoading) {
     return <div className="empty">加载模型复盘数据...</div>;
   }
-  if (cmd.isError) {
-    return <div className="empty">数据加载失败: {cmd.error instanceof Error ? cmd.error.message : "未知错误"}</div>;
+
+  // Error boundary: check each query and report per-section errors
+  const queryErrors: { label: string; message: string }[] = [];
+  if (cmd.isError) queryErrors.push({ label: "核心数据", message: cmd.error instanceof Error ? cmd.error.message : "未知错误" });
+  if (aiEval.isError) queryErrors.push({ label: "AI 评估", message: aiEval.error instanceof Error ? aiEval.error.message : "未知错误" });
+  if (modelScore.isError) queryErrors.push({ label: "模型评分", message: modelScore.error instanceof Error ? modelScore.error.message : "未知错误" });
+  if (modelScoreDetails.isError) queryErrors.push({ label: "评分详情", message: modelScoreDetails.error instanceof Error ? modelScoreDetails.error.message : "未知错误" });
+  if (profileEval.isError) queryErrors.push({ label: "画像评估", message: profileEval.error instanceof Error ? profileEval.error.message : "未知错误" });
+  if (matchCountBreakdownQuery.isError) queryErrors.push({ label: "比赛统计", message: matchCountBreakdownQuery.error instanceof Error ? matchCountBreakdownQuery.error.message : "未知错误" });
+  if (errorAttributionSummary.isError) queryErrors.push({ label: "错误归因", message: errorAttributionSummary.error instanceof Error ? errorAttributionSummary.error.message : "未知错误" });
+  if (versionScoreData.isError) queryErrors.push({ label: "版本评分", message: versionScoreData.error instanceof Error ? versionScoreData.error.message : "未知错误" });
+
+  if (queryErrors.length > 0) {
+    return (
+      <div className="empty" style={{ textAlign: "left", padding: "20px" }}>
+        <div style={{ fontWeight: 700, marginBottom: 10, color: "var(--risk-red)" }}>部分数据加载失败</div>
+        {queryErrors.map((e) => (
+          <div key={e.label} style={{ fontSize: 12, marginBottom: 4 }}>
+            <strong>{e.label}：</strong>{e.message}
+          </div>
+        ))}
+      </div>
+    );
   }
+
   if (!cmd.data) return <div className="empty">暂无数据</div>;
 
   const d = cmd.data;
@@ -719,8 +769,8 @@ export default function ModelReviewCenter() {
   // Scoring exclusions from accuracy command center
   const scoringExclusions = (d.scoring_exclusions ?? []) as Array<{ match_id: string; home_team: string; away_team: string; reason: string }>;
 
-  // Per-match detail from modelScore
-  const perMatch = (modelScore.data?.per_match as MatchScoreDetailItem[] | undefined) ?? [];
+  // Per-match detail from model-score/details endpoint (correct schema)
+  const perMatch = modelScoreDetails.data?.details ?? [];
 
   // Build shadow model rows from version score data
   const allVersionRows = versionScoreData.data?.versions ?? [];
@@ -747,7 +797,7 @@ export default function ModelReviewCenter() {
       hit_rate: v.hit_rate,
       brier: v.brier,
       log_loss: v.logloss,
-      draw_hit: Math.max(0, v.sample_count - v.draw_miss_count),
+      draw_hit: (v as any).draw_hit_count ?? 0,
       draw_miss: v.draw_miss_count,
       favorite_wrong: v.favorite_overestimated_count,
       overconfident_wrong: v.overconfident_wrong_count,
@@ -785,7 +835,97 @@ export default function ModelReviewCenter() {
         </div>
       </SectionCard>
 
-      {/* B. Baseline表现 */}
+      {/* B. 自适应 Ensemble 权重 (BMA v2) */}
+      <SectionCard title="自适应 Ensemble 权重" badge={adaptiveWeightsQuery.data?.is_adaptive ? "BMA 已启用" : "BMA 待激活"}>
+        {adaptiveWeightsQuery.data ? (() => {
+          const aw = adaptiveWeightsQuery.data;
+          const sysW = aw.weights.system ?? 0;
+          const mktW = aw.weights.market ?? 0;
+          const aiTotal = Object.entries(aw.weights).filter(([k]) => k.startsWith("ai_")).reduce((s, [, v]) => s + v, 0);
+          const sysPerf = aw.performance.system;
+          const mktPerf = aw.performance.market;
+          const minSample = aw.config.min_sample_size;
+          const sysReady = (sysPerf?.sample_count ?? 0) >= minSample;
+          const mktReady = (mktPerf?.sample_count ?? 0) >= minSample;
+          const sigPairs = Object.entries(aw.significance ?? {}).filter(([, v]: any) => v.significant);
+          const isBMA = aw.config?.algorithm === "bayesian_model_averaging_v2";
+          return (
+            <div>
+              <div style={{ fontSize: 11, color: aw.is_adaptive ? "var(--success-green)" : "var(--accent-yellow)", marginBottom: 10, padding: "6px 10px", border: `1px solid ${aw.is_adaptive ? "var(--success-green)" : "var(--accent-yellow)"}`, borderRadius: 3, background: aw.is_adaptive ? "rgba(53,217,155,0.08)" : "rgba(246,195,67,0.08)" }}>
+                {aw.is_adaptive
+                  ? `贝叶斯模型平均已激活：基于后验分布 + 配对显著性检验动态调整权重（半衰期 ${aw.config.time_decay_half_life} 场）`
+                  : `样本不足（需 ≥${minSample} 场，当前系统 ${sysPerf?.sample_count ?? 0} 场、市场 ${mktPerf?.sample_count ?? 0} 场），使用默认权重`}
+              </div>
+              <div className="metric-grid">
+                <MetricCard label="系统权重" value={`${(sysW * 100).toFixed(1)}%`} tone={sysReady ? "ok" : "warn"} note={sysPerf && (sysPerf.posterior_mu ?? sysPerf.brier) != null ? `后验 Brier ${fmt((sysPerf.posterior_mu ?? sysPerf.brier)! )}` : ""} />
+                <MetricCard label="市场权重" value={`${(mktW * 100).toFixed(1)}%`} tone={mktReady ? "ok" : "warn"} note={mktPerf && (mktPerf.posterior_mu ?? mktPerf.brier) != null ? `后验 Brier ${fmt((mktPerf.posterior_mu ?? mktPerf.brier)! )}` : ""} />
+                <MetricCard label="AI 总权重" value={`${(aiTotal * 100).toFixed(1)}%`} tone="neutral" />
+                <MetricCard label="显著差异对" value={`${sigPairs.length}`} tone={sigPairs.length > 0 ? "ok" : "neutral"} note={sigPairs.length > 0 ? "有统计支撑" : "尚无显著差异"} />
+              </div>
+              {/* Bayesian credibility intervals */}
+              {isBMA && sysPerf && mktPerf && (
+                <div style={{ marginTop: 10, fontSize: 11 }}>
+                  <div style={{ color: "var(--muted)", marginBottom: 4 }}>贝叶斯后验 95% 可信区间</div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {Object.entries(aw.performance).map(([src, perf]: [string, any]) => {
+                      if (!perf.ci_95) return null;
+                      const label = src === "system" ? "系统" : src === "market" ? "市场" : src.replace("ai_ai-", "").replace(/-v\d+$/, "");
+                      return (
+                        <div key={src} style={{ padding: "4px 10px", borderRadius: 3, background: "var(--paper-2)", fontSize: 11 }}>
+                          <span style={{ color: "var(--text-secondary)" }}>{label}</span>{" "}
+                          <strong>[{fmt(perf.ci_95[0])}, {fmt(perf.ci_95[1])}]</strong>
+                          <span style={{ color: "var(--muted)", marginLeft: 4 }}>n={perf.effective_n ?? perf.sample_count}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* Significance test results */}
+              {sigPairs.length > 0 && (
+                <div style={{ marginTop: 10, fontSize: 11 }}>
+                  <div style={{ color: "var(--amber)", marginBottom: 4 }}>显著差异（p &lt; {aw.config.significance_level}）</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {sigPairs.map(([pairKey, result]: [string, any]) => {
+                      const better = (result.better_source ?? "").replace("ai_ai-", "").replace(/-v\d+$/, "");
+                      return (
+                        <div key={pairKey} style={{ padding: "4px 10px", borderRadius: 3, background: "rgba(53,217,155,0.08)", border: "1px solid var(--success-green)", fontSize: 11 }}>
+                          <strong style={{ color: "var(--success-green)" }}>{better}</strong> 显著更优
+                          <span style={{ color: "var(--muted)", marginLeft: 4 }}>p={fmt(result.p_value)} t={fmt(result.t_stat)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* Per-AI-model weights */}
+              {Object.entries(aw.weights).filter(([k]) => k.startsWith("ai_")).length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>AI 模型权重分布</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {Object.entries(aw.weights).filter(([k]) => k.startsWith("ai_")).map(([k, v]) => {
+                      const label = k.replace("ai_ai-", "").replace(/-v\d+$/, "");
+                      const perf = aw.performance[k];
+                      return (
+                        <div key={k} style={{ padding: "4px 10px", borderRadius: 3, background: "var(--paper-2)", fontSize: 11 }}>
+                          <span style={{ color: "var(--text-secondary)" }}>{label}</span>{" "}
+                          <strong>{(v * 100).toFixed(1)}%</strong>
+                          {perf?.posterior_mu != null && <span style={{ color: "var(--muted)", marginLeft: 4 }}>B:{fmt(perf.posterior_mu)}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 8 }}>
+                算法：{isBMA ? "贝叶斯模型平均 v2" : "v1"} | 上次更新：{aw.last_updated ? formatChinaTimeShort(aw.last_updated) : "—"}
+              </div>
+            </div>
+          );
+        })() : <EmptyState>加载自适应权重数据...</EmptyState>}
+      </SectionCard>
+
+      {/* C. Baseline表现 */}
       <SectionCard title="Baseline 表现">
         {baselineAvailable ? (
           <div style={{ display: "flex", gap: "10px", marginBottom: "12px", flexWrap: "wrap" }}>
@@ -818,7 +958,7 @@ export default function ModelReviewCenter() {
       <SectionCard title="球队画像模型表现">
         {profileEval.data ? <>
           <div style={{ fontSize: "11px", color: "var(--amber)", marginBottom: 8, padding: "6px 10px", border: "1px solid var(--amber)", borderRadius: 3, background: "oklch(34% .025 80 / .1)" }}>
-            数据来源：seed_mock_v1，仅用于功能验证，不代表真实历史表现。
+            数据来源：已完赛国际比赛结果快照；画像模型仍作为独立影子候选评估。
           </div>
           <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 6 }}>模型版本: {profileEval.data.model_version}</div>
           <div className="profile-review-metrics">
@@ -847,6 +987,9 @@ export default function ModelReviewCenter() {
       <SectionCard title="影子模型观察" badge="不影响默认预测">
         <ShadowModelObservation rows={shadowModelRows} />
       </SectionCard>
+
+      {/* E+. 错误归因 */}
+      <ErrorAttribution versions={versionScores} errorSummary={errorAttributionSummary.data ?? null} />
 
       {/* F. 未评分比赛 */}
       <ScoringExclusions exclusions={scoringExclusions} />

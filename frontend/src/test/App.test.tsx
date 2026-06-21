@@ -69,6 +69,68 @@ const dashboard = {
   })),
 };
 
+const mockTeamProfile = () => ({
+  team_id: "A1",
+  team_code: "A1",
+  profile_version: "team-profile-v1",
+  profile_as_of: "2026-06-19T00:00:00Z",
+  sample_count: 16,
+  world_cup_sample_count: 10,
+  qualifier_sample_count: 6,
+  goal_for_avg: 1.6,
+  goal_against_avg: 0.8,
+  draw_rate_overall: 0.25,
+  draw_rate_vs_elite: 0.2,
+  draw_rate_vs_strong: 0.3,
+  draw_resilience_score: 0.4,
+  favorite_win_rate: 0.7,
+  favorite_fail_to_win_rate: 0.3,
+  favorite_overconfidence_risk: 0.15,
+  underdog_win_or_draw_rate: 0.5,
+  upset_potential_score: 0.4,
+  defensive_resilience_score: 0.7,
+  world_cup_experience_score: 0.6,
+  opening_match_slow_start_score: 0.2,
+  low_score_tendency: 0.3,
+  high_score_tendency: 0.2,
+  traits_json: ["防守优先", "大赛经验丰富"],
+  tier_stats_json: {},
+  source_summary_json: { mode: "historical_real", sources: ["historical_real"] },
+  long_term_strength_score: 76,
+  recent_form_score: 68,
+  attack_score: 62,
+  defense_score: 78,
+  stability_score: 70,
+  tournament_experience_score: 72,
+  data_quality_score: 84,
+  lineup_integrity_score: null,
+  injury_risk_score: null,
+  rest_days: null,
+  schedule_fatigue_score: null,
+  environment_adaptation_score: null,
+  tactical_style_tags: ["防守反击型"],
+  strengths: ["防守稳定性较高"],
+  weaknesses: [],
+  risk_flags: [],
+  missing_fields: ["lineup_integrity_score", "injury_risk_score", "rest_days"],
+  source_list: ["historical_real"],
+  usage_scope: "display_only",
+  prediction_enabled: false,
+  team_profile_narrative: { headline: "长期实力评级：B。", data_quality: "仅展示。" },
+  team_profile_data_quality: { quality_label: "high", contains_mock: false, source_list: ["historical_real"], missing_fields: ["lineup_integrity_score"], usage_scope: "display_only", prediction_enabled: false, updated_at: "2026-06-19T00:00:00Z" },
+  profile_modules_json: {
+    long_term_strength: { grade: "B", elo: 1700, two_year_record: { wins: 8, draws: 4, losses: 4, goal_difference: 8 } },
+    recent_form: { recent_5: { wins: 3, draws: 1, losses: 1 }, recent_5_goal_for_avg: 1.4, recent_5_goal_against_avg: 0.8, unbeaten_streak: 3 },
+    attack_defense: { attack_level: "medium", defense_level: "high", tempo_tendency: "均衡", clean_sheet_rate: 0.5 },
+    tactical_style: { tags: ["防守反击型"] },
+    lineup_players: { status: "unavailable", note: "No verified lineup feed." },
+    environment: { status: "unavailable" },
+    data_quality: { quality_label: "high" },
+  },
+  lineup_integrity_status: "unavailable",
+  environment_adaptation_status: "unavailable",
+});
+
 const decision = {
   review_summary: { matches_scored: 1, brier_score: .24, log_loss: .51, outcome_hit_rate: 1, top_score_hit_rate: 0, xg_mae: .35 },
   today_matches: [], most_confident: [], most_uncertain: [], biggest_divergence: [], upset_risk: [],
@@ -171,6 +233,13 @@ function renderApp() {
       ai_stats: { today_ai_calls: 0, today_ai_failed: 0, today_ai_skipped: 0, cooldown_skipped: false, only_missing_skipped: 0 },
     }) };
     if (url.includes("/api/workflows/runs")) return { ok: true, json: async () => ({ runs: [] }) };
+    if (url.includes("/api/adaptive-weights")) return { ok: true, json: async () => ({
+      weights: { system: 0.35, market: 0.30, "ai_ai-test-v1": 0.35 },
+      performance: { system: { sample_count: 3, effective_n: 2.5, brier: 0.4, brier_var: 0.02, hit_rate: 0.8, posterior_mu: 0.42, posterior_se: 0.08, ci_95: [0.26, 0.58] }, market: { sample_count: 3, effective_n: 2.5, brier: 0.45, brier_var: 0.03, hit_rate: 0.7, posterior_mu: 0.44, posterior_se: 0.09, ci_95: [0.26, 0.62] } },
+      is_adaptive: false, significance: {},
+      last_updated: "2026-06-13T08:00:00Z",
+      config: { algorithm: "bayesian_model_averaging_v2", min_sample_size: 10, max_weight_shift: 0.12, hedge_eta: 1.5, time_decay_half_life: 20, significance_level: 0.10, floor_weight: 0.05, max_lookback: 60 },
+    }) };
     if (url.includes("/api/tournament/projections")) return { ok: true, json: async () => ({ teams: [], source: "simulation" }) };
     if (url.includes("/api/tournament/bracket")) return { ok: true, json: async () => ({ rounds: [] }) };
     if (url.includes("/api/ai-models")) return { ok: true, json: async () => ({ enabled: false, models: [] }) };
@@ -178,7 +247,7 @@ function renderApp() {
     if (url.includes("/api/ensemble")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
     if (url.includes("/api/ai-evaluation")) return { ok: true, json: async () => ({ system: { sample_count: 0 }, ai_by_version: {}, ensemble: { sample_count: 0, helped: 0, hurt: 0 }, ai_effect: {} }) };
     if (url.includes("/api/team-profiles/evaluation")) return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
-    if (url.includes("/api/team-profiles/") && !url.includes("evaluation")) return { ok: true, json: async () => ({ profile: { team_id: "A1", team_code: "A1", profile_version: "team-profile-v1", sample_count: 16, world_cup_sample_count: 10, traits_json: ["防守优先", "大赛经验丰富"], draw_rate_overall: 0.25, draw_resilience_score: 0.4, low_score_tendency: 0.3, favorite_overconfidence_risk: 0.15, source_summary_json: { mode: "seed_mock_v1" } }, summary: "防守优先，大赛经验丰富" }) };
+    if (url.includes("/api/team-profiles/") && !url.includes("evaluation")) return { ok: true, json: async () => ({ profile: mockTeamProfile(), summary: "防守优先，大赛经验丰富" }) };
     if (url.includes("/api/team-profiles")) return { ok: true, json: async () => ({ profiles: [], total: 0 }) };
     return { ok: true, json: async () => dashboard };
   }));
@@ -189,14 +258,14 @@ function renderApp() {
 // P4.2: Navigation has 4 main entries
 it("shows exactly 4 main navigation buttons", async () => {
   renderApp();
-  const navButtons = await screen.findAllByRole("button", { name: /今日工作台|比赛中心|模型复盘|冠军与赛程/ });
+  const navButtons = await screen.findAllByRole("tab", { name: /今日工作台|比赛中心|模型复盘|冠军与赛程/ });
   expect(navButtons).toHaveLength(4);
 });
 
 // Default page is Daily Dashboard
 it("defaults to 今日工作台 on load", async () => {
   renderApp();
-  expect(await screen.findByRole("button", { name: "今日工作台" })).toHaveClass("active");
+  expect(await screen.findByRole("tab", { name: "今日工作台" })).toHaveClass("active");
 });
 
 // Daily dashboard shows today's status
@@ -205,47 +274,45 @@ it("shows today's status on daily dashboard", async () => {
   expect(await screen.findByText(/今日状态/)).toBeVisible();
 });
 
-// Daily dashboard shows workflow action buttons (collapsed by default, need to expand)
+// Daily dashboard shows workflow action buttons
 it("shows action buttons on daily dashboard", async () => {
   renderApp();
-  // Find the "操作" section header, then click its expand button
   const actionHeader = await screen.findByText("操作");
   const sectionCard = actionHeader.closest(".section-card")!;
-  const expandBtn = within(sectionCard as HTMLElement).getByText("展开");
-  await userEvent.click(expandBtn);
-  // Now the action buttons should be visible
+  const expandBtn = within(sectionCard as HTMLElement).queryByText("展开");
+  if (expandBtn) await userEvent.click(expandBtn);
   expect(await screen.findByText(/更新今日数据/)).toBeVisible();
 });
 
 // Can navigate to match center
 it("navigates to match center", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "比赛中心" });
-  await userEvent.click(screen.getByRole("button", { name: "比赛中心" }));
-  expect(screen.getByRole("button", { name: "比赛中心" })).toHaveClass("active");
+  await screen.findByRole("tab", { name: "比赛中心" });
+  await userEvent.click(screen.getByRole("tab", { name: "比赛中心" }));
+  expect(screen.getByRole("tab", { name: "比赛中心" })).toHaveClass("active");
 });
 
 // Can navigate to model review
 it("navigates to model review center", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "模型复盘" });
-  await userEvent.click(screen.getByRole("button", { name: "模型复盘" }));
-  expect(screen.getByRole("button", { name: "模型复盘" })).toHaveClass("active");
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
+  expect(screen.getByRole("tab", { name: "模型复盘" })).toHaveClass("active");
 });
 
 // Can navigate to tournament center
 it("navigates to tournament center", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "冠军与赛程" });
-  await userEvent.click(screen.getByRole("button", { name: "冠军与赛程" }));
-  expect(screen.getByRole("button", { name: "冠军与赛程" })).toHaveClass("active");
+  await screen.findByRole("tab", { name: "冠军与赛程" });
+  await userEvent.click(screen.getByRole("tab", { name: "冠军与赛程" }));
+  expect(screen.getByRole("tab", { name: "冠军与赛程" })).toHaveClass("active");
 });
 
 // Match center has tabs
 it("shows tabs in match center", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "比赛中心" });
-  await userEvent.click(screen.getByRole("button", { name: "比赛中心" }));
+  await screen.findByRole("tab", { name: "比赛中心" });
+  await userEvent.click(screen.getByRole("tab", { name: "比赛中心" }));
   // Tab labels appear as buttons inside the match center
   const future24Tabs = await screen.findAllByText(/未来 ?24 小时比赛/);
   expect(future24Tabs.length).toBeGreaterThanOrEqual(1);
@@ -257,8 +324,8 @@ it("shows tabs in match center", async () => {
 // Group dashboard still works inside match center
 it("shows group dashboard inside match center groups tab", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "比赛中心" });
-  await userEvent.click(screen.getByRole("button", { name: "比赛中心" }));
+  await screen.findByRole("tab", { name: "比赛中心" });
+  await userEvent.click(screen.getByRole("tab", { name: "比赛中心" }));
   await screen.findByText("分组赛");
   await userEvent.click(screen.getByText("分组赛"));
   expect(await screen.findByRole("heading", { name: "Group A" })).toBeVisible();
@@ -267,8 +334,8 @@ it("shows group dashboard inside match center groups tab", async () => {
 // Model review shows sample sufficiency
 it("shows sample sufficiency in model review", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "模型复盘" });
-  await userEvent.click(screen.getByRole("button", { name: "模型复盘" }));
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
   // Wait for the model review content to load
   const sampleElements = await screen.findAllByText(/样本/);
   expect(sampleElements.length).toBeGreaterThanOrEqual(1);
@@ -277,8 +344,8 @@ it("shows sample sufficiency in model review", async () => {
 // Tournament center shows champion probability tab
 it("shows champion probability tab in tournament center", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "冠军与赛程" });
-  await userEvent.click(screen.getByRole("button", { name: "冠军与赛程" }));
+  await screen.findByRole("tab", { name: "冠军与赛程" });
+  await userEvent.click(screen.getByRole("tab", { name: "冠军与赛程" }));
   expect(await screen.findByText("冠军概率")).toBeVisible();
   expect(screen.getByText("晋级概率")).toBeVisible();
   expect(screen.getByText("淘汰赛路径")).toBeVisible();
@@ -287,16 +354,16 @@ it("shows champion probability tab in tournament center", async () => {
 // Team Profile: model review shows profile evaluation section
 it("shows profile evaluation section in model review", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "模型复盘" });
-  await userEvent.click(screen.getByRole("button", { name: "模型复盘" }));
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
   expect(await screen.findByText(/球队画像模型表现/)).toBeVisible();
 });
 
 // Team Profile: model review shows profile Brier metrics
 it("shows profile Brier metrics in model review", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "模型复盘" });
-  await userEvent.click(screen.getByRole("button", { name: "模型复盘" }));
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
   // Profile evaluation section should show sample count and Brier labels
   const profileSection = await screen.findByText(/球队画像模型表现/);
   expect(profileSection).toBeVisible();
@@ -304,11 +371,11 @@ it("shows profile Brier metrics in model review", async () => {
   expect(screen.getByText(/Profile Brier/)).toBeVisible();
 });
 
-// Team Profile: model review shows seed_mock_v1 data source label
-it("shows seed_mock_v1 data source in profile evaluation", async () => {
+// Team Profile: model review shows sourced profile evaluation label
+it("shows sourced profile data label in profile evaluation", async () => {
   renderApp();
-  await screen.findByRole("button", { name: "模型复盘" });
-  await userEvent.click(screen.getByRole("button", { name: "模型复盘" }));
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
   // The profile evaluation should reference the team profile model version
   expect(await screen.findByText(/elo-poisson-v1-team-profile/)).toBeVisible();
 });

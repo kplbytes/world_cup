@@ -56,7 +56,24 @@ export default function AppHeader({
   return (
     <header className="app-header app-header--compact">
       <div className="app-header__left">
-        <div className="app-header__brand-sm">世界杯预测</div>
+        <div className="app-header__brand-sm">{brand}</div>
+      </div>
+      <div className="app-header__right">
+        {version && (
+          <span className="app-header__version">v{version}</span>
+        )}
+        {modelVersion && (
+          <span className="app-header__model">{modelVersion}</span>
+        )}
+        {onSync && (
+          <button
+            className="app-header__sync-btn"
+            onClick={onSync}
+            disabled={syncing}
+          >
+            {syncing ? "同步中..." : "同步"}
+          </button>
+        )}
       </div>
       {nav && <nav className="app-header__nav">{nav}</nav>}
     </header>

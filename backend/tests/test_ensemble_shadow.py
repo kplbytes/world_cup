@@ -62,10 +62,14 @@ class TestEnsembleExcludesShadow:
             assert _should_include_in_ensemble("unknown-model") is True
 
     def test_v2_models_have_include_in_ensemble_false(self):
-        """All v2 models in ai_models.yaml should have include_in_ensemble=false."""
+        """All v2 models in ai_models.yaml should have include_in_ensemble=false (shadow)
+        or include_in_ensemble=true with role=independent_judge."""
         from app.ai.model_registry import reload, list_enabled_models
         reload()
         models = list_enabled_models()
         v2_models = [m for m in models if m.model_version.endswith("-v2")]
         for m in v2_models:
-            assert m.include_in_ensemble is False, f"{m.model_version} should not be in ensemble"
+            if m.include_in_ensemble:
+                assert m.role == "independent_judge", f"{m.model_version} has include_in_ensemble=True but role={m.role}, expected independent_judge"
+            else:
+                assert m.role == "shadow", f"{m.model_version} has include_in_ensemble=False but role={m.role}, expected shadow"

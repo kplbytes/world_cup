@@ -1,0 +1,52 @@
+{
+  "fifa_rank_diff_factor_x_official_vs_friendly": {
+    "strength": 0.06347341567441386,
+    "factor_a": "fifa_rank_diff_factor",
+    "factor_b": "official_vs_friendly"
+  },
+  "fifa_rank_diff_factor_x_elo_diff": {
+    "strength": 0.10887964330263333,
+    "factor_a": "fifa_rank_diff_factor",
+    "factor_b": "elo_diff"
+  },
+  "fifa_rank_diff_factor_x_fifa_points_diff": {
+    "strength": 0.13710310383208593,
+    "factor_a": "fifa_rank_diff_factor",
+    "factor_b": "fifa_points_diff"
+  },
+  "fifa_rank_diff_factor_x_h2h_recency": {
+    "strength": 0.061987774939666875,
+    "factor_a": "fifa_rank_diff_factor",
+    "factor_b": "h2h_recency"
+  },
+  "official_vs_friendly_x_elo_diff": {
+    "strength": 0.048555245838463434,
+    "factor_a": "official_vs_friendly",
+    "factor_b": "elo_diff"
+  },
+  "official_vs_friendly_x_fifa_points_diff": {
+    "strength": 0.07139792430788235,
+    "factor_a": "official_vs_friendly",
+    "factor_b": "fifa_points_diff"
+  },
+  "official_vs_friendly_x_h2h_recency": {
+    "strength": 0.1375868455557409,
+    "factor_a": "official_vs_friendly",
+    "factor_b": "h2h_recency"
+  },
+  "elo_diff_x_fifa_points_diff": {
+    "strength": 0.11076995415515137,
+    "factor_a": "elo_diff",
+    "factor_b": "fifa_points_diff"
+  },
+  "elo_diff_x_h2h_recency": {
+    "strength": 0.04685841207875183,
+    "factor_a": "elo_diff",
+    "factor_b": "h2h_recency"
+  },
+  "fifa_points_diff_x_h2h_recency": {
+    "strength": 0.070523392894234,
+    "factor_a": "fifa_points_diff",
+    "factor_b": "h2h_recency"
+  }
+}

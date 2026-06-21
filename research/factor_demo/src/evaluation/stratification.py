@@ -216,3 +216,197 @@ def format_stratified_report(report: dict) -> str:
                     lines.append(f"  {key}: {val}")
 
     return "\n".join(lines)
+
+
+def cross_year_stability(
+    results_by_year: dict[str, EvaluationResult],
+    metric: str = "brier_score",
+) -> dict:
+    """计算模型跨年份的性能稳定性。
+
+    通过变异系数（CV）衡量模型在不同年份的表现是否一致。
+    CV < 0.1 视为稳定。
+
+    Args:
+        results_by_year: 年份到评估结果的映射，如 {"2018": EvaluationResult, ...}
+        metric: 使用的指标名称，默认为 brier_score
+
+    Returns:
+        包含 is_stable, coefficient_of_variation, worst_year, best_year 等的字典
+    """
+    if not results_by_year:
+        return {
+            "is_stable": False,
+            "coefficient_of_variation": float("nan"),
+            "worst_year": "",
+            "best_year": "",
+            "worst_metric": float("nan"),
+            "best_metric": float("nan"),
+        }
+
+    year_metrics = {}
+    for year, result in results_by_year.items():
+        year_metrics[year] = getattr(result, metric, None)
+
+    # 过滤无效值
+    valid = {y: v for y, v in year_metrics.items() if v is not None}
+    if not valid:
+        return {
+            "is_stable": False,
+            "coefficient_of_variation": float("nan"),
+            "worst_year": "",
+            "best_year": "",
+            "worst_metric": float("nan"),
+            "best_metric": float("nan"),
+        }
+
+    values = np.array(list(valid.values()))
+    mean_val = float(np.mean(values))
+    std_val = float(np.std(values))
+    cv = std_val / mean_val if mean_val != 0 else float("inf")
+
+    # 对于 brier_score，越小越好
+    if metric in ("brier_score", "log_loss", "ece"):
+        best_year = min(valid, key=valid.get)
+        worst_year = max(valid, key=valid.get)
+    else:
+        best_year = max(valid, key=valid.get)
+        worst_year = min(valid, key=valid.get)
+
+    return {
+        "is_stable": cv < 0.1,
+        "coefficient_of_variation": cv,
+        "worst_year": worst_year,
+        "best_year": best_year,
+        "worst_metric": float(valid[worst_year]),
+        "best_metric": float(valid[best_year]),
+    }
+
+
+def cross_tournament_stability(
+    results_by_tournament: dict[str, EvaluationResult],
+    metric: str = "brier_score",
+) -> dict:
+    """计算模型跨赛事类型的性能稳定性。
+
+    通过变异系数（CV）衡量模型在不同赛事类型的表现是否一致。
+    CV < 0.1 视为稳定。
+
+    Args:
+        results_by_tournament: 赛事类型到评估结果的映射
+        metric: 使用的指标名称，默认为 brier_score
+
+    Returns:
+        包含 is_stable, coefficient_of_variation, worst_year, best_year 等的字典
+    """
+    if not results_by_tournament:
+        return {
+            "is_stable": False,
+            "coefficient_of_variation": float("nan"),
+            "worst_year": "",
+            "best_year": "",
+            "worst_metric": float("nan"),
+            "best_metric": float("nan"),
+        }
+
+    tournament_metrics = {}
+    for tournament, result in results_by_tournament.items():
+        tournament_metrics[tournament] = getattr(result, metric, None)
+
+    valid = {t: v for t, v in tournament_metrics.items() if v is not None}
+    if not valid:
+        return {
+            "is_stable": False,
+            "coefficient_of_variation": float("nan"),
+            "worst_year": "",
+            "best_year": "",
+            "worst_metric": float("nan"),
+            "best_metric": float("nan"),
+        }
+
+    values = np.array(list(valid.values()))
+    mean_val = float(np.mean(values))
+    std_val = float(np.std(values))
+    cv = std_val / mean_val if mean_val != 0 else float("inf")
+
+    if metric in ("brier_score", "log_loss", "ece"):
+        best_tournament = min(valid, key=valid.get)
+        worst_tournament = max(valid, key=valid.get)
+    else:
+        best_tournament = max(valid, key=valid.get)
+        worst_tournament = min(valid, key=valid.get)
+
+    return {
+        "is_stable": cv < 0.1,
+        "coefficient_of_variation": cv,
+        "worst_year": worst_tournament,
+        "best_year": best_tournament,
+        "worst_metric": float(valid[worst_tournament]),
+        "best_metric": float(valid[best_tournament]),
+    }
+
+
+def scenario_analysis(
+    df: pd.DataFrame,
+    predictions: np.ndarray,
+    scenarios: list[dict] | None = None,
+) -> dict:
+    """在特定场景下评估模型表现。
+
+    每个场景由名称和过滤函数定义，过滤函数接收 DataFrame 返回布尔掩码。
+
+    Args:
+        df: 比赛数据 DataFrame
+        predictions: 预测概率 (N, 3)
+        scenarios: 场景列表，每个场景为 {"name": str, "filter_func": callable}。
+            filter_func 接收 df 返回布尔 Series/数组。
+            默认包含四个内置场景。
+
+    Returns:
+        场景名到评估结果的映射
+    """
+    if scenarios is None:
+        scenarios = [
+            {
+                "name": "world_cup_knockout",
+                "filter_func": lambda d: (
+                    (d["tournament_category"] == "world_cup")
+                    & (d.get("stage", "").str.contains("knockout|round|quarter|semi|final", case=False, na=False))
+                ),
+            },
+            {
+                "name": "cross_confederation",
+                "filter_func": lambda d: d.get("is_cross_confederation", False) == True,  # noqa: E712
+            },
+            {
+                "name": "strong_vs_weak",
+                "filter_func": lambda d: d["elo_diff"].abs() > 200,
+            },
+            {
+                "name": "close_match",
+                "filter_func": lambda d: d["elo_diff"].abs() < 50,
+            },
+        ]
+
+    results = {}
+    for scenario in scenarios:
+        name = scenario["name"]
+        filter_func = scenario["filter_func"]
+
+        try:
+            mask = filter_func(df)
+            if hasattr(mask, "values"):
+                mask = mask.values
+            mask = mask.astype(bool)
+        except Exception:
+            continue
+
+        if mask.sum() < 5:
+            continue
+
+        results[name] = evaluate_predictions(
+            predictions[mask],
+            df.loc[mask, "result"].values,
+        )
+
+    return results

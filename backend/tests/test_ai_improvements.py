@@ -543,14 +543,14 @@ class TestBatchDeduplication:
 
 
 # ===================================================================
-# AI prompt includes team profile data tests
+# AI prompt isolates display-only team profile data tests
 # ===================================================================
 
 class TestAIPromptIncludesProfile:
-    """Test that AI prompt builder includes team profile data when available."""
+    """Team profiles are display-only and are not prediction inputs."""
 
     def test_prompt_builder_includes_profile_section(self):
-        """When home/away team profiles are provided, the prompt includes a Team Profiles section."""
+        """Even if profile data is passed, the prompt does not include it as a prediction input."""
         from app.ai.prompt_builder import build_prediction_prompt
         from app.ai.providers.base import AIPredictionRequest
 
@@ -606,12 +606,13 @@ class TestAIPromptIncludesProfile:
         prompt = build_prediction_prompt(request)
 
         assert "Team Profiles" in prompt
-        assert "防守优先" in prompt
-        assert "遇强韧性高" in prompt
-        assert "team-profile-v1" in prompt
+        assert "disabled_display_only" in prompt
+        assert "防守优先" not in prompt
+        assert "遇强韧性高" not in prompt
+        assert "team-profile-v1" not in prompt
 
     def test_prompt_builder_without_profiles(self):
-        """When no team profiles are provided, the prompt shows insufficient_sample status."""
+        """When no team profiles are provided, the prompt keeps profiles disabled."""
         from app.ai.prompt_builder import build_prediction_prompt
         from app.ai.providers.base import AIPredictionRequest
 
@@ -643,10 +644,8 @@ class TestAIPromptIncludesProfile:
 
         prompt = build_prediction_prompt(request)
 
-        # The prompt always includes Team Profiles section,
-        # but shows "insufficient_sample" when no profile data is available
         assert "Team Profiles" in prompt
-        assert "insufficient_sample" in prompt
+        assert "disabled_display_only" in prompt
 
     def test_parser_extracts_profile_fields(self):
         """The AI output parser extracts profile_factors and profile_risk_flags."""

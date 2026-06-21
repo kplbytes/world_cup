@@ -198,7 +198,7 @@ def model_score_payload(session: Session, history_limit: int = 12) -> dict[str, 
                 "weighted_outcome_hit_rate": 0.0,
                 "weighted_top_score_hit_rate": 0.0,
                 "weighted_xg_mae": 0.0,
-                "warning_effects": {"helped": 0, "hurt": 0, "neutral": 0},
+                "warning_effects": {"correctly_flagged_uncertainty": 0, "unnecessarily_lowered_confidence": 0, "neutral": 0},
                 "numerical_effects": {"helped": 0, "hurt": 0, "neutral": 0},
                 "error_type_counts": {},
                 "latest": None,
@@ -332,9 +332,9 @@ def model_score_details(session: Session) -> list[dict[str, Any]]:
         warning_effect = "neutral"
         if snap.confidence_label == "低" or getattr(snap, 'has_auto_adjustments', False):
             if not outcome_hit:
-                warning_effect = "helped"
+                warning_effect = "correctly_flagged_uncertainty"
             else:
-                warning_effect = "hurt"
+                warning_effect = "unnecessarily_lowered_confidence"
 
         numerical_effect = "neutral"
         if "intel-numeric" in (snap.model_version or ""):
@@ -624,9 +624,9 @@ def score_predictions(
         warning_effect = "neutral"
         if snap.confidence_label == "低" or getattr(snap, 'has_auto_adjustments', False):
             if not outcome_correct:
-                warning_effect = "helped"
+                warning_effect = "correctly_flagged_uncertainty"
             else:
-                warning_effect = "hurt"
+                warning_effect = "unnecessarily_lowered_confidence"
 
         numerical_effect = "neutral"
         if "intel-numeric" in (snap.model_version or ""):
@@ -1182,9 +1182,9 @@ def aggregate_error_attributions(session: Session) -> dict[str, Any]:
         if d.get("market_home_prob") is None:
             counts["market_missing"] += 1
         # Check for ensemble effects
-        if d.get("warning_effect") == "helped":
+        if d.get("warning_effect") == "correctly_flagged_uncertainty":
             counts["ensemble_helped"] += 1
-        elif d.get("warning_effect") == "hurt":
+        elif d.get("warning_effect") == "unnecessarily_lowered_confidence":
             counts["ensemble_hurt"] += 1
 
         # Detect low_score_draw_missed:

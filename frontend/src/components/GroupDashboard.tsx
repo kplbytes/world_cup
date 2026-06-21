@@ -4,7 +4,7 @@ import ProbabilityBar from "./ProbabilityBar";
 import { getTeamDisplayName } from "../utils/teamNames";
 import { isFinishedMatch } from "../utils/time";
 
-export default function GroupDashboard({ group, onTeamSelect }: { group: Group; onTeamSelect: (teamId: string) => void }) {
+export default function GroupDashboard({ group, onTeamSelect, onOpenDetails }: { group: Group; onTeamSelect: (teamId: string) => void; onOpenDetails?: (match: import("../types").Match) => void }) {
   return <main className="group-dashboard">
     <section className="group-title"><div><p>小组档案 / {group.code}</p><h2>{group.name}</h2></div><strong>{group.matches.filter(isFinishedMatch).length}<small>/ 6 场已结束</small></strong></section>
     <div className="dashboard-grid">
@@ -18,7 +18,7 @@ export default function GroupDashboard({ group, onTeamSelect }: { group: Group; 
         </div>
         <div className="qualification-list"><h3>晋级概率</h3>{group.teams.map((team) => <ProbabilityBar key={team.id} label={getTeamDisplayName(team.id)} value={team.qualification.qualify} />)}</div>
       </section>
-      <section className="matches-panel"><div className="section-heading"><h3>比赛档案</h3><span>点击查看模型细节</span></div><div className="today-match-grid">{group.matches.map((match) => <MatchSummaryCard key={match.id} match={match} />)}</div></section>
+      <section className="matches-panel"><div className="section-heading"><h3>比赛档案</h3><span>点击查看模型细节</span></div><div className="today-match-grid">{group.matches.map((match) => <MatchSummaryCard key={match.id} match={match} onOpenDetails={onOpenDetails} />)}</div></section>
     </div>
   </main>;
 }

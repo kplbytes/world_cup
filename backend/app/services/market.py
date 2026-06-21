@@ -7,6 +7,9 @@ from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import logging
+import time
+
 import httpx
 
 from app.models import MarketSnapshot, Match, Team, TeamAlias
@@ -33,7 +36,11 @@ _SPORTTERY_HEADERS = {
     "Sec-Fetch-Dest": "empty",
 }
 _TIMEOUT = 15.0
+_MAX_RETRIES = 2
+_RETRY_DELAY = 1.0
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -93,16 +100,34 @@ class SportteryRemoteProvider:
         match_date, had_home, had_draw, had_away.
         Raises SportteryUnavailable on any failure.
         """
-        try:
-            resp = httpx.get(
-                _SPORTTERY_URL,
-                headers=_SPORTTERY_HEADERS,
-                timeout=self._timeout,
-                follow_redirects=True,
-            )
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise SportteryUnavailable(f"Sporttery HTTP error: {exc}") from exc
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                resp = httpx.get(
+                    _SPORTTERY_URL,
+                    headers=_SPORTTERY_HEADERS,
+                    timeout=self._timeout,
+                    follow_redirects=True,
+                )
+                resp.raise_for_status()
+            except httpx.ConnectError as exc:
+                last_exc = exc
+                if attempt < _MAX_RETRIES:
+                    _logger.warning("Sporttery connection error (attempt %d/%d), retrying: %s", attempt + 1, _MAX_RETRIES + 1, exc)
+                    time.sleep(_RETRY_DELAY)
+                    continue
+                raise SportteryUnavailable(f"Sporttery HTTP error: {exc}") from exc
+            except httpx.HTTPStatusError as exc:
+                # Only retry on 5xx errors, not on WAF blocks (e.g. 403)
+                if exc.response.status_code >= 500 and attempt < _MAX_RETRIES:
+                    last_exc = exc
+                    _logger.warning("Sporttery %d error (attempt %d/%d), retrying: %s", exc.response.status_code, attempt + 1, _MAX_RETRIES + 1, exc)
+                    time.sleep(_RETRY_DELAY)
+                    continue
+                raise SportteryUnavailable(f"Sporttery HTTP error: {exc}") from exc
+            except httpx.HTTPError as exc:
+                raise SportteryUnavailable(f"Sporttery HTTP error: {exc}") from exc
+            break
 
         payload = parse_response(resp.text)
         return self._extract_matches(payload)

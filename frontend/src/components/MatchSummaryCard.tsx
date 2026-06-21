@@ -1,9 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import type { Match, AIPredictionItem, EnsemblePredictionItem } from "../types";
-import { getAIPredictions, getEnsemble } from "../api";
-import { formatChinaTimeShort, isFinishedMatch } from "../utils/time";
+import { memo } from "react";
+import type { Match } from "../types";
+import { formatChinaTimeShort, isFinishedMatch, isLiveMatch } from "../utils/time";
 import { getTeamDisplayFromRef } from "../utils/teamNames";
-import { getMatchRecommendation, getMatchRecommendationLabel, getSourceDisplayName } from "../utils/recommendation";
+import { getMatchRecommendation, getMatchRecommendationLabel, getSourceDisplayName, filterScorelinesByDirection } from "../utils/recommendation";
 import type { RecommendationSource } from "../utils/recommendation";
 import RiskBadge from "./ui/RiskBadge";
 import ProbabilityBars from "./ui/ProbabilityBars";
@@ -19,29 +18,13 @@ function sourceLabel(source: RecommendationSource): string {
   return name ? `来源：${name}` : "";
 }
 
-export default function MatchSummaryCard({ match, onOpenDetails, detailsOpen = false }: Props) {
+export default memo(function MatchSummaryCard({ match, onOpenDetails, detailsOpen = false }: Props) {
   const kickoff = formatChinaTimeShort(match.kickoff);
   const homeName = getTeamDisplayFromRef(match.home_team);
   const awayName = getTeamDisplayFromRef(match.away_team);
 
-  // Query AI predictions and Ensemble for this match (shared cache with drawer)
-  const aiQuery = useQuery({
-    queryKey: ["ai-predictions", match.id],
-    queryFn: () => getAIPredictions(match.id),
-    staleTime: 60_000,
-  });
-
-  const ensembleQuery = useQuery({
-    queryKey: ["ensemble", match.id],
-    queryFn: () => getEnsemble(match.id),
-    staleTime: 60_000,
-  });
-
-  const aiPredictions: AIPredictionItem[] = aiQuery.data?.predictions ?? [];
-  const ensembleItem: EnsemblePredictionItem | null = ensembleQuery.data?.predictions?.[0] ?? null;
-
-  // Unified recommendation
-  const rec = getMatchRecommendation(match, aiPredictions, ensembleItem);
+  // Use dashboard summary data directly instead of individual API calls
+  const rec = getMatchRecommendation(match, match.ai_prediction, match.ensemble_prediction);
   const recLabel = getMatchRecommendationLabel(rec, homeName, awayName);
 
   // Risk level - use rec probabilities when available
@@ -67,9 +50,10 @@ export default function MatchSummaryCard({ match, onOpenDetails, detailsOpen = f
 
   // Status label for finished matches
   const isFinished = isFinishedMatch(match);
+  const isLive = isLiveMatch(match);
   const statusLabel = isFinished
     ? "终场"
-    : match.status === "live"
+    : isLive
       ? "进行中"
       : null;
 
@@ -98,7 +82,7 @@ export default function MatchSummaryCard({ match, onOpenDetails, detailsOpen = f
         {statusLabel && (
           <span className="msc-status final">{statusLabel}</span>
         )}
-        {!isFinished && match.status !== "live" && (
+        {!isFinished && !isLive && (
           <span className="msc-snapshot">
             <span className={`msc-snapshot-dot ${snapshotDotClass}`} />
             {snapshotText}
@@ -127,7 +111,7 @@ export default function MatchSummaryCard({ match, onOpenDetails, detailsOpen = f
           <span className="msc-rec-label">推荐：</span>
           <span className="msc-rec-value">{recLabel}</span>
           {rec.valid && sourceLabel(rec.source) && (
-            <span className="msc-rec-source" style={{ fontSize: 11, color: "var(--text-secondary)", marginLeft: 6 }}>
+            <span className="msc-rec-source">
               {sourceLabel(rec.source)}
             </span>
           )}
@@ -139,16 +123,16 @@ export default function MatchSummaryCard({ match, onOpenDetails, detailsOpen = f
         )}
         {pred && match.prediction?.scorelines && match.prediction.scorelines.length > 0 && (
           <div className="msc-decision-scoreline">
-            比分倾向：{match.prediction.scorelines.slice(0, 2).map(s => `${s.home_goals}-${s.away_goals}`).join(" 或 ")}
+            比分倾向：{filterScorelinesByDirection(match.prediction.scorelines, rec).slice(0, 2).map(s => `${s.home_goals}-${s.away_goals}`).join(" 或 ")}
           </div>
         )}
         {!rec.valid && !pred && (
-          <div className="msc-decision-probs" style={{ color: "var(--text-secondary)" }}>
+          <div className="msc-decision-probs">
             比分待生成
           </div>
         )}
         {matchStatusNote && (
-          <div className="msc-decision-status" style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+          <div className="msc-decision-status">
             {matchStatusNote}
           </div>
         )}
@@ -172,4 +156,4 @@ export default function MatchSummaryCard({ match, onOpenDetails, detailsOpen = f
       </button>
     </article>
   );
-}
+});

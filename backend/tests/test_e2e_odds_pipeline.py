@@ -95,5 +95,5 @@ def test_e2e_sporttery_odds_pipeline(db_session):
 
     assert detail is not None
     # Since confidence penalty happened without probability change, it should have a warning_effect
-    assert detail.warning_effect in ["helped", "hurt"]
+    assert detail.warning_effect in ["correctly_flagged_uncertainty", "unnecessarily_lowered_confidence"]
     assert detail.probability_effect == 0.0

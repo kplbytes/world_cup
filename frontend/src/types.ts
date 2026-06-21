@@ -28,7 +28,7 @@ export type ManualAdjustment = {
 
 export type MatchIntelligence = {
   type: string; provider: string; confidence: number;
-  fetched_at: string; payload: Record<string, any>;
+  fetched_at: string; payload: Record<string, unknown>;
 };
 
 export type AutoAdjustment = {
@@ -136,7 +136,18 @@ export type TeamProfile = {
   world_cup_experience_score: number; opening_match_slow_start_score: number;
   low_score_tendency: number; high_score_tendency: number;
   traits_json: string[]; tier_stats_json: Record<string, { sample_count: number; win_rate: number; draw_rate: number; loss_rate: number; goal_for_avg: number; goal_against_avg: number }>;
-  source_summary_json: { mode: string; sources: string[] };
+  source_summary_json?: { mode: string; sources: string[] };
+  long_term_strength_score: number | null; recent_form_score: number | null; attack_score: number | null; defense_score: number | null;
+  stability_score: number | null; tournament_experience_score: number | null; data_quality_score: number;
+  lineup_integrity_score: number | null; injury_risk_score: number | null; rest_days: number | null;
+  schedule_fatigue_score: number | null; environment_adaptation_score: number | null;
+  tactical_style_tags: string[]; strengths: string[]; weaknesses: string[]; risk_flags: string[];
+  missing_fields: string[]; source_list: string[];
+  usage_scope: string; prediction_enabled: boolean;
+  team_profile_narrative: Record<string, string>;
+  team_profile_data_quality: { quality_label?: string; contains_mock?: boolean; missing_fields?: string[]; source_list?: string[]; usage_scope?: string; prediction_enabled?: boolean; updated_at?: string };
+  profile_modules_json: Record<string, any>;
+  lineup_integrity_status?: string; environment_adaptation_status?: string;
 };
 
 export type TeamProfileEnvelope = { profile: TeamProfile; summary: string };
@@ -301,6 +312,7 @@ export type AIModelStatus = {
   provider: string; model_id: string; model_version: string;
   display_name: string; enabled: boolean; configured: boolean;
   cost_tier: string; latency_tier: string; role: string;
+  prompt_version?: string;
   status: "ready" | "disabled" | "disabled_no_key" | "error" | "unconfigured";
   last_success_at: string | null; last_error_at: string | null;
   provider_health?: { available: boolean; error: string | null; last_check: string | null };
@@ -318,6 +330,7 @@ export type AIPredictionItem = {
   is_pre_match_locked: boolean; is_fallback_locked: boolean;
   real_time_only: boolean; error_code: string | null;
   error_message: string | null; latency_ms: number | null;
+  identical_to_baseline?: boolean; deviation_from_baseline?: number | null;
 };
 
 export type EnsemblePredictionItem = {

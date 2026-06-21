@@ -712,31 +712,6 @@ def _build_prediction_request(session: Session, match_id: str) -> AIPredictionRe
         )
         market_divergence = max_diff
 
-    from app.team_profiles.service import explain_team_profile, get_team_profile, profile_payload
-    home_profile = get_team_profile(session, match.home_team_id, match.kickoff)
-    away_profile = get_team_profile(session, match.away_team_id, match.kickoff)
-
-    def compact_profile(profile):
-        if profile is None:
-            return None
-        source_summary = profile.source_summary_json or {}
-        source_mode = source_summary.get("mode", "unknown")
-        is_mock = source_mode == "seed_mock_v1"
-        return {
-            "traits": profile.traits_json,
-            "sample_count": profile.sample_count,
-            "draw_resilience_score": profile.draw_resilience_score,
-            "favorite_overconfidence_risk": profile.favorite_overconfidence_risk,
-            "low_score_tendency": profile.low_score_tendency,
-            "summary": explain_team_profile(profile),
-            "profile_version": profile.profile_version,
-            "profile_as_of": profile.profile_as_of.isoformat(),
-            "source_mode": source_mode,
-            "sources": source_summary.get("sources", []),
-            "is_mock": is_mock,
-            "usage_warning": "功能验证数据，不代表真实历史统计；只能作为实验性弱信号，不得作为主要概率调整依据" if is_mock else None,
-        }
-
     return AIPredictionRequest(
         match_id=match_id,
         stage=getattr(match, 'stage', 'group') or 'group',
@@ -767,8 +742,8 @@ def _build_prediction_request(session: Session, match_id: str) -> AIPredictionRe
         group_standing_context=group_context,
         knockout_context=knockout_context,
         historical_score_summary=historical_summary,
-        home_team_profile=compact_profile(home_profile),
-        away_team_profile=compact_profile(away_profile),
+        home_team_profile=None,
+        away_team_profile=None,
     )
 
 

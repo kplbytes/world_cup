@@ -325,7 +325,7 @@ def test_workflow_state_management():
 def test_scheduler_should_auto_run_daily(client):
     with patch("app.workflows.scheduler.settings") as mock_settings, \
          patch("app.workflows.scheduler.can_auto_run", return_value=True), \
-         patch("app.workflows.scheduler.get_today_status", return_value="needs_run"), \
+         patch("app.workflows.scheduler.get_today_status", return_value={"status": "needs_run", "failed_steps": []}), \
          patch("app.workflows.scheduler.is_workflow_running", return_value=False):
         mock_settings.auto_run_daily_workflow_on_open = True
         from app.workflows.scheduler import should_auto_run_daily
@@ -335,8 +335,112 @@ def test_scheduler_should_auto_run_daily(client):
 def test_scheduler_should_not_auto_run_when_disabled(client):
     with patch("app.workflows.scheduler.settings") as mock_settings, \
          patch("app.workflows.scheduler.can_auto_run", return_value=True), \
-         patch("app.workflows.scheduler.get_today_status", return_value="needs_run"), \
+         patch("app.workflows.scheduler.get_today_status", return_value={"status": "needs_run", "failed_steps": []}), \
          patch("app.workflows.scheduler.is_workflow_running", return_value=False):
         mock_settings.auto_run_daily_workflow_on_open = False
         from app.workflows.scheduler import should_auto_run_daily
         assert should_auto_run_daily() is False
+
+
+# ---------------------------------------------------------------------------
+# Integration test: real recompute + snapshot + lock pipeline (no mocks)
+# ---------------------------------------------------------------------------
+
+def test_daily_open_integration_recompute_snapshot_lock(tmp_path, monkeypatch):
+    """Integration test: run_daily_open_workflow with real recompute, snapshot,
+    and lock steps — no mocking of core logic.
+
+    This verifies the actual recompute → snapshot → lock pipeline works
+    end-to-end with a seeded database, catching regressions that the
+    fully-mocked tests above would miss.
+    """
+    from pathlib import Path
+    from app.db import create_database, session_scope
+    from app.main import create_app
+    from app.models import (
+        DashboardRevision, Match, MatchPrediction, PredictionSnapshot,
+        WorkflowRun, WorkflowStep,
+    )
+    from app.providers.openfootball import OpenFootballProvider
+    from app.services.seed import seed_ratings, seed_tournament, seed_team_aliases
+    from app.services.recompute import recompute_all
+    from app.workflows.service import run_daily_open_workflow
+
+    ROOT = Path(__file__).resolve().parents[2]
+    FIXTURES = Path(__file__).parent / "fixtures"
+
+    # 1. Seed a real database
+    create_database(tmp_path / "integration_test.sqlite3")
+    with session_scope() as session:
+        payload = OpenFootballProvider.from_files(
+            FIXTURES / "openfootball-worldcup-2026.json",
+            FIXTURES / "openfootball-worldcup-teams-2026.json",
+        ).load()
+        seed_tournament(session, payload)
+        seed_ratings(session, ROOT / "data/seed/elo-ratings-2026.json")
+        seed_team_aliases(session, ROOT / "data/seed/sporttery-team-aliases.json")
+        recompute_all(session, iterations=100, seed=7)
+
+    # 2. Run the daily-open workflow with real steps (no AI, no ensemble)
+    #    Mock only the refresh step (it needs network), let recompute/score/lock run for real.
+    with patch("app.workflows.service._run_refresh_step"):
+        run_id = run_daily_open_workflow(
+            with_ai=False,
+            with_ensemble=False,
+            auto_lock=True,
+            trigger_source="integration_test",
+        )
+
+    assert run_id > 0, "Workflow should return a valid run_id"
+
+    # 3. Verify the workflow completed (not just "started")
+    with session_scope() as session:
+        run = session.get(WorkflowRun, run_id)
+        assert run is not None
+        assert run.status in ("success", "partial_success"), (
+            f"Workflow should succeed or partially succeed, got: {run.status}"
+        )
+
+        # 4. Verify the recompute step actually executed (not skipped)
+        recompute_step = session.scalar(
+            select(WorkflowStep)
+            .where(WorkflowStep.workflow_run_id == run_id)
+            .where(WorkflowStep.step_name == "post_match_recompute")
+        )
+        assert recompute_step is not None
+        assert recompute_step.status == "success", (
+            f"Recompute step should succeed, got: {recompute_step.status}, "
+            f"error: {recompute_step.error_message}"
+        )
+
+        # 5. Verify predictions were actually written by recompute
+        from sqlalchemy import func as sqlfunc
+        active_revision_id = session.scalar(
+            select(DashboardRevision.id)
+            .where(DashboardRevision.active.is_(True))
+            .order_by(DashboardRevision.id.desc())
+            .limit(1)
+        )
+        pred_count = session.scalar(
+            select(sqlfunc.count(MatchPrediction.id))
+            .where(MatchPrediction.revision_id == active_revision_id)
+        )
+        assert pred_count > 0, "Recompute should produce MatchPrediction rows"
+
+        # 6. Verify snapshots were written (lock step depends on them)
+        snap_count = session.scalar(
+            select(sqlfunc.count(PredictionSnapshot.id))
+        )
+        assert snap_count > 0, "Snapshots should exist after recompute + lock"
+
+        # 7. Verify the lock step actually ran
+        lock_step = session.scalar(
+            select(WorkflowStep)
+            .where(WorkflowStep.workflow_run_id == run_id)
+            .where(WorkflowStep.step_name == "lock_predictions")
+        )
+        assert lock_step is not None
+        assert lock_step.status == "success", (
+            f"Lock step should succeed, got: {lock_step.status}, "
+            f"error: {lock_step.error_message}"
+        )

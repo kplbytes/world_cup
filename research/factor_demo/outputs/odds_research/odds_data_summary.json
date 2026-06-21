@@ -1,0 +1,36 @@
+{
+  "total_matches": 58784,
+  "date_range": [
+    "2010-08-06",
+    "2025-06-01"
+  ],
+  "leagues": {
+    "England Championship": 8280,
+    "Spain Segunda": 6930,
+    "Italy Serie B": 6318,
+    "England Premier League": 5700,
+    "Spain La Liga": 5700,
+    "Italy Serie A": 5700,
+    "France Ligue 2": 5525,
+    "France Ligue 1": 5451,
+    "Germany Bundesliga 2": 4590,
+    "Germany Bundesliga 1": 4590
+  },
+  "result_distribution": {
+    "H": 25900,
+    "A": 16806,
+    "D": 16078
+  },
+  "odds_coverage": {
+    "B365H": 0.9985029940119761,
+    "BWH": 0.9726286064235166,
+    "IWH": 0.898918072945019,
+    "PSH": 0.8597917800762113,
+    "AvgH": 0.39129695155144256,
+    "MaxH": 0.39129695155144256,
+    "B365CH": 0.39131396298312465,
+    "PSCH": 0.8631090092542189,
+    "AvgCH": 0.3914160315732172,
+    "MaxCH": 0.3914160315732172
+  }
+}

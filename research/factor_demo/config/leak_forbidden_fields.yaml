@@ -54,6 +54,46 @@ forbidden_fields:
     reason: "赛中赔率变化，未来数据"
     available_after: "比赛结束"
 
+  - field: home_penalty
+    reason: "点球大战主队得分，赛后数据"
+    available_after: "比赛结束"
+
+  - field: away_penalty
+    reason: "点球大战客队得分，赛后数据"
+    available_after: "比赛结束"
+
+  - field: home_extra_time_goals
+    reason: "加时赛主队进球，赛后数据"
+    available_after: "比赛结束"
+
+  - field: away_extra_time_goals
+    reason: "加时赛客队进球，赛后数据"
+    available_after: "比赛结束"
+
+  - field: post_match_fifa_rank_home
+    reason: "赛后更新的FIFA排名，未来数据"
+    available_after: "FIFA排名更新日"
+
+  - field: post_match_fifa_rank_away
+    reason: "赛后更新的FIFA排名，未来数据"
+    available_after: "FIFA排名更新日"
+
+  - field: post_match_elo_home
+    reason: "赛后更新的Elo评分，未来数据"
+    available_after: "比赛结束"
+
+  - field: post_match_elo_away
+    reason: "赛后更新的Elo评分，未来数据"
+    available_after: "比赛结束"
+
+  - field: tournament_final_standing
+    reason: "赛事最终排名，未来数据"
+    available_after: "赛事结束"
+
+  - field: group_stage_final_table
+    reason: "小组赛最终积分榜，未来数据"
+    available_after: "小组赛结束"
+
 # 可安全使用的赛前数据
 safe_fields:
   - field: date
@@ -97,3 +137,12 @@ safe_fields:
 
   - field: pre_match_odds_away
     reason: "赛前赔率"
+
+  - field: odds_home
+    reason: "赛前主胜赔率，赛前已知"
+
+  - field: odds_draw
+    reason: "赛前平局赔率，赛前已知"
+
+  - field: odds_away
+    reason: "赛前客胜赔率，赛前已知"

@@ -146,9 +146,9 @@ class TestAIRegistry:
     def test_ensemble_defaults_loaded(self):
         from app.ai.model_registry import get_ensemble_defaults
         defaults = get_ensemble_defaults()
-        assert defaults["system_weight"] == 0.50
-        assert defaults["market_weight"] == 0.20
-        assert defaults["total_ai_weight"] == 0.30
+        assert defaults["system_weight"] == 0.35
+        assert defaults["market_weight"] == 0.30
+        assert defaults["total_ai_weight"] == 0.35
 
     def test_no_api_key_no_error(self):
         """Registry should load fine even without API key."""
@@ -319,9 +319,9 @@ class TestEnsemble:
         from app.ai.ensemble import compute_ensemble
         result = compute_ensemble(session, "M_ENS3")
         assert result["status"] == "success"
-        # System weight should be ~0.6 (no market), AI weight ~0.4
+        # System weight should be ~0.5 (no market), AI weight ~0.5
         weights = result["weights"]
-        assert weights["system"] > 0.5  # larger than with market
+        assert weights["system"] >= 0.5  # larger than with market
 
     def test_ensemble_degrade_missing_ai(self, session):
         """Ensemble without AI should use system + market only."""
@@ -341,8 +341,8 @@ class TestEnsemble:
         assert result["status"] == "success"
         weights = result["weights"]
         assert "market" in weights
-        assert weights["system"] == pytest.approx(0.8, abs=0.01)
-        assert weights["market"] == pytest.approx(0.2, abs=0.01)
+        assert weights["system"] == pytest.approx(0.55, abs=0.01)
+        assert weights["market"] == pytest.approx(0.45, abs=0.01)
 
     def test_ensemble_degrade_single_ai_failure(self, session):
         """If one AI model has error, it should not participate in ensemble."""

@@ -199,3 +199,11 @@ def decision_snapshot_status():
             },
             "matches": result,
         }
+
+
+@router.get("/adaptive-weights")
+def adaptive_weights():
+    """Current adaptive ensemble weights and performance data."""
+    with session_scope() as session:
+        from app.services.adaptive_weights import compute_adaptive_weights
+        return compute_adaptive_weights(session)

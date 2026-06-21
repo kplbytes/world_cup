@@ -11,7 +11,6 @@ from app.models import (
     Match,
     MatchPrediction,
     PredictionSnapshot,
-    TeamProfilePrediction,
 )
 from app.prediction.shadow import SHADOW_MODEL_VERSIONS
 
@@ -34,7 +33,7 @@ def lock_due_predictions(
     """
     now = _ensure_utc(now or datetime.now(timezone.utc))
     window_end = now + timedelta(hours=window_hours)
-    counts = {"matches": 0, "baseline": 0, "shadow": 0, "ai": 0, "ensemble": 0, "profile": 0}
+    counts = {"matches": 0, "baseline": 0, "shadow": 0, "ai": 0, "ensemble": 0}
 
     matches = list(session.scalars(
         select(Match)
@@ -153,29 +152,6 @@ def lock_due_predictions(
                 ensemble.is_pre_match_locked = True
                 ensemble.locked_at = now
                 counts["ensemble"] += 1
-
-        existing_profile = session.scalar(
-            select(TeamProfilePrediction.id).where(
-                TeamProfilePrediction.match_id == match.id,
-                (TeamProfilePrediction.is_pre_match_locked.is_(True))
-                | (TeamProfilePrediction.is_fallback_locked.is_(True)),
-            ).limit(1)
-        )
-        if existing_profile is None:
-            profile_prediction = session.scalar(
-                select(TeamProfilePrediction)
-                .where(
-                    TeamProfilePrediction.match_id == match.id,
-                    TeamProfilePrediction.created_at < kickoff,
-                    TeamProfilePrediction.real_time_only.is_(False),
-                )
-                .order_by(TeamProfilePrediction.created_at.desc())
-                .limit(1)
-            )
-            if profile_prediction is not None:
-                profile_prediction.is_pre_match_locked = True
-                profile_prediction.locked_at = now
-                counts["profile"] += 1
 
     session.flush()
     return counts

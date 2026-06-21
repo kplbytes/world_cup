@@ -51,8 +51,8 @@ export default function TournamentCenter() {
     staleTime: 60_000,
   });
 
-  if (activeTab !== "bracket" && projections.isLoading) return <div style={{ color: "var(--text-secondary)", padding: 24, textAlign: "center" }}>加载概率数据...</div>;
-  if (activeTab !== "bracket" && (projections.isError || !projections.data)) return <div style={{ color: "var(--text-secondary)", padding: 24, textAlign: "center" }}>概率数据暂不可用</div>;
+  if (activeTab !== "bracket" && projections.isLoading) return <div className="loading-placeholder">加载概率数据...</div>;
+  if (activeTab !== "bracket" && (projections.isError || !projections.data)) return <div className="loading-placeholder">概率数据暂不可用</div>;
 
   const projectionData: TeamProjection[] = projections.data?.projections || [];
 
@@ -75,7 +75,7 @@ export default function TournamentCenter() {
 
     return (
       <div>
-        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 20, lineHeight: 1.6 }}>
+        <div className="champion-category__desc">
           以下概率基于蒙特卡洛模拟（Elo + Poisson 模型）生成。AI 预测结果会融入 Ensemble 模型影响最终概率。
         </div>
 

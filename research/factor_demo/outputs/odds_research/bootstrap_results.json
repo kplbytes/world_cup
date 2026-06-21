@@ -1,0 +1,21 @@
+{
+  "brier_model_full": 0.6208037687322954,
+  "brier_baseline_full": 0.6842638838036336,
+  "brier_diff_full": 0.0634601150713382,
+  "relative_improvement": 0.09274216654338233,
+  "ci_lower": 0.0581085373392474,
+  "ci_upper": 0.06902144295523929,
+  "ci_significant": true,
+  "p_value": 0.0,
+  "mean_diff": 0.06345810738888366,
+  "std_diff": 0.0027618658945162675,
+  "n_bootstrap": 2000,
+  "model_brier_mean": 0.6207414754774159,
+  "baseline_brier_mean": 0.6841995828662996,
+  "full_model_ci": {
+    "brier_mean": 0.6207414754774159,
+    "brier_std": 0.0024406572220413143,
+    "ci_lower": 0.6159957661982557,
+    "ci_upper": 0.6254395055872962
+  }
+}

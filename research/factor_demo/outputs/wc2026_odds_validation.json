@@ -1,0 +1,26 @@
+{
+  "n_matches": 24,
+  "results": {
+    "H": 12,
+    "D": 9,
+    "A": 3
+  },
+  "draw_rate": 0.375,
+  "odds_model": {
+    "accuracy": 0.5416666666666666,
+    "brier": 0.5964933191705796,
+    "draw_hit_rate": 0.0,
+    "correct": 13
+  },
+  "elo_poisson": {
+    "accuracy": 0.409,
+    "brier": 0.6536,
+    "draw_hit_rate": 0.0
+  },
+  "frequency_baseline": {
+    "accuracy": 0.5,
+    "brier": 0.59375
+  },
+  "brier_improvement_vs_elo": 0.08737252268883168,
+  "accuracy_improvement_vs_elo": 0.13266666666666665
+}

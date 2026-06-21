@@ -14,10 +14,10 @@ factors:
   fifa_rank_diff:
     name: "FIFA排名差值"
     group: "rating"
-    description: "客队FIFA排名减去主队FIFA排名（正值表示主队排名更高）"
+    description: "客队FIFA排名减去主队FIFA排名（正值表示主队排名更高），需要FIFA排名CSV外部数据注入"
     window: "latest"
     min_coverage: 0.60
-    status: "candidate"
+    status: "needs_external_data"
     computation: "pre_match_fifa_rank_away - pre_match_fifa_rank_home"
 
   recent_form_5:
@@ -41,11 +41,11 @@ factors:
   recent_form_5_opp_adjusted:
     name: "对手强度修正后的近期状态(5场)"
     group: "form"
-    description: "用对手Elo加权的近期得分率"
+    description: "用对手实际Elo（pre_match_elo列）加权的近期得分率，修正后反映对手真实强度"
     window: "last_5"
     min_coverage: 0.80
-    status: "candidate"
-    computation: "weighted_score / weighted_max"
+    status: "candidate_improved"
+    computation: "weighted_score / weighted_max (using actual opponent Elo from pre_match_elo columns)"
 
   recent_goals_scored_5:
     name: "近5场进球数"
@@ -77,20 +77,20 @@ factors:
   attack_strength:
     name: "进攻强度"
     group: "attack_defense"
-    description: "球队进球率除以同期平均进球率"
+    description: "球队进球率除以同期数据驱动的平均进球率（非硬编码基线）"
     window: "last_10"
     min_coverage: 0.80
-    status: "candidate"
-    computation: "team_goals_per_game / league_avg_goals_per_game"
+    status: "candidate_improved"
+    computation: "team_goals_per_game / data_driven_avg_goals_per_game"
 
   defense_strength:
     name: "防守强度"
     group: "attack_defense"
-    description: "球队失球率除以同期平均失球率"
+    description: "球队失球率除以同期数据驱动的平均失球率（非硬编码基线）"
     window: "last_10"
     min_coverage: 0.80
-    status: "candidate"
-    computation: "team_conceded_per_game / league_avg_conceded_per_game"
+    status: "candidate_improved"
+    computation: "team_conceded_per_game / data_driven_avg_conceded_per_game"
 
   official_vs_friendly:
     name: "正式比赛与友谊赛分层表现"
@@ -149,29 +149,29 @@ factors:
   knockout_experience:
     name: "淘汰赛经验"
     group: "experience"
-    description: "过去5年淘汰赛出场次数和胜率"
+    description: "过去5年淘汰赛加权出场次数和胜率（世界杯2x权重，洲际杯1.5x权重）"
     window: "5y"
     min_coverage: 0.50
-    status: "candidate"
-    computation: "knockout_matches_and_win_rate_last_5y"
+    status: "candidate_improved"
+    computation: "weighted_knockout_matches_and_win_rate_last_5y (World Cup 2x, Continental 1.5x)"
 
   inter_confederation_form:
     name: "同洲/跨洲表现"
     group: "confederation"
-    description: "对阵同洲和跨洲对手的得分率差"
+    description: "实际跨洲对阵胜率，基于球队与不同洲际对手的历史交锋数据计算"
     window: "all_history"
     min_coverage: 0.50
-    status: "candidate"
-    computation: "same_confederation_form - cross_confederation_form"
+    status: "candidate_improved"
+    computation: "actual_cross_confederation_win_rate"
 
   host_advantage:
     name: "东道主/半主场效应"
     group: "venue"
-    description: "是否为东道主或半主场（比赛在本国进行）"
+    description: "东道主/半主场效应，包含-0.5客场东道主修正（东道主在名义客场时仍享主场优势）"
     window: "single"
     min_coverage: 1.00
-    status: "candidate"
-    computation: "is_host_or_semi_host"
+    status: "candidate_improved"
+    computation: "is_host_or_semi_host with -0.5 away host advantage correction"
 
   h2h_last_5:
     name: "历史交锋(近5场)"
@@ -239,9 +239,11 @@ factor_groups:
 
 status_definitions:
   candidate: "候选因子，待验证"
+  candidate_improved: "已改进实现的候选因子，待重新验证"
   candidate_low_weight: "低权重候选，需强证据才能进入模型"
   candidate_independent: "独立市场因子组，不与评级因子混用"
   validated: "已通过单因子验证"
   promoted: "已通过准入评审，可进入Shadow模式"
   rejected: "未通过准入评审"
   needs_more_data: "数据不足，待补充数据后重新验证"
+  needs_external_data: "需要外部数据注入（如FIFA排名CSV），待数据就绪后验证"

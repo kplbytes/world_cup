@@ -1,0 +1,15 @@
+{
+  "brier_model_full": 1.0797019054285866,
+  "brier_baseline_full": 0.9641255910025622,
+  "brier_diff_full": -0.11557631442602434,
+  "relative_improvement": -0.11987682466331007,
+  "ci_lower": -0.12083185851601895,
+  "ci_upper": -0.1105800339468744,
+  "ci_significant": false,
+  "p_value": 1.0,
+  "mean_diff": -0.11554580757476587,
+  "std_diff": 0.0026312857952899347,
+  "n_bootstrap": 2000,
+  "model_brier_mean": 1.0795753732380686,
+  "baseline_brier_mean": 0.9640295656633024
+}

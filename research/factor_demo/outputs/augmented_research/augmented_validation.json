@@ -1,0 +1,471 @@
+{
+  "coverage": {
+    "key_player_injured_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "key_player_injured_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "injury_count_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "injury_count_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "injury_impact_score_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "injury_impact_score_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_implied_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_implied_draw": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_implied_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_margin": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_draw_signal": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_favor_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "odds_upset_potential": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "temperature": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "humidity": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "wind_speed": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "precipitation": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "extreme_heat": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "extreme_cold": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "rain": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "weather_discomfort": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "pre_match_xg_diff_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "pre_match_xga_diff_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "xg_overperformance_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "pre_match_xg_diff_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "pre_match_xga_diff_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "xg_overperformance_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "coach_win_rate_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "coach_win_rate_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "coach_tenure_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "coach_tenure_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "coach_tournament_experience_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "coach_tournament_experience_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "avg_age_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "avg_age_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "key_players_available_home": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    },
+    "key_players_available_away": {
+      "coverage": 0.0,
+      "mean": null,
+      "std": null
+    }
+  },
+  "lightgbm_augmented": {
+    "brier_score": 0.508999744065778,
+    "brier_home": 0.18578046738266987,
+    "brier_draw": 0.1707704483745286,
+    "brier_away": 0.15244882830857953,
+    "log_loss": 0.8679572714622387,
+    "accuracy": 0.6041059988351777,
+    "n_samples": 6868,
+    "home_win_accuracy": 0.8515363553392151,
+    "draw_accuracy": 0.031450577663671375,
+    "away_win_accuracy": 0.6431043005437469,
+    "ece": 0.018252140244385998
+  },
+  "logistic_augmented": {
+    "brier_score": 0.508721154396005,
+    "brier_home": 0.1856290537987763,
+    "brier_draw": 0.169901500088969,
+    "brier_away": 0.15319060050825967,
+    "log_loss": 0.8659288929651268,
+    "accuracy": 0.6070180547466512,
+    "n_samples": 6868,
+    "home_win_accuracy": 0.8615759050806207,
+    "draw_accuracy": 0.013478818998716302,
+    "away_win_accuracy": 0.6505190311418685,
+    "ece": 0.021150202793271376
+  },
+  "elo_baseline": {
+    "brier_score": 0.5169810473632485,
+    "brier_home": 0.1874498500801382,
+    "brier_draw": 0.17242826597463537,
+    "brier_away": 0.15710293130847494,
+    "log_loss": 0.8852529265871624,
+    "accuracy": 0.6058532323820618,
+    "n_samples": 6868,
+    "home_win_accuracy": 0.8421052631578947,
+    "draw_accuracy": 0.0,
+    "away_win_accuracy": 0.6885813148788927,
+    "ece": 0.039060780657363035
+  },
+  "walk_forward": [
+    {
+      "train_end": "2007-12-31",
+      "test_end": "2008-12-31",
+      "brier_score": 0.5345222845183532,
+      "accuracy": 0.5613079019073569,
+      "draw_accuracy": 0.07114624505928854
+    },
+    {
+      "train_end": "2008-12-31",
+      "test_end": "2009-12-31",
+      "brier_score": 0.5250762006674444,
+      "accuracy": 0.5772972972972973,
+      "draw_accuracy": 0.10047846889952153
+    },
+    {
+      "train_end": "2009-12-31",
+      "test_end": "2010-12-31",
+      "brier_score": 0.5719640566073295,
+      "accuracy": 0.5492468134414832,
+      "draw_accuracy": 0.09859154929577464
+    },
+    {
+      "train_end": "2010-12-31",
+      "test_end": "2011-12-31",
+      "brier_score": 0.5257742363382856,
+      "accuracy": 0.579088471849866,
+      "draw_accuracy": 0.07751937984496124
+    },
+    {
+      "train_end": "2011-12-31",
+      "test_end": "2012-12-31",
+      "brier_score": 0.5431858284566577,
+      "accuracy": 0.5707317073170731,
+      "draw_accuracy": 0.08108108108108109
+    },
+    {
+      "train_end": "2012-12-31",
+      "test_end": "2013-12-31",
+      "brier_score": 0.5450285054174698,
+      "accuracy": 0.5700934579439252,
+      "draw_accuracy": 0.05907172995780591
+    },
+    {
+      "train_end": "2013-12-31",
+      "test_end": "2014-12-31",
+      "brier_score": 0.5587039642094017,
+      "accuracy": 0.5665887850467289,
+      "draw_accuracy": 0.09223300970873786
+    },
+    {
+      "train_end": "2014-12-31",
+      "test_end": "2015-12-31",
+      "brier_score": 0.5195986627142688,
+      "accuracy": 0.5976900866217517,
+      "draw_accuracy": 0.06481481481481481
+    },
+    {
+      "train_end": "2015-12-31",
+      "test_end": "2016-12-31",
+      "brier_score": 0.5160269669858653,
+      "accuracy": 0.6,
+      "draw_accuracy": 0.038461538461538464
+    },
+    {
+      "train_end": "2016-12-31",
+      "test_end": "2017-12-31",
+      "brier_score": 0.5570385603976817,
+      "accuracy": 0.551948051948052,
+      "draw_accuracy": 0.016666666666666666
+    },
+    {
+      "train_end": "2017-12-31",
+      "test_end": "2018-12-31",
+      "brier_score": 0.5576959947496493,
+      "accuracy": 0.542518837459634,
+      "draw_accuracy": 0.042735042735042736
+    },
+    {
+      "train_end": "2018-12-31",
+      "test_end": "2019-12-31",
+      "brier_score": 0.4883489198087933,
+      "accuracy": 0.6092254134029591,
+      "draw_accuracy": 0.02880658436213992
+    },
+    {
+      "train_end": "2019-12-31",
+      "test_end": "2020-12-31",
+      "brier_score": 0.589210139795062,
+      "accuracy": 0.5273775216138329,
+      "draw_accuracy": 0.0425531914893617
+    },
+    {
+      "train_end": "2020-12-31",
+      "test_end": "2021-12-31",
+      "brier_score": 0.4684963283951234,
+      "accuracy": 0.6466367713004484,
+      "draw_accuracy": 0.03187250996015936
+    },
+    {
+      "train_end": "2021-12-31",
+      "test_end": "2022-12-31",
+      "brier_score": 0.5482825582364773,
+      "accuracy": 0.5731958762886598,
+      "draw_accuracy": 0.02727272727272727
+    },
+    {
+      "train_end": "2022-12-31",
+      "test_end": "2023-12-31",
+      "brier_score": 0.5079299815440443,
+      "accuracy": 0.6195445920303605,
+      "draw_accuracy": 0.04
+    },
+    {
+      "train_end": "2023-12-31",
+      "test_end": "2024-12-31",
+      "brier_score": 0.5334102046226602,
+      "accuracy": 0.586515028432169,
+      "draw_accuracy": 0.016286644951140065
+    },
+    {
+      "train_end": "2024-12-31",
+      "test_end": "2025-12-31",
+      "brier_score": 0.4791271058160924,
+      "accuracy": 0.6177644710578842,
+      "draw_accuracy": 0.03211009174311927
+    }
+  ],
+  "world_cup_backtest": {
+    "2010": {
+      "n_test": 75,
+      "model_brier": 0.5570440321773176,
+      "model_accuracy": 0.56,
+      "model_draw_accuracy": 0.0,
+      "baseline_brier": 0.5725993267730286,
+      "brier_improvement": 0.015555294595711033
+    },
+    "2014": {
+      "n_test": 64,
+      "model_brier": 0.5584115956059212,
+      "model_accuracy": 0.609375,
+      "model_draw_accuracy": 0.0,
+      "baseline_brier": 0.5795986451341157,
+      "brier_improvement": 0.0211870495281945
+    },
+    "2018": {
+      "n_test": 64,
+      "model_brier": 0.59405744242445,
+      "model_accuracy": 0.5,
+      "model_draw_accuracy": 0.0,
+      "baseline_brier": 0.5902974305937286,
+      "brier_improvement": -0.003760011830721388
+    },
+    "2022": {
+      "n_test": 64,
+      "model_brier": 0.6097679483550202,
+      "model_accuracy": 0.53125,
+      "model_draw_accuracy": 0.0,
+      "baseline_brier": 0.61028453453799,
+      "brier_improvement": 0.0005165861829697915
+    }
+  },
+  "augmented_ablation": {
+    "injury": {
+      "factors_removed": [
+        "key_player_injured_home",
+        "key_player_injured_away",
+        "injury_count_home",
+        "injury_count_away",
+        "injury_impact_score_home",
+        "injury_impact_score_away"
+      ],
+      "brier_score": 0.508999744065778,
+      "brier_delta": 0.0,
+      "is_critical": false
+    },
+    "odds_enhanced": {
+      "factors_removed": [
+        "odds_implied_home",
+        "odds_implied_draw",
+        "odds_implied_away",
+        "odds_margin",
+        "odds_draw_signal",
+        "odds_favor_home",
+        "odds_upset_potential"
+      ],
+      "brier_score": 0.508999744065778,
+      "brier_delta": 0.0,
+      "is_critical": false
+    },
+    "weather": {
+      "factors_removed": [
+        "temperature",
+        "humidity",
+        "wind_speed",
+        "precipitation",
+        "extreme_heat",
+        "extreme_cold",
+        "rain",
+        "weather_discomfort"
+      ],
+      "brier_score": 0.508999744065778,
+      "brier_delta": 0.0,
+      "is_critical": false
+    },
+    "xg": {
+      "factors_removed": [
+        "pre_match_xg_diff_home",
+        "pre_match_xga_diff_home",
+        "xg_overperformance_home",
+        "pre_match_xg_diff_away",
+        "pre_match_xga_diff_away",
+        "xg_overperformance_away"
+      ],
+      "brier_score": 0.508999744065778,
+      "brier_delta": 0.0,
+      "is_critical": false
+    },
+    "coach": {
+      "factors_removed": [
+        "coach_win_rate_home",
+        "coach_win_rate_away",
+        "coach_tenure_home",
+        "coach_tenure_away",
+        "coach_tournament_experience_home",
+        "coach_tournament_experience_away"
+      ],
+      "brier_score": 0.508999744065778,
+      "brier_delta": 0.0,
+      "is_critical": false
+    },
+    "lineup": {
+      "factors_removed": [
+        "avg_age_home",
+        "avg_age_away",
+        "key_players_available_home",
+        "key_players_available_away"
+      ],
+      "brier_score": 0.508999744065778,
+      "brier_delta": 0.0,
+      "is_critical": false
+    }
+  }
+}

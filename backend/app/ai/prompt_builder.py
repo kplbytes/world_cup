@@ -88,10 +88,7 @@ def build_prediction_prompt(request: AIPredictionRequest, prompt_version: str = 
     else:
         sections.append("## Historical Model Performance\nInsufficient sample - no reliable history.")
 
-    profile_info = {
-        "home_team_profile": request.home_team_profile or {"status": "insufficient_sample"},
-        "away_team_profile": request.away_team_profile or {"status": "insufficient_sample"},
-    }
+    profile_info = {"status": "disabled_display_only", "note": "Team profiles are not prediction inputs in the current phase."}
     sections.append(f"## Team Profiles\n{json.dumps(profile_info, indent=2, ensure_ascii=False)}")
 
     # 7. Output format instructions
@@ -121,9 +118,7 @@ def build_prediction_prompt(request: AIPredictionRequest, prompt_version: str = 
         f"- Mark missing data as 'unknown'\n"
         f"- Do NOT output betting advice\n"
         f"- Explicitly state uncertainties\n"
-        f"- Team profile claims MUST come from Team Profiles above; do not add reputation-based traits\n"
-        f"- If a profile has insufficient samples, state that uncertainty and give it little weight\n"
-        f"- If a profile has is_mock=true, it is functional verification data, NOT real historical statistics; do NOT use it as a primary basis for probability adjustments; mention in profile_risk_flags that profile data is mock/low-confidence\n"
+        f"- Team profiles are disabled for prediction in the current phase; do not infer profile-based probability adjustments\n"
         f"- prompt_version: {prompt_version}"
     )
 
@@ -254,10 +249,7 @@ def build_prediction_prompt_v2(request: AIPredictionRequest, prompt_version: str
         sections.append("## Historical Model Performance\nInsufficient sample - no reliable history.")
 
     # 7. Team profiles (same as v1)
-    profile_info = {
-        "home_team_profile": request.home_team_profile or {"status": "insufficient_sample"},
-        "away_team_profile": request.away_team_profile or {"status": "insufficient_sample"},
-    }
+    profile_info = {"status": "disabled_display_only", "note": "Team profiles are not prediction inputs in the current phase."}
     sections.append(f"## Team Profiles\n{json.dumps(profile_info, indent=2, ensure_ascii=False)}")
 
     # 8. Output format instructions (v2 specific)
@@ -287,16 +279,14 @@ def build_prediction_prompt_v2(request: AIPredictionRequest, prompt_version: str
         f"- You MUST form your OWN independent probability assessment based on ALL the data provided\n"
         f"- Do NOT simply copy or anchor on any single input signal\n"
         f"- The Team Strength Assessment above is a REFERENCE ONLY, not a prescription\n"
-        f"- If the intelligence data, team profiles, or market odds suggest a different outcome, you MUST reflect that in your probabilities\n"
+        f"- If the intelligence data or market odds suggest a different outcome, you MUST reflect that in your probabilities\n"
         f"- If evidence is weak or conflicting, move probabilities toward EVEN (e.g., 0.33/0.33/0.33), do NOT mechanically follow the strength tier\n"
         f"- Use ONLY the data provided above\n"
         f"- Do NOT fabricate injuries, odds, or news\n"
         f"- Mark missing data as 'unknown'\n"
         f"- Do NOT output betting advice\n"
         f"- Explicitly state uncertainties\n"
-        f"- Team profile claims MUST come from Team Profiles above; do not add reputation-based traits\n"
-        f"- If a profile has insufficient samples, state that uncertainty and give it little weight\n"
-        f"- If a profile has is_mock=true, it is functional verification data, NOT real historical statistics; do NOT use it as a primary basis for probability adjustments; mention in profile_risk_flags that profile data is mock/low-confidence\n"
+        f"- Team profiles are disabled for prediction in the current phase; do not infer profile-based probability adjustments\n"
         f"- independence_note is REQUIRED: explain whether and how you diverged from the strength assessment\n"
         f"- prompt_version: {prompt_version}"
     )

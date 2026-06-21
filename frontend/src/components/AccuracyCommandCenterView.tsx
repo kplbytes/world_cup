@@ -1,31 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { getAccuracyCommandCenter } from "../api";
 import { formatChinaTimeShort } from "../utils/time";
-
-const STATUS_CLASS: Record<string, string> = {
-  ready: "good",
-  disabled: "warn",
-  disabled_no_key: "bad",
-  error: "bad",
-  unconfigured: "bad",
-};
-const STATUS_LABELS: Record<string, string> = {
-  ready: "就绪",
-  disabled: "已禁用",
-  disabled_no_key: "未配置密钥",
-  error: "错误",
-  unconfigured: "未配置",
-};
-const STATUS_ICON: Record<string, string> = {
-  ready: "🟢",
-  disabled: "🟡",
-  disabled_no_key: "🔴",
-  error: "🔴",
-  unconfigured: "⚪",
-};
-
-function fmt(n: number, digits = 4) { return n.toFixed(digits); }
-function pct(n: number) { return (n * 100).toFixed(1) + "%"; }
+import { fmt, pct } from "../utils/format";
+import { STATUS_CLASS, STATUS_LABELS, STATUS_ICON } from "../utils/constants";
 
 function SummaryBlock({
   title,
@@ -94,7 +71,7 @@ export default function AccuracyCommandCenterView() {
 
   return (
     <div className="accuracy-panel command-center-view">
-      <h2 style={{ textTransform: "uppercase", letterSpacing: ".1em", fontSize: "14px", color: "var(--amber)", marginBottom: "20px" }}>
+      <h2 className="accuracy-section__page-title">
         准确率指挥室
       </h2>
 
@@ -389,7 +366,7 @@ export default function AccuracyCommandCenterView() {
                   <td>-</td><td>-</td><td>基线</td>
                 </tr>
               )}
-              {Object.entries(d.ai_evaluation?.ai_by_version || {}).map(([version, data]: [string, any]) => {
+              {Object.entries(d.ai_evaluation?.ai_by_version || {}).map(([version, data]) => {
                 const effect = d.ai_evaluation?.ai_effect?.[version];
                 return (
                   <tr key={version}>

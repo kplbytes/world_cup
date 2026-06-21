@@ -119,3 +119,20 @@ export function isUpcomingMatch(
   // and matches explicitly marked as "live".
   return !isFinishedMatch(match);
 }
+
+export function isLiveMatch(
+  match: Pick<Match, "kickoff" | "status" | "home_score" | "away_score">,
+  reference: Date = new Date(),
+): boolean {
+  // A match is considered "live" if:
+  // 1. Its status is explicitly "live", "in_progress", or "in_play"
+  // 2. OR its kickoff time has passed but it's not finished yet
+  //    (data source may not have updated the status yet)
+  if (isFinishedMatch(match)) return false;
+  const status = match.status.toLowerCase();
+  if (["live", "in_play", "in_progress", "paused"].includes(status)) return true;
+  // Check if kickoff time has passed (match likely in progress)
+  const kickoff = parseUtcDate(match.kickoff);
+  if (isNaN(kickoff.getTime())) return false;
+  return kickoff <= reference;
+}

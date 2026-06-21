@@ -25,7 +25,7 @@ export default function App() {
   const [view, setView] = useState<ViewType>("daily");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const client = useQueryClient();
-  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
+  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, staleTime: 30_000 });
   const refresh = useMutation({ mutationFn: refreshDashboard, onSuccess: () => client.invalidateQueries({ queryKey: ["dashboard"] }) });
 
   if (dashboard.isLoading) return <div className="state-screen"><span>正在加载赛事数据</span></div>;
@@ -39,18 +39,20 @@ export default function App() {
     <div className="app-shell">
       <AppHeader
         mode={isHome ? "home" : "compact"}
-        brand="2026 世界杯预测工作台"
-        subtitle="赛前预测 · AI 辅助 · 赛后复盘"
+        brand={isHome ? "2026 世界杯预测工作台" : "世界杯预测"}
+        subtitle={isHome ? "赛前预测 · AI 辅助 · 赛后复盘" : undefined}
         version={String(dashboard.data.revision.id).padStart(3, "0")}
         modelVersion={dashboard.data.revision.model_version}
         onSync={() => refresh.mutate()}
         syncing={refresh.isPending}
         nav={
           !isHome ? (
-            <div className="nav-tabs">
+            <div className="nav-tabs" role="tablist">
               {NAV_ITEMS.map((item) => (
                 <button
                   key={item.key}
+                  role="tab"
+                  aria-selected={view === item.key}
                   className={view === item.key ? "active" : ""}
                   onClick={() => setView(item.key)}
                 >
@@ -63,10 +65,12 @@ export default function App() {
       />
 
       {isHome && (
-        <div className="nav-tabs" style={{ marginTop: 0 }}>
+        <div className="nav-tabs" style={{ marginTop: 0 }} role="tablist">
           {NAV_ITEMS.map((item) => (
             <button
               key={item.key}
+              role="tab"
+              aria-selected={view === item.key}
               className={view === item.key ? "active" : ""}
               onClick={() => setView(item.key)}
             >
@@ -77,14 +81,14 @@ export default function App() {
       )}
 
       {dashboard.data.revision.model_version === "elo-poisson-v1-intel-numeric" && (
-        <div style={{ background: "rgba(246,195,67,0.1)", border: "1px solid var(--accent-yellow)", color: "var(--accent-yellow)", padding: "6px 14px", borderRadius: "4px", fontSize: "12px", marginBottom: "10px" }}>
+        <div className="banner-warn">
           当前正在使用实验性数值修正版本，该版本预测数据仅供验证，并非投注建议。
         </div>
       )}
 
       <PageShell wide={view === "matches" || view === "tournament"}>
-        <Suspense fallback={<div style={{ color: "var(--text-secondary)", padding: 24, textAlign: "center" }}>加载页面中...</div>}>
-          {view === "daily" ? <DailyDashboard />
+        <Suspense fallback={<div className="loading-placeholder">加载页面中...</div>}>
+          {view === "daily" ? <DailyDashboard dashboardData={dashboard.data} />
            : view === "matches" ? <MatchCenter groups={dashboard.data.groups} onTeamSelect={setSelectedTeam} />
            : view === "models" ? <ModelReviewCenter />
            : <TournamentCenter />
@@ -92,7 +96,7 @@ export default function App() {
         </Suspense>
       </PageShell>
 
-      {team ? <TeamDetail team={team} group={group} onClose={() => setSelectedTeam(null)} /> : null}
+      {team ? <TeamDetail team={team} group={group} allMatches={dashboard.data.groups.flatMap((g) => g.matches)} onClose={() => setSelectedTeam(null)} /> : null}
       <footer>预测仅供信息参考，不构成投注建议。足球比赛始终存在不可建模的偶然性。</footer>
     </div>
   );

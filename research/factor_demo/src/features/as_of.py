@@ -23,8 +23,14 @@ class MatchView:
         self._all_matches = all_matches
         self._kickoff = kickoff
         self._team = team
-        
+
         # 预计算：该球队在 kickoff 之前的所有比赛
+        #
+        # 【设计决策】此处使用严格 < 而非 <= 进行时间戳比较：
+        # - 严格 < 确保不包含 kickoff 时刻本身的比赛（即当前比赛）
+        # - 若使用 <=，当同一天有多场比赛时会包含与当前比赛同时开赛的其他比赛，
+        #   导致数据泄漏（同时间戳的比赛结果在赛前不可知）
+        # - 即使 match_date 精确到天，同日比赛之间也可能存在信息泄漏
         before = all_matches[
             (all_matches["match_date"] < kickoff)
             & ((all_matches["home_team"] == team) | (all_matches["away_team"] == team))
@@ -227,3 +233,66 @@ def compute_all_features(
 
     feature_df = pd.DataFrame(results)
     return feature_df
+
+
+def verify_no_leakage(all_matches: pd.DataFrame, feature_df: pd.DataFrame) -> list[str]:
+    """运行时泄漏检测：验证特征计算未使用未来数据。
+
+    对每场比赛，通过添加虚假未来比赛并重新计算特征来检测泄漏。
+    如果添加未来数据后特征值发生变化，则判定为泄漏。
+
+    Args:
+        all_matches: 原始全量比赛数据（必须包含 match_date 列）
+        feature_df: 已计算的特征 DataFrame（必须包含 match_id 列）
+
+    Returns:
+        违规描述列表，空列表表示无泄漏
+    """
+    from .calculator import FACTOR_FUNCTIONS
+
+    violations: list[str] = []
+
+    # 采样检测：不检查所有比赛，取前 50 场有足够历史的比赛
+    matches_with_history = all_matches[all_matches.index > 100].head(50)
+
+    for idx, match in matches_with_history.iterrows():
+        kickoff = match["match_date"]
+        match_id = match.get("match_id", idx)
+
+        # 构造虚假未来比赛
+        fake_matches = pd.DataFrame([
+            {
+                "match_date": kickoff + pd.Timedelta(days=i + 1),
+                "home_team": f"_LEAK_TEST_{i % 5}",
+                "away_team": f"_LEAK_TEST_{(i + 2) % 5}",
+                "home_goals": 3,
+                "away_goals": 0,
+                "tournament": "Friendly",
+                "is_neutral": True,
+                "is_official": False,
+                "tournament_category": "friendly",
+            }
+            for i in range(20)
+        ])
+
+        augmented = pd.concat([all_matches, fake_matches], ignore_index=True)
+
+        # 用原始数据和增强数据分别计算特征
+        original_features = compute_features_at_time(match, all_matches, FACTOR_FUNCTIONS)
+        augmented_features = compute_features_at_time(match, augmented, FACTOR_FUNCTIONS)
+
+        # 比较特征值
+        for key in original_features:
+            orig_val = original_features[key]
+            aug_val = augmented_features[key]
+
+            if orig_val is None or aug_val is None:
+                continue
+
+            if orig_val != aug_val:
+                violations.append(
+                    f"match_id={match_id}, factor={key}: "
+                    f"original={orig_val}, after_future_perturbation={aug_val}"
+                )
+
+    return violations

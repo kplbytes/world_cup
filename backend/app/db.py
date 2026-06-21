@@ -106,8 +106,8 @@ def _upgrade_schema(engine: Engine) -> None:
                     # Create index on stage
                     try:
                         conn.execute(text("CREATE INDEX IF NOT EXISTS ix_matches_stage ON matches(stage)"))
-                    except Exception:
-                        pass  # Table may not exist yet in test scenarios
+                    except Exception as e:
+                        logger.warning(f"Index creation skipped: {e}")
 
                 conn.execute(text("PRAGMA user_version = 2"))
 
@@ -178,8 +178,8 @@ def _upgrade_schema(engine: Engine) -> None:
                                     GROUP BY revision_id, match_id
                                 )
                             """))
-                    except Exception:
-                        pass  # Table may be empty or FK references not yet created
+                    except Exception as e:
+                        logger.warning(f"Cleanup skipped: {e}")
 
                 conn.execute(text("PRAGMA user_version = 4"))
 
@@ -258,6 +258,46 @@ def _upgrade_schema(engine: Engine) -> None:
 
                 conn.execute(text("PRAGMA user_version = 5"))
 
+            if version < 6:
+                logger.info("Upgrading database schema to version 6 (structured team profile modules)...")
+
+                profiles_info = conn.execute(text("PRAGMA table_info(team_profiles)")).mappings().all()
+                if profiles_info:
+                    cols = {row["name"] for row in profiles_info}
+                    profile_columns = {
+                        "long_term_strength_score": "FLOAT NOT NULL DEFAULT 0",
+                        "recent_form_score": "FLOAT NOT NULL DEFAULT 0",
+                        "attack_score": "FLOAT NOT NULL DEFAULT 0",
+                        "defense_score": "FLOAT NOT NULL DEFAULT 0",
+                        "stability_score": "FLOAT NOT NULL DEFAULT 0",
+                        "tournament_experience_score": "FLOAT NOT NULL DEFAULT 0",
+                        "lineup_integrity_score": "FLOAT",
+                        "injury_risk_score": "FLOAT",
+                        "rest_days": "INTEGER",
+                        "schedule_fatigue_score": "FLOAT",
+                        "environment_adaptation_score": "FLOAT",
+                        "data_quality_score": "FLOAT NOT NULL DEFAULT 0",
+                        "tactical_style_tags_json": "JSON DEFAULT '[]'",
+                        "strong_opponent_performance_json": "JSON DEFAULT '{}'",
+                        "middle_opponent_performance_json": "JSON DEFAULT '{}'",
+                        "weak_opponent_performance_json": "JSON DEFAULT '{}'",
+                        "strengths_json": "JSON DEFAULT '[]'",
+                        "weaknesses_json": "JSON DEFAULT '[]'",
+                        "risk_flags_json": "JSON DEFAULT '[]'",
+                        "missing_fields_json": "JSON DEFAULT '[]'",
+                        "source_list_json": "JSON DEFAULT '[]'",
+                        "narrative_json": "JSON DEFAULT '{}'",
+                        "data_quality_json": "JSON DEFAULT '{}'",
+                        "profile_modules_json": "JSON DEFAULT '{}'",
+                        "usage_scope": "VARCHAR(32) NOT NULL DEFAULT 'display_only'",
+                        "prediction_enabled": "BOOLEAN NOT NULL DEFAULT 0",
+                    }
+                    for column, ddl in profile_columns.items():
+                        if column not in cols:
+                            conn.execute(text(f"ALTER TABLE team_profiles ADD COLUMN {column} {ddl}"))
+
+                conn.execute(text("PRAGMA user_version = 6"))
+
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")
             raise
@@ -303,4 +343,3 @@ def session_scope() -> Iterator[Session]:
         raise
     finally:
         session.close()
-

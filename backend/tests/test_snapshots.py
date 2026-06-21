@@ -12,6 +12,7 @@ from app.models import (
     MatchPrediction,
     PredictionSnapshot,
     Team,
+    TeamProfilePrediction,
 )
 from app.services.snapshots import lock_due_predictions, repair_invalid_prediction_locks, write_snapshots
 
@@ -251,13 +252,51 @@ def test_periodic_lock_uses_only_latest_pre_match_predictions(db_session: Sessio
         .where(PredictionSnapshot.match_id == "periodic_lock")
         .order_by(PredictionSnapshot.snapshotted_at)
     ))
-    assert counts == {"matches": 1, "baseline": 1, "ai": 1, "ensemble": 1, "profile": 0, "shadow": 0}
+    assert counts == {"matches": 1, "baseline": 1, "ai": 1, "ensemble": 1, "shadow": 0}
     assert snapshots[0].is_pre_match_locked is False
     assert snapshots[1].is_pre_match_locked is True
     assert older_ai.is_pre_match_locked is False
     assert latest_ai.is_pre_match_locked is True
     assert older_ensemble.is_pre_match_locked is False
     assert latest_ensemble.is_pre_match_locked is True
+
+
+def test_periodic_lock_does_not_lock_legacy_team_profile_predictions(db_session: Session):
+    kickoff = datetime.now(timezone.utc) + timedelta(hours=20)
+    created_at = kickoff - timedelta(hours=2)
+    rev = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(rev)
+    db_session.flush()
+    _create_match_and_prediction(db_session, "profile_lock_isolated", kickoff, rev)
+    write_snapshots(db_session, rev, now=created_at)
+    legacy_profile = TeamProfilePrediction(
+        revision_id=rev.id,
+        match_id="profile_lock_isolated",
+        model_version="legacy-profile-v1",
+        profile_version="team-profile-v1",
+        profile_as_of=created_at,
+        base_home_win=0.5,
+        base_draw=0.3,
+        base_away_win=0.2,
+        home_win=0.52,
+        draw=0.29,
+        away_win=0.19,
+        home_xg=1.4,
+        away_xg=0.9,
+        probability_deltas_json={},
+        xg_deltas_json={},
+        explanation="legacy",
+        created_at=created_at,
+    )
+    db_session.add(legacy_profile)
+    db_session.flush()
+
+    counts = lock_due_predictions(db_session, now=kickoff - timedelta(hours=1))
+
+    assert "profile" not in counts
+    assert legacy_profile.is_pre_match_locked is False
+    assert legacy_profile.is_fallback_locked is False
+    assert legacy_profile.locked_at is None
 
 
 def test_periodic_lock_does_not_lock_outside_24h_window(db_session: Session):
@@ -273,7 +312,7 @@ def test_periodic_lock_does_not_lock_outside_24h_window(db_session: Session):
     snapshot = db_session.scalar(
         select(PredictionSnapshot).where(PredictionSnapshot.match_id == "outside_lock_window")
     )
-    assert counts == {"matches": 0, "baseline": 0, "ai": 0, "ensemble": 0, "profile": 0, "shadow": 0}
+    assert counts == {"matches": 0, "baseline": 0, "ai": 0, "ensemble": 0, "shadow": 0}
     assert snapshot.is_pre_match_locked is False
 
 

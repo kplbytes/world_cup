@@ -1,8 +1,6 @@
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useDeferredValue } from "react";
 import type { Match, Group } from "../types";
-import { getDashboard } from "../api";
-import { isFinishedMatch, isSameChinaDate, isUpcomingMatch, isWithinNextHoursChina } from "../utils/time";
+import { isFinishedMatch, isSameChinaDate, isUpcomingMatch, isWithinNextHoursChina, isLiveMatch } from "../utils/time";
 import { getTeamDisplayFromRef } from "../utils/teamNames";
 import GroupDashboard from "./GroupDashboard";
 import GroupNav from "./GroupNav";
@@ -13,7 +11,7 @@ import SectionCard from "./ui/SectionCard";
 import EmptyState from "./ui/EmptyState";
 
 interface MatchCenterProps {
-  groups: any[];
+  groups: Group[];
   onTeamSelect: (teamId: string) => void;
 }
 
@@ -53,6 +51,7 @@ function AllMatchesTab({
   onOpenDetails: (match: Match) => void;
 }) {
   const [searchText, setSearchText] = useState("");
+  const deferredSearchText = useDeferredValue(searchText);
   const [filter, setFilter] = useState<AllMatchFilter>("all");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -68,19 +67,19 @@ function AllMatchesTab({
     const result = new Map<string, Match[]>();
     for (const [code, matches] of groupedMatches) {
       const filtered = matches.filter((m) => {
-        if (searchText) {
+        if (deferredSearchText) {
           const homeZh = getTeamDisplayFromRef(m.home_team);
           const awayZh = getTeamDisplayFromRef(m.away_team);
-          const q = searchText.toLowerCase();
+          const q = deferredSearchText.toLowerCase();
           if (!homeZh.toLowerCase().includes(q) && !awayZh.toLowerCase().includes(q) && !m.home_team.id.toLowerCase().includes(q) && !m.away_team.id.toLowerCase().includes(q)) return false;
         }
         switch (filter) {
           case "scheduled": return m.status === "scheduled";
-          case "live": return m.status === "live";
+          case "live": return isLiveMatch(m);
           case "final": return isFinishedMatch(m);
           case "today": return isTodayChina(m.kickoff);
           case "locked": return m.snapshot_status?.locked ?? false;
-          case "has_ai": return true;
+          case "has_ai": return m.ai_prediction != null;
           case "high_risk": return m.risk_flags && m.risk_flags.length > 0;
           default: return true;
         }
@@ -88,7 +87,7 @@ function AllMatchesTab({
       if (filtered.length > 0) result.set(code, filtered);
     }
     return result;
-  }, [groupedMatches, searchText, filter]);
+  }, [groupedMatches, deferredSearchText, filter]);
 
   const totalMatches = groups.flatMap((g) => g.matches).length;
   const filteredCount = Array.from(filteredGrouped.values()).reduce((sum, ms) => sum + ms.length, 0);
@@ -174,17 +173,15 @@ export default function MatchCenter({ groups, onTeamSelect }: MatchCenterProps) 
   const [selectedGroup, setSelectedGroup] = useState("A");
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
 
-  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard });
-  const dashboardGroups = dashboard.data?.groups ?? groups;
-  const currentGroup = dashboardGroups.find((g: any) => g.code === selectedGroup) ?? dashboardGroups[0];
+  const currentGroup = groups.find((g) => g.code === selectedGroup) ?? groups[0];
 
   const future24hMatches = useMemo(() => {
     const now = new Date();
-    return dashboardGroups
-      .flatMap((g: any) => g.matches)
-      .filter((m: Match) => isUpcomingMatch(m, now) && isWithinNextHoursChina(m.kickoff, 24, now))
+    return groups
+      .flatMap((g) => g.matches)
+      .filter((m) => isUpcomingMatch(m, now) && isWithinNextHoursChina(m.kickoff, 24, now))
       .sort((a: Match, b: Match) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
-  }, [dashboardGroups]);
+  }, [groups]);
 
   return (
     <div>
@@ -222,7 +219,7 @@ export default function MatchCenter({ groups, onTeamSelect }: MatchCenterProps) 
       {activeTab === "groups" && currentGroup && (
         <div className="workspace">
           <GroupNav selected={currentGroup.code} onSelect={(code: string) => setSelectedGroup(code)} />
-          <GroupDashboard group={currentGroup} onTeamSelect={onTeamSelect} />
+          <GroupDashboard group={currentGroup} onTeamSelect={onTeamSelect} onOpenDetails={setSelectedMatch} />
         </div>
       )}
 

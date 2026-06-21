@@ -1,16 +1,12 @@
-import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  getWorkflowStatus,
-  triggerDailyOpen,
-  triggerPreMatch,
   triggerPostMatch,
   triggerLock,
-  triggerFullWorkflow,
-  getWorkflowRuns,
 } from "../api";
-import type { WorkflowStatus, WorkflowRunInfo, ButtonState } from "../types";
+import type { WorkflowRunInfo, ButtonState } from "../types";
 import { formatChinaTimeShort } from "../utils/time";
+import { statusDot, fmtDuration } from "../utils/workflow";
+import { useWorkflowActions } from "../hooks/useWorkflowActions";
 
 const STATUS_COLOR: Record<string, string> = {
   completed: "var(--mint)",
@@ -34,39 +30,6 @@ const WORKFLOW_TYPE_LABEL: Record<string, string> = {
   full: "一键全流程",
 };
 
-const AUTO_DAILY_OPEN_PARAMS = {
-  with_ai: true,
-  with_ensemble: true,
-  auto_lock: true,
-  only_missing: true,
-  limit: 10,
-  hours: 48,
-  since_hours: 24,
-} as const;
-
-function fmtDuration(seconds: number | null): string {
-  if (seconds == null) return "-";
-  if (seconds < 60) return `${seconds.toFixed(0)}秒`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}分${s}秒`;
-}
-
-function statusDot(color: string) {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: color,
-        marginRight: 6,
-      }}
-    />
-  );
-}
-
 function ButtonHelper({ btn, loading }: { btn: ButtonState | undefined; loading: boolean }) {
   if (!btn) return null;
   if (!btn.enabled) {
@@ -80,34 +43,23 @@ function ButtonHelper({ btn, loading }: { btn: ButtonState | undefined; loading:
 
 export default function LocalWorkflowCenter() {
   const queryClient = useQueryClient();
-  const [autoTriggered, setAutoTriggered] = useState(false);
 
-  const statusQuery = useQuery({
-    queryKey: ["workflow-status"],
-    queryFn: getWorkflowStatus,
-    staleTime: 30_000,
-  });
-
-  const runsQuery = useQuery({
-    queryKey: ["workflow-runs"],
-    queryFn: () => getWorkflowRuns(10),
-    staleTime: 30_000,
-  });
+  const {
+    statusQuery,
+    runsQuery,
+    status,
+    runs,
+    dailyOpenMutation,
+    preMatchMutation,
+    fullMutation,
+    anyRunning,
+    btnStates,
+  } = useWorkflowActions({ runsLimit: 10 });
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
     queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
   };
-
-  const dailyOpenMutation = useMutation({
-    mutationFn: triggerDailyOpen,
-    onSuccess: invalidateAll,
-  });
-
-  const preMatchMutation = useMutation({
-    mutationFn: triggerPreMatch,
-    onSuccess: invalidateAll,
-  });
 
   const postMatchMutation = useMutation({
     mutationFn: triggerPostMatch,
@@ -119,36 +71,19 @@ export default function LocalWorkflowCenter() {
     onSuccess: invalidateAll,
   });
 
-  const fullMutation = useMutation({
-    mutationFn: triggerFullWorkflow,
-    onSuccess: invalidateAll,
-  });
-
-  useEffect(() => {
-    if (autoTriggered) return;
-    if (statusQuery.data?.recommended_action !== "run_daily_open_workflow") return;
-    setAutoTriggered(true);
-    dailyOpenMutation.mutate(AUTO_DAILY_OPEN_PARAMS);
-  }, [autoTriggered, dailyOpenMutation, statusQuery.data?.recommended_action]);
-
-  const status = statusQuery.data as WorkflowStatus | undefined;
-  const btnStates = status?.button_states;
-  const anyRunning =
-    dailyOpenMutation.isPending ||
-    preMatchMutation.isPending ||
+  const anyRunningAll =
+    anyRunning ||
     postMatchMutation.isPending ||
-    lockMutation.isPending ||
-    fullMutation.isPending;
-
-  const runs = (runsQuery.data as { runs?: WorkflowRunInfo[] } | undefined)
-    ?.runs ?? [];
+    lockMutation.isPending;
 
   const todayStatusColor =
-    status?.today_status === "completed"
+    status?.today_status === "already_run" || status?.today_status === "completed" || status?.today_status === "success"
       ? "var(--mint)"
       : status?.today_status === "running"
         ? "var(--amber)"
-        : "var(--coral)";
+        : status?.today_status === "partial_success"
+          ? "var(--amber)"
+          : "var(--coral)";
 
   return (
     <div className="decision-view" style={{ maxWidth: 900 }}>
@@ -187,11 +122,15 @@ export default function LocalWorkflowCenter() {
           >
             <span style={{ fontSize: 14, fontWeight: 600 }}>
               {statusDot(todayStatusColor)}
-              {status?.today_status === "completed"
+              {status?.today_status === "already_run" || status?.today_status === "completed" || status?.today_status === "success"
                 ? "今日流程已完成"
                 : status?.today_status === "running"
                   ? "今日流程运行中"
-                  : "今日流程未运行"}
+                  : status?.today_status === "partial_success"
+                    ? "今日流程部分完成"
+                    : status?.today_status === "failed"
+                      ? "今日流程失败"
+                      : "今日流程未运行"}
             </span>
             <span style={{ fontSize: 12, color: "var(--muted)" }}>
               上次运行: {formatChinaTimeShort(status?.last_run_at ?? null)}
@@ -266,7 +205,7 @@ export default function LocalWorkflowCenter() {
           </div>
           <button
             className="revision-stamp button"
-            disabled={anyRunning || (btnStates?.post_match && !btnStates.post_match.enabled)}
+            disabled={anyRunningAll || (btnStates?.post_match && !btnStates.post_match.enabled)}
             onClick={() => postMatchMutation.mutate({})}
             style={{
               border: 0,
@@ -274,13 +213,13 @@ export default function LocalWorkflowCenter() {
               color: "oklch(22% .04 80)",
               padding: "10px 16px",
               fontWeight: 600,
-              cursor: anyRunning || (btnStates?.post_match && !btnStates.post_match.enabled) ? "not-allowed" : "pointer",
-              opacity: anyRunning || (btnStates?.post_match && !btnStates.post_match.enabled) ? 0.55 : 1,
+              cursor: anyRunningAll || (btnStates?.post_match && !btnStates.post_match.enabled) ? "not-allowed" : "pointer",
+              opacity: anyRunningAll || (btnStates?.post_match && !btnStates.post_match.enabled) ? 0.55 : 1,
             }}
           >
             {postMatchMutation.isPending ? "复盘运行中..." : "运行赛后复盘"}
           </button>
-          <ButtonHelper btn={btnStates?.post_match} loading={anyRunning} />
+          <ButtonHelper btn={btnStates?.post_match} loading={anyRunningAll} />
           {postMatchMutation.isError && (
             <div style={{ color: "var(--coral)", fontSize: 12, marginTop: 8 }}>
               错误:{" "}
@@ -374,7 +313,7 @@ export default function LocalWorkflowCenter() {
             </div>
           </div>
           <button
-            disabled={anyRunning || (btnStates?.pre_match && !btnStates.pre_match.enabled)}
+            disabled={anyRunningAll || (btnStates?.pre_match && !btnStates.pre_match.enabled)}
             onClick={() => preMatchMutation.mutate({})}
             style={{
               border: 0,
@@ -382,15 +321,15 @@ export default function LocalWorkflowCenter() {
               color: "oklch(20% .04 160)",
               padding: "10px 16px",
               fontWeight: 600,
-              cursor: anyRunning || (btnStates?.pre_match && !btnStates.pre_match.enabled) ? "not-allowed" : "pointer",
-              opacity: anyRunning || (btnStates?.pre_match && !btnStates.pre_match.enabled) ? 0.55 : 1,
+              cursor: anyRunningAll || (btnStates?.pre_match && !btnStates.pre_match.enabled) ? "not-allowed" : "pointer",
+              opacity: anyRunningAll || (btnStates?.pre_match && !btnStates.pre_match.enabled) ? 0.55 : 1,
             }}
           >
             {preMatchMutation.isPending
               ? "赛前更新运行中..."
               : "运行赛前更新（不含AI）"}
           </button>
-          <ButtonHelper btn={btnStates?.pre_match} loading={anyRunning} />
+          <ButtonHelper btn={btnStates?.pre_match} loading={anyRunningAll} />
           {preMatchMutation.isError && (
             <div style={{ color: "var(--coral)", fontSize: 12, marginTop: 8 }}>
               错误:{" "}
@@ -530,7 +469,7 @@ export default function LocalWorkflowCenter() {
             注意: AI 预测会调用外部 API，产生费用。请确认后再运行。
           </div>
           <button
-            disabled={anyRunning || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled)}
+            disabled={anyRunningAll || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled)}
             onClick={() => dailyOpenMutation.mutate({ include_ai: true })}
             style={{
               border: 0,
@@ -538,15 +477,15 @@ export default function LocalWorkflowCenter() {
               color: "oklch(22% .04 80)",
               padding: "10px 16px",
               fontWeight: 600,
-              cursor: anyRunning || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled) ? "not-allowed" : "pointer",
-              opacity: anyRunning || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled) ? 0.55 : 1,
+              cursor: anyRunningAll || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled) ? "not-allowed" : "pointer",
+              opacity: anyRunningAll || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled) ? 0.55 : 1,
             }}
           >
             {dailyOpenMutation.isPending
               ? "AI 预测运行中..."
               : "运行 AI 预测（含费用）"}
           </button>
-          <ButtonHelper btn={btnStates?.ai_prediction} loading={anyRunning} />
+          <ButtonHelper btn={btnStates?.ai_prediction} loading={anyRunningAll} />
           {dailyOpenMutation.isError && (
             <div style={{ color: "var(--coral)", fontSize: 12, marginTop: 8 }}>
               错误:{" "}
@@ -624,7 +563,7 @@ export default function LocalWorkflowCenter() {
             </div>
           </div>
           <button
-            disabled={anyRunning || (btnStates?.lock && !btnStates.lock.enabled)}
+            disabled={anyRunningAll || (btnStates?.lock && !btnStates.lock.enabled)}
             onClick={() => lockMutation.mutate({})}
             style={{
               border: 0,
@@ -632,13 +571,13 @@ export default function LocalWorkflowCenter() {
               color: "oklch(98% .01 95)",
               padding: "10px 16px",
               fontWeight: 600,
-              cursor: anyRunning || (btnStates?.lock && !btnStates.lock.enabled) ? "not-allowed" : "pointer",
-              opacity: anyRunning || (btnStates?.lock && !btnStates.lock.enabled) ? 0.55 : 1,
+              cursor: anyRunningAll || (btnStates?.lock && !btnStates.lock.enabled) ? "not-allowed" : "pointer",
+              opacity: anyRunningAll || (btnStates?.lock && !btnStates.lock.enabled) ? 0.55 : 1,
             }}
           >
             {lockMutation.isPending ? "锁定运行中..." : "锁定即将开赛比赛"}
           </button>
-          <ButtonHelper btn={btnStates?.lock} loading={anyRunning} />
+          <ButtonHelper btn={btnStates?.lock} loading={anyRunningAll} />
           {lockMutation.isError && (
             <div style={{ color: "var(--coral)", fontSize: 12, marginTop: 8 }}>
               错误:{" "}
@@ -678,7 +617,7 @@ export default function LocalWorkflowCenter() {
             警告: 一键全流程包含 AI 预测步骤，会调用外部 API 产生费用。请确认后再运行。
           </div>
           <button
-            disabled={anyRunning || (btnStates?.full && !btnStates.full.enabled)}
+            disabled={anyRunningAll || (btnStates?.full && !btnStates.full.enabled)}
             onClick={() => fullMutation.mutate({})}
             style={{
               border: 0,
@@ -687,15 +626,15 @@ export default function LocalWorkflowCenter() {
               padding: "12px 24px",
               fontWeight: 700,
               fontSize: 14,
-              cursor: anyRunning || (btnStates?.full && !btnStates.full.enabled) ? "not-allowed" : "pointer",
-              opacity: anyRunning || (btnStates?.full && !btnStates.full.enabled) ? 0.55 : 1,
+              cursor: anyRunningAll || (btnStates?.full && !btnStates.full.enabled) ? "not-allowed" : "pointer",
+              opacity: anyRunningAll || (btnStates?.full && !btnStates.full.enabled) ? 0.55 : 1,
             }}
           >
             {fullMutation.isPending
               ? "全流程运行中..."
               : "运行一键全流程（含 AI，产生费用）"}
           </button>
-          <ButtonHelper btn={btnStates?.full} loading={anyRunning} />
+          <ButtonHelper btn={btnStates?.full} loading={anyRunningAll} />
           {fullMutation.isError && (
             <div style={{ color: "var(--coral)", fontSize: 12, marginTop: 8 }}>
               错误:{" "}

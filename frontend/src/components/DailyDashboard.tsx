@@ -1,19 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import React, { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
-  getWorkflowStatus,
-  triggerDailyOpen,
-  triggerPreMatch,
-  triggerFullWorkflow,
-  getWorkflowRuns,
-  getDashboard,
   getAccuracyCommandCenter,
   getDecisionSnapshotStatus,
 } from "../api";
-import type { WorkflowStatus, Match, ButtonState, DecisionSnapshotStatus } from "../types";
-import { formatChinaTimeShort, isFinishedMatch, isUpcomingMatch, isWithinNextHoursChina } from "../utils/time";
+import type { Match, DecisionSnapshotStatus } from "../types";
+import { formatChinaTimeShort, isFinishedMatch, isUpcomingMatch, isWithinNextHoursChina, isLiveMatch } from "../utils/time";
 import { getTeamDisplayFromRef } from "../utils/teamNames";
 import { directionLabel } from "../utils/recommendation";
+import { statusDot, fmtDuration } from "../utils/workflow";
+import { useWorkflowActions } from "../hooks/useWorkflowActions";
 import ActionButton from "./ActionButton";
 import MatchSummaryCard from "./MatchSummaryCard";
 import MatchDetailDrawer from "./MatchDetailDrawer";
@@ -23,33 +19,7 @@ import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
 import EmptyState from "./ui/EmptyState";
 
-const AUTO_DAILY_OPEN_PARAMS = {
-  with_ai: true,
-  with_ensemble: true,
-  auto_lock: true,
-  only_missing: true,
-  limit: 10,
-  hours: 48,
-  since_hours: 24,
-} as const;
-
 // ── Helpers ──────────────────────────────────────────────────────────
-
-function statusDot(color: string) {
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: color,
-        marginRight: 6,
-        verticalAlign: "middle",
-      }}
-    />
-  );
-}
 
 function CollapsibleSection({ title, badge, defaultOpen = false, children }: {
   title: string;
@@ -65,16 +35,7 @@ function CollapsibleSection({ title, badge, defaultOpen = false, children }: {
       action={
         <button
           onClick={() => setOpen(!open)}
-          style={{
-            background: "transparent",
-            border: "1px solid var(--card-border)",
-            color: "var(--text-secondary)",
-            padding: "4px 10px",
-            borderRadius: 4,
-            cursor: "pointer",
-            fontSize: 11,
-            fontWeight: 600,
-          }}
+          className="btn-ghost"
         >
           {open ? "收起" : "展开"}
         </button>
@@ -87,22 +48,28 @@ function CollapsibleSection({ title, badge, defaultOpen = false, children }: {
 
 // ── Main Component ───────────────────────────────────────────────────
 
-export default function DailyDashboard() {
-  const queryClient = useQueryClient();
-  const [autoTriggered, setAutoTriggered] = useState(false);
+interface DailyDashboardProps {
+  dashboardData: import("../types").Dashboard | undefined;
+}
+
+export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
 
-  // Data queries
-  const statusQuery = useQuery({
-    queryKey: ["workflow-status"],
-    queryFn: getWorkflowStatus,
-    staleTime: 30_000,
-  });
-
-  const dashboardQuery = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: getDashboard,
-    staleTime: 30_000,
+  const {
+    status,
+    runs,
+    dailyOpenMutation,
+    preMatchMutation,
+    postMatchMutation,
+    fullMutation,
+    anyRunning,
+    dailyOpenBtn,
+    aiBtn,
+    postMatchBtn,
+    fullBtn,
+  } = useWorkflowActions({
+    runsLimit: 5,
+    extraInvalidateKeys: [["dashboard"]],
   });
 
   const accQuery = useQuery({
@@ -111,68 +78,19 @@ export default function DailyDashboard() {
     staleTime: 60_000,
   });
 
-  const runsQuery = useQuery({
-    queryKey: ["workflow-runs"],
-    queryFn: () => getWorkflowRuns(5),
-    staleTime: 30_000,
-  });
-
   const snapshotQuery = useQuery({
     queryKey: ["decision-snapshot-status"],
     queryFn: getDecisionSnapshotStatus,
     staleTime: 30_000,
   });
 
-  const status = statusQuery.data as WorkflowStatus | undefined;
   const snapshotStatus = snapshotQuery.data as DecisionSnapshotStatus | undefined;
-  const btnStates = status?.button_states;
-
-  // Mutations
-  const dailyOpenMutation = useMutation({
-    mutationFn: triggerDailyOpen,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
-      queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-
-  const preMatchMutation = useMutation({
-    mutationFn: triggerPreMatch,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
-      queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-
-  const fullMutation = useMutation({
-    mutationFn: triggerFullWorkflow,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
-      queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-    },
-  });
-
-  const anyRunning =
-    dailyOpenMutation.isPending ||
-    preMatchMutation.isPending ||
-    fullMutation.isPending;
-
-  useEffect(() => {
-    if (autoTriggered) return;
-    if (statusQuery.data?.recommended_action !== "run_daily_open_workflow") return;
-    setAutoTriggered(true);
-    dailyOpenMutation.mutate(AUTO_DAILY_OPEN_PARAMS);
-  }, [autoTriggered, dailyOpenMutation, statusQuery.data?.recommended_action]);
 
   const future24hMatches = useMemo(() => {
-    const dashboard = dashboardQuery.data;
-    if (!dashboard) return [];
+    if (!dashboardData) return [];
     const now = new Date();
     const allMatches: Match[] = [];
-    for (const group of dashboard.groups) {
+    for (const group of dashboardData.groups) {
       for (const match of group.matches) {
         if (isUpcomingMatch(match, now) && isWithinNextHoursChina(match.kickoff, 24, now)) {
           allMatches.push(match);
@@ -181,14 +99,13 @@ export default function DailyDashboard() {
     }
     allMatches.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
     return allMatches;
-  }, [dashboardQuery.data]);
+  }, [dashboardData]);
 
   const future48hMatches = useMemo(() => {
-    const dashboard = dashboardQuery.data;
-    if (!dashboard) return [];
+    if (!dashboardData) return [];
     const now = new Date();
     const allMatches: Match[] = [];
-    for (const group of dashboard.groups) {
+    for (const group of dashboardData.groups) {
       for (const match of group.matches) {
         if (isUpcomingMatch(match, now) && isWithinNextHoursChina(match.kickoff, 48, now)) {
           allMatches.push(match);
@@ -197,13 +114,12 @@ export default function DailyDashboard() {
     }
     allMatches.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
     return allMatches;
-  }, [dashboardQuery.data]);
+  }, [dashboardData]);
 
   const finishedMatches = useMemo(() => {
-    const dashboard = dashboardQuery.data;
-    if (!dashboard) return [];
+    if (!dashboardData) return [];
     const allMatches: Match[] = [];
-    for (const group of dashboard.groups) {
+    for (const group of dashboardData.groups) {
       for (const match of group.matches) {
         if (isFinishedMatch(match)) {
           allMatches.push(match);
@@ -212,7 +128,22 @@ export default function DailyDashboard() {
     }
     allMatches.sort((a, b) => new Date(b.kickoff).getTime() - new Date(a.kickoff).getTime());
     return allMatches;
-  }, [dashboardQuery.data]);
+  }, [dashboardData]);
+
+  const liveMatches = useMemo(() => {
+    if (!dashboardData) return [];
+    const allMatches: Match[] = [];
+    const now = new Date();
+    for (const group of dashboardData.groups) {
+      for (const match of group.matches) {
+        if (isLiveMatch(match, now)) {
+          allMatches.push(match);
+        }
+      }
+    }
+    allMatches.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
+    return allMatches;
+  }, [dashboardData]);
 
   // Key matches (3-5 most noteworthy)
   const keyMatches = useMemo(() => {
@@ -222,7 +153,7 @@ export default function DailyDashboard() {
       const pred = m.prediction;
       const market = m.market;
       if (pred?.base_home_win != null) {
-        const baselineRec = directionLabel(pred.base_home_win, pred.base_draw!, pred.base_away_win!);
+        const baselineRec = directionLabel(pred.base_home_win, pred.base_draw ?? pred.draw, pred.base_away_win ?? pred.away_win);
         const currentRec = directionLabel(pred.home_win, pred.draw, pred.away_win);
         if (baselineRec !== currentRec) score += 3;
       }
@@ -241,26 +172,18 @@ export default function DailyDashboard() {
     return scored.slice(0, Math.min(5, Math.max(3, future24hMatches.length))).map((s) => s.match);
   }, [future24hMatches]);
 
-  // Workflow runs
-  const runs =
-    (runsQuery.data as { runs?: import("../types").WorkflowRunInfo[] } | undefined)
-      ?.runs ?? [];
-
-  // Button states
-  const dailyOpenBtn: ButtonState = btnStates?.daily_open ?? { enabled: true, reason: "" };
-  const aiBtn: ButtonState = btnStates?.ai_prediction ?? { enabled: true, reason: "" };
-  const fullBtn: ButtonState = btnStates?.full ?? { enabled: true, reason: "" };
-
   // ── Build status strip items ──
   const statusItems: StatusItem[] = useMemo(() => {
     if (!status) return [];
     const rawStatus = status.today_status;
     let todayLabel: string;
     let todayTone: StatusItem["tone"];
-    if (rawStatus === "already_run" || rawStatus === "completed") {
+    if (rawStatus === "already_run" || rawStatus === "completed" || rawStatus === "success") {
       todayLabel = "已更新"; todayTone = "ok";
     } else if (rawStatus === "running") {
       todayLabel = "运行中"; todayTone = "warn";
+    } else if (rawStatus === "needs_run" || rawStatus === "not_run") {
+      todayLabel = "待运行"; todayTone = "error";
     } else if (rawStatus === "partial_success") {
       todayLabel = "部分完成"; todayTone = "warn";
     } else if (rawStatus === "failed") {
@@ -290,10 +213,16 @@ export default function DailyDashboard() {
       if (aiConfigured > 0) {
         // Count today's matches needing AI
         const totalToday = future24hMatches.length;
-        const covered = Math.min(status.upcoming_matches?.ai_ready ?? 0, totalToday);
+        const aiReadyCount = status.upcoming_matches?.ai_ready ?? 0;
+        const covered = Math.min(aiReadyCount, totalToday);
         const missing = Math.max(0, totalToday - covered);
 
-        const aiTone: StatusItem["tone"] = aiEffective > 0 && missing === 0 ? "ok" : aiFailed > 0 ? "error" : missing > 0 ? "warn" : "neutral";
+        // When workflow is running, show "等待中" instead of "未运行"
+        const isWorkflowRunning = rawStatus === "running";
+
+        // Use aiReadyCount (from upcoming_matches) as primary signal —
+        // aiEffective resets at UTC midnight but aiReady persists
+        const aiTone: StatusItem["tone"] = aiReadyCount > 0 && missing === 0 ? "ok" : aiReadyCount > 0 ? "warn" : aiFailed > 0 ? "error" : isWorkflowRunning ? "neutral" : "neutral";
         let aiValue: string;
         if (missing > 0 && aiFailed > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场，${missing} 场缺失；成功 ${aiStatus.success}，失败 ${aiFailed}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
@@ -303,10 +232,12 @@ export default function DailyDashboard() {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场；成功 ${aiStatus.success}，失败 ${aiFailed}，参与 Ensemble ${aiEffective}`;
         } else if (aiParseError > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场；成功 ${aiStatus.success}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
-        } else if (aiEffective > 0) {
+        } else if (aiReadyCount > 0) {
           aiValue = `有效覆盖 ${covered}/${totalToday} 场；成功 ${aiStatus.success}，解析错误 ${aiParseError}，参与 Ensemble ${aiEffective}`;
         } else if (aiAttempted > 0) {
           aiValue = `${aiAttempted} 场已调用，暂无有效结果`;
+        } else if (isWorkflowRunning) {
+          aiValue = "等待中";
         } else {
           aiValue = "未运行";
         }
@@ -315,9 +246,13 @@ export default function DailyDashboard() {
         items.push({ label: "AI", value: "未配置", tone: "neutral" });
       }
     } else {
-      // Fallback to old ai_stats
+      // Fallback to old ai_stats — use upcoming_matches.ai_ready as primary signal
+      // (today_ai_calls resets at UTC midnight, but ai_ready persists)
+      const aiReadyCount = status.upcoming_matches?.ai_ready ?? 0;
       const aiCalls = status.ai_stats?.today_ai_calls ?? 0;
-      items.push({ label: "AI", value: aiCalls > 0 ? `已运行 ${aiCalls}` : "未运行", tone: aiCalls > 0 ? "ok" : "neutral" });
+      const isWorkflowRunning = rawStatus === "running";
+      const aiValue = aiReadyCount > 0 ? `已运行（覆盖 ${aiReadyCount} 场）` : aiCalls > 0 ? `已运行 ${aiCalls}` : isWorkflowRunning ? "等待中" : "未运行";
+      items.push({ label: "AI", value: aiValue, tone: aiReadyCount > 0 || aiCalls > 0 ? "ok" : "neutral" });
     }
 
     items.push({ label: "Ensemble", value: ensembleReady ? "已生成" : "未生成", tone: ensembleReady ? "ok" : "neutral" });
@@ -366,7 +301,7 @@ export default function DailyDashboard() {
     if (aiReady > 0 && ensembleReady === 0) {
       return { text: "AI 预测已完成，可生成 Ensemble 综合预测。", tone: "warn" };
     }
-    if (rawStatus === "already_run" || rawStatus === "completed") {
+    if (rawStatus === "already_run" || rawStatus === "completed" || rawStatus === "success") {
       return { text: "今日预测已准备完成。赛后将使用开赛前最后一份有效预测进行复盘。", tone: "ok" };
     }
     return null;
@@ -395,10 +330,88 @@ export default function DailyDashboard() {
 
       {/* B. Next Step Suggestion */}
       {nextStep && (
-        <div className={`next-step${nextStep.tone === "ok" ? " next-step--ok" : nextStep.tone === "error" ? " next-step--error" : ""}`} style={{ marginBottom: 20 }}>
-          {nextStep.text}
+        <div className={`next-step${nextStep.tone === "ok" ? " next-step--ok" : nextStep.tone === "error" ? " next-step--error" : ""}`} style={{ marginBottom: 20, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span>{nextStep.text}</span>
+          {status?.next_action?.action === "run_daily_open_workflow" && (
+            <button
+              onClick={() => dailyOpenMutation.mutate({})}
+              disabled={dailyOpenMutation.isPending || !dailyOpenBtn.enabled}
+              style={{
+                padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                background: dailyOpenMutation.isPending ? "var(--muted)" : "var(--accent-yellow)",
+                color: "#000", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap",
+              }}
+            >
+              {dailyOpenMutation.isPending ? "更新中..." : "立即更新"}
+            </button>
+          )}
+          {status?.next_action?.action === "run_ai_prediction" && (
+            <button
+              onClick={() => preMatchMutation.mutate({ include_ai: true })}
+              disabled={preMatchMutation.isPending || !aiBtn.enabled}
+              style={{
+                padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                background: preMatchMutation.isPending ? "var(--muted)" : "var(--accent-yellow)",
+                color: "#000", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap",
+              }}
+            >
+              {preMatchMutation.isPending ? "运行中..." : "运行 AI 预测"}
+            </button>
+          )}
         </div>
       )}
+
+      {/* B2. Action Area - moved to top for better UX */}
+      <SectionCard title="操作">
+        <div className="action-grid">
+          <ActionButton
+            label="更新今日数据"
+            enabled={dailyOpenBtn.enabled}
+            disabledReason={dailyOpenBtn.reason}
+            loading={dailyOpenMutation.isPending}
+            estimatedCalls={dailyOpenBtn.estimated_calls}
+            onClick={() => dailyOpenMutation.mutate({})}
+            variant="primary"
+          />
+          <ActionButton
+            label="同步赛果"
+            enabled={postMatchBtn.enabled}
+            disabledReason={postMatchBtn.reason}
+            loading={postMatchMutation.isPending}
+            onClick={() => postMatchMutation.mutate({})}
+            variant="primary"
+          />
+          <ActionButton
+            label="运行 AI 预测"
+            enabled={aiBtn.enabled}
+            disabledReason={aiBtn.reason}
+            loading={preMatchMutation.isPending}
+            estimatedCalls={aiBtn.estimated_calls}
+            warningText={aiBtn.needs_ai && aiBtn.needs_ai > 0 ? `将处理 ${aiBtn.needs_ai} 场比赛，调用外部 API 产生费用` : undefined}
+            onClick={() => preMatchMutation.mutate({ include_ai: true })}
+            variant="warning"
+          />
+          <ActionButton
+            label="一键更新全部"
+            enabled={fullBtn.enabled}
+            disabledReason={fullBtn.reason}
+            loading={fullMutation.isPending}
+            estimatedCalls={fullBtn.estimated_calls}
+            warningText="包含 AI 预测步骤，会调用外部 API 产生费用"
+            onClick={() => fullMutation.mutate({})}
+            variant="danger"
+          />
+        </div>
+        {/* Mutation feedback */}
+        {dailyOpenMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>更新失败：{dailyOpenMutation.error instanceof Error ? dailyOpenMutation.error.message : "未知错误"}</div>}
+        {postMatchMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>同步赛果失败：{postMatchMutation.error instanceof Error ? postMatchMutation.error.message : "未知错误"}</div>}
+        {preMatchMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>AI 预测失败：{preMatchMutation.error instanceof Error ? preMatchMutation.error.message : "未知错误"}</div>}
+        {fullMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>全流程失败：{fullMutation.error instanceof Error ? fullMutation.error.message : "未知错误"}</div>}
+        {dailyOpenMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>数据更新完成</div>}
+        {postMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>赛果同步完成</div>}
+        {preMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>AI 预测完成</div>}
+        {fullMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>全流程完成</div>}
+      </SectionCard>
 
       {/* C. Today's Key Matches */}
       {keyMatches.length > 0 && (
@@ -410,7 +423,7 @@ export default function DailyDashboard() {
               const pred = m.prediction;
               const reasons: string[] = [];
               if (pred?.base_home_win != null) {
-                const baselineRec = directionLabel(pred.base_home_win, pred.base_draw!, pred.base_away_win!);
+                const baselineRec = directionLabel(pred.base_home_win, pred.base_draw ?? pred.draw, pred.base_away_win ?? pred.away_win);
                 const currentRec = directionLabel(pred.home_win, pred.draw, pred.away_win);
                 if (baselineRec !== currentRec) reasons.push("系统内部调整差异较大");
               }
@@ -428,6 +441,22 @@ export default function DailyDashboard() {
                 </div>
               );
             })}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* C2. Live Matches */}
+      {liveMatches.length > 0 && (
+        <SectionCard title="进行中的比赛" badge={`${liveMatches.length} 场`}>
+          <div className="today-match-grid">
+            {liveMatches.map((m) => (
+              <MatchSummaryCard
+                key={m.id}
+                match={m}
+                onOpenDetails={setSelectedMatch}
+                detailsOpen={selectedMatch?.id === m.id}
+              />
+            ))}
           </div>
         </SectionCard>
       )}
@@ -546,50 +575,7 @@ export default function DailyDashboard() {
         )}
       </SectionCard>
 
-      {/* F. Action Area */}
-      <CollapsibleSection title="操作" defaultOpen={false}>
-        <div className="action-grid">
-          <ActionButton
-            label="更新今日数据"
-            enabled={dailyOpenBtn.enabled}
-            disabledReason={dailyOpenBtn.reason}
-            loading={dailyOpenMutation.isPending}
-            estimatedCalls={dailyOpenBtn.estimated_calls}
-            onClick={() => dailyOpenMutation.mutate({})}
-            variant="primary"
-          />
-          <ActionButton
-            label="运行 AI 预测"
-            enabled={aiBtn.enabled}
-            disabledReason={aiBtn.reason}
-            loading={preMatchMutation.isPending}
-            estimatedCalls={aiBtn.estimated_calls}
-            warningText={aiBtn.needs_ai && aiBtn.needs_ai > 0 ? `将处理 ${aiBtn.needs_ai} 场比赛，调用外部 API 产生费用` : undefined}
-            onClick={() => preMatchMutation.mutate({ include_ai: true })}
-            variant="warning"
-          />
-          <ActionButton
-            label="一键更新全部"
-            enabled={fullBtn.enabled}
-            disabledReason={fullBtn.reason}
-            loading={fullMutation.isPending}
-            estimatedCalls={fullBtn.estimated_calls}
-            warningText="包含 AI 预测步骤，会调用外部 API 产生费用"
-            onClick={() => fullMutation.mutate({})}
-            variant="danger"
-          />
-        </div>
-
-        {/* Mutation feedback */}
-        {dailyOpenMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>更新失败：{dailyOpenMutation.error instanceof Error ? dailyOpenMutation.error.message : "未知错误"}</div>}
-        {preMatchMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>AI 预测失败：{preMatchMutation.error instanceof Error ? preMatchMutation.error.message : "未知错误"}</div>}
-        {fullMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>全流程失败：{fullMutation.error instanceof Error ? fullMutation.error.message : "未知错误"}</div>}
-        {dailyOpenMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>数据更新完成</div>}
-        {preMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>AI 预测完成</div>}
-        {fullMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>全流程完成</div>}
-      </CollapsibleSection>
-
-      {/* G. Model Performance Summary */}
+      {/* F. Model Performance Summary */}
       <CollapsibleSection title="模型性能概览" defaultOpen={false}>
         {modelSummary ? (
           <div className="metric-grid">

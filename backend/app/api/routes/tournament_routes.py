@@ -1,4 +1,6 @@
 from fastapi import APIRouter
+import threading
+import time as _time
 
 from app.db import session_scope
 
@@ -6,6 +8,14 @@ from app.db import session_scope
 router = APIRouter()
 
 MAX_SIMULATION_ITERATIONS = 100_000
+
+# ---------------------------------------------------------------------------
+# Simple TTL cache for GET /tournament/projections (5 minutes)
+# ---------------------------------------------------------------------------
+_projections_cache: dict | None = None
+_projections_cache_ts: float = 0.0
+_PROJECTIONS_CACHE_TTL = 300.0  # seconds
+_projections_cache_lock = threading.Lock()
 
 
 @router.get("/tournament/bracket")
@@ -23,11 +33,17 @@ def tournament_bracket():
 @router.get("/tournament/projections")
 def tournament_projections():
     """Get all teams' tournament progression probabilities."""
+    global _projections_cache, _projections_cache_ts
+    now = _time.monotonic()
+    with _projections_cache_lock:
+        if _projections_cache is not None and (now - _projections_cache_ts) < _PROJECTIONS_CACHE_TTL:
+            return _projections_cache
+
     from app.tournament.simulation import run_tournament_simulation
     with session_scope() as session:
         # iterations=5000 is intentionally low for the GET endpoint
         projections = run_tournament_simulation(session, iterations=5000)
-    return {
+    result = {
         "projections": [
             {
                 "team_id": p.team_id,
@@ -42,6 +58,10 @@ def tournament_projections():
             for p in projections
         ]
     }
+    with _projections_cache_lock:
+        _projections_cache = result
+        _projections_cache_ts = _time.monotonic()
+    return result
 
 
 @router.post("/tournament/simulate")

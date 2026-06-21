@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { Match } from "../types";
 import ProbabilityBar from "./ProbabilityBar";
 import { formatChinaTimeShort, isFinishedMatch } from "../utils/time";
@@ -12,7 +13,7 @@ type Props = {
   detailsOpen?: boolean;
 };
 
-export default function MatchCard({ match, onOpenDetails, detailsOpen = false }: Props) {
+export default memo(function MatchCard({ match, onOpenDetails, detailsOpen = false }: Props) {
   const kickoff = formatChinaTimeShort(match.kickoff);
   const pred = match.prediction;
   const aiPred = match.ai_prediction;
@@ -64,4 +65,4 @@ export default function MatchCard({ match, onOpenDetails, detailsOpen = false }:
       </div>
     </article>
   );
-}
+});

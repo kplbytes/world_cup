@@ -76,3 +76,24 @@ model_versions:
     underdog_boost: 0.02
     market_blend_weight: 0.10
     description: "Calibrated v2: mild draw boost + favorite dampening + market blend"
+
+  # --- Research-enhanced model configs ---
+  elo-poisson-v2-research:
+    _base: elo_poisson_base
+    draw_boost: 1.08
+    favorite_dampening: 0.05
+    underdog_boost: 0.02
+    market_blend_weight: 0.25
+    smart_market_blend: true
+    dynamic_draw_boost: true
+    description: "Research v2: odds-weighted (25%) + dynamic draw calibration + smart blend"
+
+  elo-poisson-v2-research-aggressive:
+    _base: elo_poisson_base
+    draw_boost: 1.12
+    favorite_dampening: 0.08
+    underdog_boost: 0.03
+    market_blend_weight: 0.35
+    smart_market_blend: true
+    dynamic_draw_boost: true
+    description: "Research v2 aggressive: heavy odds weight (35%) + strong draw boost"

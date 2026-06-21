@@ -1,6 +1,8 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+import threading
+import time as _time
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,7 +24,6 @@ from app.models import (
     MatchIntelligence,
     AutoAdjustment,
     ProviderQuotaState,
-    TeamProfilePrediction,
     AIPrediction,
     EnsemblePrediction,
 )
@@ -38,6 +39,14 @@ import math
 
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
+
+# ---------------------------------------------------------------------------
+# Simple TTL cache for build_dashboard() results
+# ---------------------------------------------------------------------------
+_dashboard_cache: dict | None = None
+_dashboard_cache_ts: float = 0.0
+_DASHBOARD_CACHE_TTL = 5.0  # seconds
+_dashboard_cache_lock = threading.Lock()
 
 
 def _china_time_fields(kickoff_dt: datetime) -> dict:
@@ -281,6 +290,12 @@ def _compute_match_review(
 
 
 def build_dashboard(session: Session) -> dict:
+    global _dashboard_cache, _dashboard_cache_ts
+    now = _time.monotonic()
+    with _dashboard_cache_lock:
+        if _dashboard_cache is not None and (now - _dashboard_cache_ts) < _DASHBOARD_CACHE_TTL:
+            return _dashboard_cache
+
     revision = session.scalar(
         select(DashboardRevision)
         .where(DashboardRevision.active.is_(True))
@@ -364,9 +379,11 @@ def build_dashboard(session: Session) -> dict:
     teams_by_group = defaultdict(list)
     matches_by_group = defaultdict(list)
     for team in teams:
-        standing = standings[team.id]
-        qualification = qualifications[team.id]
-        rating = ratings[team.id]
+        standing = standings.get(team.id)
+        qualification = qualifications.get(team.id)
+        rating = ratings.get(team.id)
+        if standing is None or qualification is None or rating is None:
+            continue
         teams_by_group[team.group_code].append(
             {
                 "id": team.id,
@@ -415,6 +432,10 @@ def build_dashboard(session: Session) -> dict:
         snap = snapshots.get(match.id)
         snapshot_status = _snapshot_status(snap, match)
 
+        home_team = teams_by_id.get(match.home_team_id)
+        away_team = teams_by_id.get(match.away_team_id)
+        if home_team is None or away_team is None:
+            continue
         matches_by_group[match.group_code].append(
             {
                 **_china_time_fields(match.kickoff),
@@ -423,8 +444,8 @@ def build_dashboard(session: Session) -> dict:
                 "kickoff": match.kickoff.isoformat(),
                 "venue": match.venue,
                 "status": match.status,
-                "home_team": _team_ref(teams_by_id[match.home_team_id], display_names),
-                "away_team": _team_ref(teams_by_id[match.away_team_id], display_names),
+                "home_team": _team_ref(home_team, display_names),
+                "away_team": _team_ref(away_team, display_names),
                 "home_score": match.home_score,
                 "away_score": match.away_score,
                 "manual_adjustments": manual_adjustments.get(match.id, []),
@@ -494,7 +515,7 @@ def build_dashboard(session: Session) -> dict:
             }
         )
 
-    return {
+    result = {
         "revision": {
             "id": revision.id,
             "created_at": revision.created_at.isoformat(),
@@ -515,6 +536,10 @@ def build_dashboard(session: Session) -> dict:
         ],
         "data_sources": list_data_sources(session) + list_intelligence_providers(session),
     }
+    with _dashboard_cache_lock:
+        _dashboard_cache = result
+        _dashboard_cache_ts = _time.monotonic()
+    return result
 
 
 def build_match_detail(session: Session, match_id: str) -> dict | None:
@@ -576,12 +601,6 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
     from app.team_profiles.service import explain_team_profile, get_team_profile, profile_payload
     home_profile = get_team_profile(session, match.home_team_id, match.kickoff)
     away_profile = get_team_profile(session, match.away_team_id, match.kickoff)
-    profile_prediction = session.scalar(
-        select(TeamProfilePrediction)
-        .where(TeamProfilePrediction.match_id == match_id)
-        .order_by(TeamProfilePrediction.created_at.desc())
-        .limit(1)
-    )
 
     # Build market data
     market_data = None
@@ -686,22 +705,7 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
             "home": {"profile": profile_payload(home_profile), "summary": explain_team_profile(home_profile)} if home_profile else None,
             "away": {"profile": profile_payload(away_profile), "summary": explain_team_profile(away_profile)} if away_profile else None,
         },
-        "profile_prediction": ({
-            "model_version": profile_prediction.model_version,
-            "profile_version": profile_prediction.profile_version,
-            "profile_as_of": profile_prediction.profile_as_of.isoformat(),
-            "home_win": profile_prediction.home_win,
-            "draw": profile_prediction.draw,
-            "away_win": profile_prediction.away_win,
-            "home_xg": profile_prediction.home_xg,
-            "away_xg": profile_prediction.away_xg,
-            "probability_deltas": profile_prediction.probability_deltas_json,
-            "xg_deltas": profile_prediction.xg_deltas_json,
-            "risk_flags": profile_prediction.risk_flags_json,
-            "triggered_traits": profile_prediction.triggered_traits_json,
-            "explanation": profile_prediction.explanation,
-            "is_pre_match_locked": profile_prediction.is_pre_match_locked,
-        } if profile_prediction else None),
+        "profile_prediction": None,
         # AI/Ensemble prediction summaries (P0-3 fix)
         "ai_prediction": _ai_prediction_summary(list(session.scalars(
             select(AIPrediction)
@@ -837,20 +841,17 @@ def build_team_detail(session: Session, team_id: str) -> dict | None:
     }
 
     # Build team dict
-    if not rating or not standing:
-        return None
-
     team_dict = {
         "id": team.id,
         "name": display_names[team.id],
         "short_name": display_names[team.id],
         "code": team.code,
         "flag": team.flag_url,
-        "elo": round(rating.elo),
-        "fifa_rank": rating.fifa_rank,
-        "fifa_points": rating.fifa_points,
-        "recent_form": rating.recent_form,
-        "standing": _standing_dict(standing),
+        "elo": round(rating.elo) if rating else None,
+        "fifa_rank": rating.fifa_rank if rating else None,
+        "fifa_points": rating.fifa_points if rating else None,
+        "recent_form": rating.recent_form if rating else None,
+        "standing": _standing_dict(standing) if standing else None,
         "qualification": _qualification_dict(qualification) if qualification else None,
     }
 
@@ -1282,8 +1283,8 @@ def build_decision(session: Session) -> dict:
             "id": match.id,
             "group_code": match.group_code,
             "kickoff": match.kickoff.isoformat(),
-            "home_team": _team_ref(teams_by_id[match.home_team_id], display_names),
-            "away_team": _team_ref(teams_by_id[match.away_team_id], display_names),
+            "home_team": _team_ref(teams_by_id[match.home_team_id], display_names) if match.home_team_id in teams_by_id else None,
+            "away_team": _team_ref(teams_by_id[match.away_team_id], display_names) if match.away_team_id in teams_by_id else None,
             "status": match.status,
             "home_score": match.home_score,
             "away_score": match.away_score,
@@ -1452,8 +1453,8 @@ def build_decision(session: Session) -> dict:
 
                 intelligence_risks.append({
                     "match_id": m.id,
-                    "home_team": _team_ref(teams_by_id[m.home_team_id], display_names),
-                    "away_team": _team_ref(teams_by_id[m.away_team_id], display_names),
+                    "home_team": _team_ref(teams_by_id[m.home_team_id], display_names) if m.home_team_id in teams_by_id else None,
+                    "away_team": _team_ref(teams_by_id[m.away_team_id], display_names) if m.away_team_id in teams_by_id else None,
                     "kickoff": m.kickoff.isoformat(),
                     "risk_type": adj.adjustment_type,
                     "level": level,

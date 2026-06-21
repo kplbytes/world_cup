@@ -85,3 +85,46 @@
 1. 单因子研究 → 2. 增量价值验证 → 3. 消融实验 → 4. 滚动回测 → 5. 准入评审
 
 未通过准入的因子标记为 `rejected` 或 `needs_more_data`，不得接入主程序。
+
+## 9. Version 5.0 Changes
+
+### 因子实现修复
+- **recent_form_5_opp_adjusted**: 修复为使用对手实际Elo（pre_match_elo列）进行加权，而非近似值
+- **knockout_experience**: 修复为加权计数（世界杯2x权重，洲际杯1.5x权重），而非简单计数
+- **inter_confederation_form**: 修复为计算实际跨洲对阵胜率，而非同洲/跨洲差值
+- **attack_strength / defense_strength**: 修复为使用数据驱动的动态基线，替代硬编码基线
+- **host_advantage**: 修复为包含-0.5客场东道主修正（东道主在名义客场时仍享主场优势）
+
+### 数据注入支持
+- 新增FIFA排名数据注入支持（fifa_ranking CSV）
+- 新增赔率数据注入支持（odds_data CSV）
+- 洲际映射从约100队扩展至227+队
+
+### 模型扩展
+- 新增 LightGBM 模型
+- 新增正则化逻辑回归（Regularized Logistic Regression）模型
+- 新增 CalibratedModel 包装器（概率校准）
+- 新增 AblationModel 包装器（消融实验）
+
+### 评估增强
+- 新增 Brier Skill Score 指标
+- 新增多分类 ECE（Expected Calibration Error）
+- 新增方向稳定性（Direction Stability）指标
+- 新增场景分析（Scenario Analysis）
+
+### 验证与回测
+- 新增 Walk-Forward 滚动验证
+- 新增消融研究（Ablation Study）
+- 新增按时间顺序的世界杯回测（Chronological Tournament Backtest）
+
+### 数据泄漏防护
+- 新增6个泄漏检测测试用例
+- 新增运行时泄漏验证函数（verify_no_leakage）
+
+### 性能优化
+- 向量化 MatchView 操作
+- 基于 numpy 的 Elo 回放
+- 特征计算缓存
+
+### 流水线
+- 新增统一流水线脚本（run_full_research.py）

@@ -24,6 +24,7 @@ def compute_ensemble(
     system_weight: float | None = None,
     market_weight: float | None = None,
     ai_weights_override: dict[str, float] | None = None,
+    use_adaptive: bool = True,
 ) -> dict[str, Any]:
     """Compute ensemble prediction for a match.
 
@@ -33,6 +34,7 @@ def compute_ensemble(
     3. AI predictions (if available and enabled)
 
     All weights are normalized. Missing sources cause automatic weight redistribution.
+    When use_adaptive=True, weights are adjusted based on recent prediction performance.
     """
     defaults = get_ensemble_defaults()
 
@@ -110,7 +112,7 @@ def compute_ensemble(
             "match_id": match_id,
         }
 
-    weights = _compute_weights(has_market, has_ai, len(ai_probs_list), defaults, system_weight, market_weight, ai_weights_override)
+    weights = _compute_weights(has_market, has_ai, len(ai_probs_list), defaults, system_weight, market_weight, ai_weights_override, session if use_adaptive else None)
 
     # 5. Compute ensemble probabilities
     ensemble_probs = {"home_win": 0.0, "draw": 0.0, "away_win": 0.0}
@@ -298,12 +300,30 @@ def _compute_weights(
     system_weight_override: float | None = None,
     market_weight_override: float | None = None,
     ai_weights_override: dict[str, float] | None = None,
+    session: Session | None = None,
 ) -> dict[str, float]:
-    """Compute normalized weights for all sources."""
+    """Compute normalized weights for all sources.
+
+    When session is provided, uses adaptive weights based on recent performance.
+    Otherwise falls back to static defaults.
+    """
+    # Try adaptive weights first
+    adaptive_overrides = None
+    if session is not None and system_weight_override is None and market_weight_override is None:
+        from app.services.adaptive_weights import get_adaptive_weight_overrides
+        adaptive_overrides = get_adaptive_weight_overrides(session)
+
     if has_market and has_ai:
-        sys_w = system_weight_override or defaults.get("system_weight", 0.50)
-        mkt_w = market_weight_override or defaults.get("market_weight", 0.20)
-        total_ai_w = defaults.get("total_ai_weight", 0.30)
+        if adaptive_overrides:
+            sys_w = adaptive_overrides.get("system", defaults.get("system_weight", 0.50))
+            mkt_w = adaptive_overrides.get("market", defaults.get("market_weight", 0.20))
+            total_ai_w = sum(v for k, v in adaptive_overrides.items() if k.startswith("ai_"))
+            if total_ai_w == 0:
+                total_ai_w = defaults.get("total_ai_weight", 0.30)
+        else:
+            sys_w = system_weight_override or defaults.get("system_weight", 0.50)
+            mkt_w = market_weight_override or defaults.get("market_weight", 0.20)
+            total_ai_w = defaults.get("total_ai_weight", 0.30)
     elif has_market and not has_ai:
         sys_w = defaults.get("system_weight_no_ai", 0.80)
         mkt_w = defaults.get("market_weight_no_ai", 0.20)

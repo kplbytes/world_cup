@@ -282,7 +282,7 @@ class TestV2StrengthTiers:
 
 
 class TestTeamProfileMockLabel:
-    """Test that mock team profiles are labeled in prompts."""
+    """Team profiles are display-only and must not leak into AI prompts."""
 
     def _make_request_with_mock_profile(self):
         """Create a request with mock team profile data."""
@@ -326,55 +326,48 @@ class TestTeamProfileMockLabel:
         )
 
     def test_v1_prompt_contains_seed_mock_v1(self):
-        """v1 prompt should contain seed_mock_v1 label when profile is mock."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt(req, "worldcup-ai-v1")
-        assert "seed_mock_v1" in prompt, "v1 prompt should contain seed_mock_v1 source_mode"
+        assert "disabled_display_only" in prompt
+        assert "seed_mock_v1" not in prompt
 
     def test_v2_prompt_contains_seed_mock_v1(self):
-        """v2 prompt should contain seed_mock_v1 label when profile is mock."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt_v2(req, "worldcup-ai-v2")
-        assert "seed_mock_v1" in prompt, "v2 prompt should contain seed_mock_v1 source_mode"
+        assert "disabled_display_only" in prompt
+        assert "seed_mock_v1" not in prompt
 
     def test_v1_prompt_contains_is_mock(self):
-        """v1 prompt should contain is_mock flag."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt(req, "worldcup-ai-v1")
-        assert "is_mock" in prompt, "v1 prompt should contain is_mock field"
+        assert "is_mock" not in prompt
 
     def test_v2_prompt_contains_is_mock(self):
-        """v2 prompt should contain is_mock flag."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt_v2(req, "worldcup-ai-v2")
-        assert "is_mock" in prompt, "v2 prompt should contain is_mock field"
+        assert "is_mock" not in prompt
 
     def test_v1_prompt_contains_usage_warning(self):
-        """v1 prompt should contain usage_warning for mock profiles."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt(req, "worldcup-ai-v1")
-        assert "功能验证数据" in prompt, "v1 prompt should contain usage_warning"
+        assert "功能验证数据" not in prompt
 
     def test_v2_prompt_contains_usage_warning(self):
-        """v2 prompt should contain usage_warning for mock profiles."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt_v2(req, "worldcup-ai-v2")
-        assert "功能验证数据" in prompt, "v2 prompt should contain usage_warning"
+        assert "功能验证数据" not in prompt
 
     def test_v1_prompt_has_mock_constraint_rule(self):
-        """v1 prompt should have rule about is_mock profiles."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt(req, "worldcup-ai-v1")
-        assert "is_mock=true" in prompt, "v1 prompt should have is_mock constraint rule"
+        assert "Team profiles are disabled for prediction" in prompt
 
     def test_v2_prompt_has_mock_constraint_rule(self):
-        """v2 prompt should have rule about is_mock profiles."""
         req = self._make_request_with_mock_profile()
         prompt = build_prediction_prompt_v2(req, "worldcup-ai-v2")
-        assert "is_mock=true" in prompt, "v2 prompt should have is_mock constraint rule"
+        assert "Team profiles are disabled for prediction" in prompt
 
     def test_non_mock_profile_no_warning(self):
-        """Non-mock profiles should not have usage_warning."""
         req = AIPredictionRequest(
             match_id="t-real", stage="group", group="A", knockout_round=None,
             home_team="A", away_team="B", kickoff="", venue=None, neutral_ground=True,
@@ -395,7 +388,6 @@ class TestTeamProfileMockLabel:
             away_team_profile=None,
         )
         prompt = build_prediction_prompt(req, "worldcup-ai-v1")
-        assert "seed_mock_v1" not in prompt or "is_mock" in prompt
-        # The profile should show is_mock=false, not the mock warning
         profile_section = prompt[prompt.index("Team Profiles"):]
-        assert '"is_mock": false' in profile_section or '"is_mock":False' in profile_section
+        assert "disabled_display_only" in profile_section
+        assert "遇强韧性高" not in profile_section

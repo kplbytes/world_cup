@@ -6,12 +6,18 @@ import logging
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.config import settings
 from app.db import session_scope
 from app.models import WorkflowRun, WorkflowStep
+
+# China timezone — "today" should be determined by the user's local calendar,
+# not UTC. Without this, a workflow run at 7:59 AM CST (23:59 UTC) would
+# disappear from "today's status" one minute later at 8:00 AM CST (00:00 UTC).
+_CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
 logger = logging.getLogger(__name__)
 
@@ -78,22 +84,33 @@ def get_today_status() -> dict:
     """Get today's workflow status.
 
     Returns a dict with:
-      - status: "already_run" | "partial_success" | "running" | "needs_run"
+      - status: "already_run" | "partial_success" | "failed" | "running" | "needs_run"
       - failed_steps: list of step names that failed (only when status == "partial_success")
+
+    "Today" is determined by China Standard Time (UTC+8), not UTC, so that a
+    workflow run in the early morning hours (CST) doesn't vanish at 8:00 AM CST.
     """
-    now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    now_utc = datetime.now(timezone.utc)
+    now_china = now_utc.astimezone(_CHINA_TZ)
+    today_start_china = now_china.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Convert back to UTC for DB comparison (WorkflowRun.started_at is UTC)
+    today_start_utc = today_start_china.astimezone(timezone.utc)
 
     with session_scope() as session:
         today_run = session.scalar(
             select(WorkflowRun)
-            .where(WorkflowRun.started_at >= today_start)
-            .where(WorkflowRun.status.in_(["success", "partial_success"]))
+            .where(WorkflowRun.started_at >= today_start_utc)
+            .where(WorkflowRun.status.in_(["success", "partial_success", "failed"]))
             .order_by(WorkflowRun.started_at.desc())
             .limit(1)
         )
         if today_run:
-            result_status = "partial_success" if today_run.status == "partial_success" else "already_run"
+            if today_run.status == "failed":
+                result_status = "failed"
+            elif today_run.status == "partial_success":
+                result_status = "partial_success"
+            else:
+                result_status = "already_run"
             failed_steps = []
             if result_status == "partial_success":
                 steps = list(session.scalars(
