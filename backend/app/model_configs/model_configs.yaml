@@ -18,7 +18,13 @@ elo_poisson_base:
   max_xg_delta: 3.50        # Maximum xG after adjustments
   min_xg: 0.20              # Minimum xG
   poisson_dispersion: 1.00  # Dispersion multiplier for Poisson (>1 = more variance)
-  upset_factor: 0.00        # Add to underdog tail probability
+  upset_factor: 0.00        # Add to underdog tail probability (merged into underdog_boost at runtime)
+  smart_market_blend: true   # Increase market weight when model and market disagree on direction
+  dynamic_draw_boost: true   # Apply dynamic draw calibration based on Elo closeness + market signals
+  profile_weight: 0.0        # Weight for team profile features (0 = disabled, 1 = full)
+  profile_adjust_attack_defense: false
+  profile_adjust_form: false
+  fifa_rank_weight: 0.15     # Weight for FIFA rank signal (0 = disabled)
 
 # Named model version configs
 model_versions:
@@ -43,14 +49,14 @@ model_versions:
 
   elo-poisson-v1-upset:
     _base: elo_poisson_base
-    underdog_boost: 0.03
-    upset_factor: 0.02
+    underdog_boost: 0.05   # merged: was 0.03 + upset_factor 0.02
+    upset_factor: 0.00
     description: "Boost underdog probability and tail events"
 
   elo-poisson-v1-upset-aggressive:
     _base: elo_poisson_base
-    underdog_boost: 0.06
-    upset_factor: 0.04
+    underdog_boost: 0.10   # merged: was 0.06 + upset_factor 0.04
+    upset_factor: 0.00
     favorite_dampening: 0.05
     description: "Aggressive underdog boost with mild favorite dampening"
 
@@ -97,3 +103,18 @@ model_versions:
     smart_market_blend: true
     dynamic_draw_boost: true
     description: "Research v2 aggressive: heavy odds weight (35%) + strong draw boost"
+
+  # --- V3: Profile-enhanced model ---
+  elo-poisson-v3-profile:
+    _base: elo_poisson_base
+    draw_boost: 1.08
+    favorite_dampening: 0.05
+    underdog_boost: 0.02
+    market_blend_weight: 0.25
+    smart_market_blend: true
+    dynamic_draw_boost: true
+    profile_weight: 0.15
+    profile_adjust_attack_defense: true
+    profile_adjust_form: true
+    fifa_rank_weight: 0.10
+    description: "V3: Team profile-enhanced with FIFA rank + attack/defense + form integration"

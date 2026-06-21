@@ -5,6 +5,7 @@ def explain_prediction(
     draw: float,
     away_win: float,
     strength_delta: float,
+    risk_flags: list[str] | None = None,
 ) -> str:
     if home_win >= max(draw, away_win):
         favorite = home_name
@@ -18,5 +19,8 @@ def explain_prediction(
         opening = f"模型更看好{favorite}，主要依据是综合实力差。"
     risk = "平局风险较高。" if draw >= 0.28 else "平局风险相对有限。"
     balance = "双方实力接近。" if abs(strength_delta) < 0.08 else "双方实力存在可见差距。"
-    return f"{opening}{balance}{risk}"
+    text = f"{opening}{balance}{risk}"
+    if risk_flags:
+        text += "画像提示：" + "、".join(risk_flags[:3]) + "。"
+    return text
 

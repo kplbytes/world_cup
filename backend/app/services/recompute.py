@@ -189,6 +189,7 @@ def recompute_knockout_stage(
             "market_blend_weight": 0.20,
             "smart_market_blend": True,
             "dynamic_draw_boost": True,
+            "profile_weight": 0.0,  # disabled for simulated knockout matches
         })()
 
         for match in predictable:
@@ -468,7 +469,20 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
         "market_blend_weight": 0.20,
         "smart_market_blend": True,
         "dynamic_draw_boost": True,
+        "profile_weight": 0.0,
     })()
+
+    # Load team profiles for profile-enhanced predictions
+    from app.team_profiles.service import get_team_profile
+    from app.prediction.profile_adapter import compute_profile_adjustments
+
+    _profile_enabled = getattr(_market_blend_config, 'profile_weight', 0.0) > 0
+    _profile_map: dict[str, object] = {}
+    if _profile_enabled:
+        for team in teams:
+            profile = get_team_profile(session, team.id)
+            if profile is not None:
+                _profile_map[team.id] = profile
 
     freshness, ranking_cov, provider_agree = _compute_data_context(session, teams)
     for match in matches:
@@ -496,6 +510,13 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
             if home_fifa and away_fifa:
                 fifa_rank_delta = home_fifa - away_fifa  # negative = home ranked higher
 
+        # Compute profile-derived adjustments
+        prof = {"profile_available": False}  # type: dict[str, Any]
+        if _profile_enabled:
+            home_p = _profile_map.get(match.home_team_id)
+            away_p = _profile_map.get(match.away_team_id)
+            prof = compute_profile_adjustments(home_p, away_p)
+
         base_ctx = MatchContext(
             data_freshness=freshness,
             ranking_coverage=ranking_cov,
@@ -511,6 +532,15 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
             fifa_rank_delta=fifa_rank_delta,
             is_group_stage=is_group,
             elo_closeness=elo_closeness,
+            profile_home_attack=prof.get("profile_home_attack", 0.0),
+            profile_home_defense=prof.get("profile_home_defense", 0.0),
+            profile_away_attack=prof.get("profile_away_attack", 0.0),
+            profile_away_defense=prof.get("profile_away_defense", 0.0),
+            profile_home_form=prof.get("profile_home_form", 0.0),
+            profile_away_form=prof.get("profile_away_form", 0.0),
+            profile_draw_adjustment=prof.get("profile_draw_adjustment", 0.0),
+            profile_available=prof.get("profile_available", False),
+            profile_risk_flags=prof.get("profile_risk_flags"),
         )
         base_prediction = predict_match(
             strengths[match.home_team_id],
@@ -562,6 +592,15 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
                 fifa_rank_delta=fifa_rank_delta,
                 is_group_stage=is_group,
                 elo_closeness=elo_closeness,
+                profile_home_attack=prof.get("profile_home_attack", 0.0),
+                profile_home_defense=prof.get("profile_home_defense", 0.0),
+                profile_away_attack=prof.get("profile_away_attack", 0.0),
+                profile_away_defense=prof.get("profile_away_defense", 0.0),
+                profile_home_form=prof.get("profile_home_form", 0.0),
+                profile_away_form=prof.get("profile_away_form", 0.0),
+                profile_draw_adjustment=prof.get("profile_draw_adjustment", 0.0),
+                profile_available=prof.get("profile_available", False),
+                profile_risk_flags=prof.get("profile_risk_flags"),
             )
             prediction = predict_match(
                 strengths[match.home_team_id],

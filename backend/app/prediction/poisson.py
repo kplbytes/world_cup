@@ -36,6 +36,16 @@ class MatchContext:
     fifa_rank_delta: float = 0.0        # FIFA ranking difference (home - away), negative = home ranked higher
     is_group_stage: bool = True          # Group stage has higher draw rate
     elo_closeness: float = 0.0           # 1 - |home_strength - away_strength|, higher = closer match
+    # --- Profile-enhanced fields ---
+    profile_home_attack: float = 0.0     # match: profile-derived home attack adjustment
+    profile_home_defense: float = 0.0    # match: profile-derived home defense adjustment
+    profile_away_attack: float = 0.0     # match: profile-derived away attack adjustment
+    profile_away_defense: float = 0.0    # match: profile-derived away defense adjustment
+    profile_home_form: float = 0.0       # match: profile-derived home form delta
+    profile_away_form: float = 0.0       # match: profile-derived away form delta
+    profile_draw_adjustment: float = 0.0 # match: profile-derived draw boost
+    profile_available: bool = False
+    profile_risk_flags: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -93,16 +103,35 @@ def predict_match(
     underdog_boost = getattr(config, 'underdog_boost', 0.00)
     market_blend_weight = getattr(config, 'market_blend_weight', 0.00)
     upset_factor = getattr(config, 'upset_factor', 0.00)
+    smart_blend = getattr(config, 'smart_market_blend', True)
+    dynamic_draw = getattr(config, 'dynamic_draw_boost', True)
+    profile_weight = getattr(config, 'profile_weight', 0.0)
+    fifa_rank_weight = getattr(config, 'fifa_rank_weight', 0.15)
 
     # FIFA rank delta adjustment:
     # fifa_rank_delta = home_fifa_rank - away_fifa_rank (negative = home ranked higher)
     # Research shows IC=0.472, equivalent to elo_diff. Blend as supplementary signal.
     # Normalize: rank difference of ~40 ≈ Elo strength_delta of ~0.2 (moderate gap)
-    # Weight: 15% of Elo signal (Elo is still primary, FIFA rank is supplementary)
     fifa_rank_adjustment = 0.0
     if context.fifa_rank_delta != 0.0:
         # Negative delta means home is ranked higher → positive adjustment for home
-        fifa_rank_adjustment = -context.fifa_rank_delta / 40.0 * 0.2 * 0.15
+        fifa_rank_adjustment = -context.fifa_rank_delta / 40.0 * 0.2 * fifa_rank_weight
+
+    # Profile-aware adjustments: blend profile-derived adjustments with manual/auto adjustments
+    if profile_weight > 0 and context.profile_available:
+        home_attack_total = context.home_attack_adjustment + context.profile_home_attack * profile_weight
+        home_defense_total = context.home_defense_adjustment + context.profile_home_defense * profile_weight
+        away_attack_total = context.away_attack_adjustment + context.profile_away_attack * profile_weight
+        away_defense_total = context.away_defense_adjustment + context.profile_away_defense * profile_weight
+        form_contribution = (context.profile_home_form + context.profile_away_form) * profile_weight
+        profile_draw = context.profile_draw_adjustment * profile_weight
+    else:
+        home_attack_total = context.home_attack_adjustment
+        home_defense_total = context.home_defense_adjustment
+        away_attack_total = context.away_attack_adjustment
+        away_defense_total = context.away_defense_adjustment
+        form_contribution = 0.0
+        profile_draw = 0.0
 
     strength_delta = (
         home_strength
@@ -110,13 +139,14 @@ def predict_match(
         + context.recent_form_delta
         + context.host_advantage
         + fifa_rank_adjustment
+        + form_contribution
     )
     home_xg = float(
         np.clip(
             base_goal_home
             + str_coeff_home * strength_delta
-            + context.home_attack_adjustment
-            - context.away_defense_adjustment,
+            + home_attack_total
+            - away_defense_total,
             min_xg,
             max_xg,
         )
@@ -125,8 +155,8 @@ def predict_match(
         np.clip(
             base_goal_away
             - str_coeff_away * strength_delta
-            + context.away_attack_adjustment
-            - context.home_defense_adjustment,
+            + away_attack_total
+            - home_defense_total,
             min_xg,
             max_xg,
         )
@@ -157,8 +187,7 @@ def predict_match(
     # When teams are closely matched (elo_closeness > 0.85) or market signals high draw,
     # apply additional draw boost beyond the static draw_boost parameter.
     # This is based on findings that draw rate in WC group stage is ~37.5% vs model's ~20%.
-    dynamic_draw_boost = getattr(config, 'dynamic_draw_boost', True)
-    if dynamic_draw_boost and draw > 0:
+    if dynamic_draw and draw > 0:
         extra_draw = 0.0
 
         # Factor 1: Elo closeness — when teams are close, draws are more likely
@@ -189,6 +218,16 @@ def predict_match(
             total = home_win + draw + away_win
             home_win, draw, away_win = home_win / total, draw / total, away_win / total
 
+    # Profile-derived draw adjustment (from team stability matchups)
+    if profile_draw > 0 and draw > 0:
+        draw += profile_draw
+        win_total = home_win + away_win
+        if win_total > 0:
+            home_win -= profile_draw * (home_win / win_total)
+            away_win -= profile_draw * (away_win / win_total)
+        total = home_win + draw + away_win
+        home_win, draw, away_win = home_win / total, draw / total, away_win / total
+
     # Apply favorite_dampening: reduce the gap between max prob and 1/3
     if favorite_dampening > 0:
         probs = [home_win, draw, away_win]
@@ -211,21 +250,13 @@ def predict_match(
             total = home_win + draw + away_win
             home_win, draw, away_win = home_win / total, draw / total, away_win / total
 
-    # Apply underdog_boost: add probability to the weaker side
-    if underdog_boost > 0:
+    # Apply combined underdog adjustment (merges underdog_boost + upset_factor)
+    combined_underdog = underdog_boost + upset_factor
+    if combined_underdog > 0:
         if home_win <= away_win:
-            home_win += underdog_boost
+            home_win += combined_underdog
         else:
-            away_win += underdog_boost
-        total = home_win + draw + away_win
-        home_win, draw, away_win = home_win / total, draw / total, away_win / total
-
-    # Apply upset_factor: add to underdog tail probability
-    if upset_factor > 0:
-        if home_win <= away_win:
-            home_win += upset_factor
-        else:
-            away_win += upset_factor
+            away_win += combined_underdog
         total = home_win + draw + away_win
         home_win, draw, away_win = home_win / total, draw / total, away_win / total
 
@@ -235,7 +266,6 @@ def predict_match(
         # When market and model disagree significantly, increase market weight
         # because odds data has proven 8.7% Brier improvement over pure Elo+Poisson
         adaptive_weight = market_blend_weight
-        smart_blend = getattr(config, 'smart_market_blend', True)
         if smart_blend:
             model_pred = max(home_win, draw, away_win)
             market_pred = max(
@@ -304,6 +334,7 @@ def predict_match(
             draw,
             away_win,
             strength_delta,
+            risk_flags=context.profile_risk_flags,
         ),
         model_version=model_ver,
     )

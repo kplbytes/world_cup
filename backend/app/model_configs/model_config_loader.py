@@ -36,6 +36,14 @@ class ModelConfig:
     min_xg: float = 0.20
     poisson_dispersion: float = 1.00
     upset_factor: float = 0.00
+    # Research-enhanced fields
+    smart_market_blend: bool = True
+    dynamic_draw_boost: bool = True
+    # Profile integration fields
+    profile_weight: float = 0.0
+    profile_adjust_attack_defense: bool = False
+    profile_adjust_form: bool = False
+    fifa_rank_weight: float = 0.15
 
 
 # Singleton cache
@@ -82,6 +90,12 @@ def load_configs(path: Path | None = None) -> dict[str, ModelConfig]:
             min_xg=float(merged.get("min_xg", 0.20)),
             poisson_dispersion=float(merged.get("poisson_dispersion", 1.00)),
             upset_factor=float(merged.get("upset_factor", 0.00)),
+            smart_market_blend=bool(merged.get("smart_market_blend", True)),
+            dynamic_draw_boost=bool(merged.get("dynamic_draw_boost", True)),
+            profile_weight=float(merged.get("profile_weight", 0.0)),
+            profile_adjust_attack_defense=bool(merged.get("profile_adjust_attack_defense", False)),
+            profile_adjust_form=bool(merged.get("profile_adjust_form", False)),
+            fifa_rank_weight=float(merged.get("fifa_rank_weight", 0.15)),
         )
 
     if path is None:
