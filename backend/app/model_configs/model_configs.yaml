@@ -4,10 +4,10 @@
 
 elo_poisson_base:
   elo_scale: 400            # Controls how Elo differences translate to strength gaps
-  base_goal_mean_home: 1.25 # Base expected goals for home team
-  base_goal_mean_away: 1.10 # Base expected goals for away team
-  strength_coeff_home: 0.90 # How much strength delta affects home xG
-  strength_coeff_away: 0.75 # How much strength delta affects away xG (negative direction)
+  base_goal_mean_home: 1.55 # Base expected goals for home team (calibrated to WC 2026 avg 3.03 goals/match)
+  base_goal_mean_away: 1.35 # Base expected goals for away team
+  strength_coeff_home: 1.20 # How much strength delta affects home xG (increased for WC variance)
+  strength_coeff_away: 1.00 # How much strength delta affects away xG
   home_advantage: 0.0       # Neutral venue = 0
   draw_boost: 1.00          # Multiplier on draw probability after Poisson (1.00 = no boost)
   favorite_dampening: 0.00  # Reduce max prob by this factor * (max_prob - 0.33)
@@ -15,7 +15,7 @@ elo_poisson_base:
   recent_form_weight: 0.0   # Weight for recent form delta
   market_blend_weight: 0.00 # Blend with market odds (0 = pure model, 1 = pure market)
   numerical_adjustment_weight: 1.00  # Scale factor for numerical adjustments
-  max_xg_delta: 3.50        # Maximum xG after adjustments
+  max_xg_delta: 4.50        # Maximum xG after adjustments (increased for WC high scores)
   min_xg: 0.20              # Minimum xG
   poisson_dispersion: 1.00  # Dispersion multiplier for Poisson (>1 = more variance)
   upset_factor: 0.00        # Add to underdog tail probability (merged into underdog_boost at runtime)
@@ -117,4 +117,5 @@ model_versions:
     profile_adjust_attack_defense: true
     profile_adjust_form: true
     fifa_rank_weight: 0.10
-    description: "V3: Team profile-enhanced with FIFA rank + attack/defense + form integration"
+    poisson_dispersion: 1.10
+    description: "V3: Profile-enhanced + calibrated xG + dispersion 1.1"

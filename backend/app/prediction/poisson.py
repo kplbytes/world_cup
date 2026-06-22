@@ -91,13 +91,13 @@ def predict_match(
     if not isfinite(home_strength) or not isfinite(away_strength):
         raise ValueError("team strengths must be finite")
 
-    # Extract config parameters with defaults
-    base_goal_home = getattr(config, 'base_goal_mean_home', 1.25)
-    base_goal_away = getattr(config, 'base_goal_mean_away', 1.10)
-    str_coeff_home = getattr(config, 'strength_coeff_home', 0.90)
-    str_coeff_away = getattr(config, 'strength_coeff_away', 0.75)
+    # Extract config parameters with defaults (calibrated to WC 2026 avg 3.03 goals/match)
+    base_goal_home = getattr(config, 'base_goal_mean_home', 1.55)
+    base_goal_away = getattr(config, 'base_goal_mean_away', 1.35)
+    str_coeff_home = getattr(config, 'strength_coeff_home', 1.20)
+    str_coeff_away = getattr(config, 'strength_coeff_away', 1.00)
     min_xg = getattr(config, 'min_xg', 0.20)
-    max_xg = getattr(config, 'max_xg', 3.50)
+    max_xg = getattr(config, 'max_xg', 4.50)
     draw_boost = getattr(config, 'draw_boost', 1.00)
     favorite_dampening = getattr(config, 'favorite_dampening', 0.00)
     underdog_boost = getattr(config, 'underdog_boost', 0.00)
@@ -107,6 +107,7 @@ def predict_match(
     dynamic_draw = getattr(config, 'dynamic_draw_boost', True)
     profile_weight = getattr(config, 'profile_weight', 0.0)
     fifa_rank_weight = getattr(config, 'fifa_rank_weight', 0.15)
+    poisson_dispersion = getattr(config, 'poisson_dispersion', 1.0)
 
     # FIFA rank delta adjustment:
     # fifa_rank_delta = home_fifa_rank - away_fifa_rank (negative = home ranked higher)
@@ -161,8 +162,8 @@ def predict_match(
             max_xg,
         )
     )
-    home_goals = _goal_probabilities(home_xg)
-    away_goals = _goal_probabilities(away_xg)
+    home_goals = _goal_probabilities(home_xg, poisson_dispersion)
+    away_goals = _goal_probabilities(away_xg, poisson_dispersion)
     matrix = np.outer(home_goals, away_goals)
 
     home_win = float(np.tril(matrix, k=-1).sum())
@@ -362,8 +363,20 @@ def blend_with_market(
     return blended
 
 
-def _goal_probabilities(expected_goals: float) -> np.ndarray:
+def _goal_probabilities(expected_goals: float, dispersion: float = 1.0) -> np.ndarray:
+    """Compute goal probabilities with optional dispersion adjustment.
+
+    dispersion = 1.0: standard Poisson (no adjustment)
+    dispersion > 1.0: flatter distribution (more extreme scores)
+    dispersion < 1.0: sharper distribution (fewer extreme scores)
+    """
     exact = poisson.pmf(np.arange(_MAX_EXACT_GOALS + 1), expected_goals)
     tail = max(0.0, 1.0 - float(exact.sum()))
     values = np.append(exact, tail)
-    return values / values.sum()
+
+    # Apply dispersion: power transform to flatten/sharpen the distribution
+    if dispersion != 1.0:
+        values = values ** (1.0 / dispersion)
+        values = values / values.sum()
+
+    return values

@@ -473,6 +473,12 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
         "profile_adjust_attack_defense": True,
         "profile_adjust_form": True,
         "fifa_rank_weight": 0.10,
+        "base_goal_mean_home": 1.55,
+        "base_goal_mean_away": 1.35,
+        "strength_coeff_home": 1.20,
+        "strength_coeff_away": 1.00,
+        "poisson_dispersion": 1.10,
+        "max_xg": 4.50,
     })()
 
     # Load team profiles for profile-enhanced predictions
