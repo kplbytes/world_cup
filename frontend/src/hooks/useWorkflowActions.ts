@@ -11,6 +11,11 @@ import {
 import type { WorkflowStatus, WorkflowRunInfo, ButtonState } from "../types";
 import { AUTO_DAILY_OPEN_PARAMS } from "../utils/workflow";
 
+// Module-level flag: shared across all useWorkflowActions instances so that
+// multiple components (DailyDashboard, LocalWorkflowCenter) mounting in the
+// same page session don't each fire their own daily-open trigger.
+let _autoDailyOpenTriggered = false;
+
 interface UseWorkflowActionsOptions {
   /** Number of recent workflow runs to fetch (default 5) */
   runsLimit?: number;
@@ -21,7 +26,8 @@ interface UseWorkflowActionsOptions {
 export function useWorkflowActions(options: UseWorkflowActionsOptions = {}) {
   const { runsLimit = 5, extraInvalidateKeys = [] } = options;
   const queryClient = useQueryClient();
-  const autoTriggered = useRef(false);
+  // Keep the ref for backward compatibility, but sync with the module-level flag.
+  const autoTriggered = useRef(_autoDailyOpenTriggered);
 
   const statusQuery = useQuery({
     queryKey: ["workflow-status"],
@@ -65,8 +71,13 @@ export function useWorkflowActions(options: UseWorkflowActionsOptions = {}) {
 
   useEffect(() => {
     if (autoTriggered.current) return;
+    if (_autoDailyOpenTriggered) {
+      autoTriggered.current = true;
+      return;
+    }
     if (statusQuery.data?.recommended_action !== "run_daily_open_workflow") return;
     autoTriggered.current = true;
+    _autoDailyOpenTriggered = true;
     dailyOpenMutation.mutate(AUTO_DAILY_OPEN_PARAMS);
   }, [statusQuery.data?.recommended_action]);
 

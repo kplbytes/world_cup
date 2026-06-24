@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+import threading
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
@@ -32,6 +33,13 @@ from app.simulation.qualification import (
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+# Process-level mutex: prevents concurrent recompute_all executions from
+# exhausting the SQLAlchemy connection pool (SQLite single-writer limitation).
+# When a recompute is already running, subsequent callers skip and return the
+# current active revision instead of queueing on the pool.
+_recompute_lock = threading.Lock()
 
 
 def recompute_group_stage(
@@ -359,29 +367,45 @@ def recompute_all(
     iterations: int = 50_000,
     seed: int = 20260613,
 ) -> DashboardRevision:
-    """Full recompute: group stage, knockout stage, tournament projection, snapshots."""
+    """Full recompute: group stage, knockout stage, tournament projection, snapshots.
+
+    Process-level mutex prevents concurrent executions. If another recompute is
+    already running, this call skips and returns the current active revision —
+    the data remains consistent, just not freshly recomputed by this caller.
+    """
+    if not _recompute_lock.acquire(blocking=False):
+        logger.warning("recompute_all skipped: another recompute is already running")
+        return session.scalar(
+            select(DashboardRevision)
+            .where(DashboardRevision.active.is_(True))
+            .order_by(DashboardRevision.id.desc())
+            .limit(1)
+        )
+
     import time
     start = time.monotonic()
     logger.info("recompute_all started")
+    try:
+        # Step 1: Group stage
+        revision = recompute_group_stage(session, iterations=iterations, seed=seed)
 
-    # Step 1: Group stage
-    revision = recompute_group_stage(session, iterations=iterations, seed=seed)
+        # Step 2: Knockout stage (may return None if no knockout matches yet)
+        recompute_knockout_stage(session, iterations=iterations, seed=seed)
 
-    # Step 2: Knockout stage (may return None if no knockout matches yet)
-    recompute_knockout_stage(session, iterations=iterations, seed=seed)
+        # Step 3: Tournament projection
+        recompute_tournament_projection(session, iterations=iterations, seed=seed)
 
-    # Step 3: Tournament projection
-    recompute_tournament_projection(session, iterations=iterations, seed=seed)
+        logger.info("recompute_all completed in %.2fs, revision_id=%s", time.monotonic() - start, revision.id)
 
-    logger.info("recompute_all completed in %.2fs, revision_id=%s", time.monotonic() - start, revision.id)
+        # Invalidate dashboard cache so next request sees fresh data
+        from app.services.dashboard import _dashboard_cache, _dashboard_cache_ts
+        import app.services.dashboard as _dash_mod
+        _dash_mod._dashboard_cache = None
+        _dash_mod._dashboard_cache_ts = 0.0
 
-    # Invalidate dashboard cache so next request sees fresh data
-    from app.services.dashboard import _dashboard_cache, _dashboard_cache_ts
-    import app.services.dashboard as _dash_mod
-    _dash_mod._dashboard_cache = None
-    _dash_mod._dashboard_cache_ts = 0.0
-
-    return revision
+        return revision
+    finally:
+        _recompute_lock.release()
 
 
 def compute_standings(session, revision, groups, completed):

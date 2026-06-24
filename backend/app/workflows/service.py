@@ -957,15 +957,16 @@ def run_daily_open_workflow(
     trigger_source: str = "auto_on_open",
 ) -> int:
     """Run the daily open workflow."""
-    run_id = _create_run("daily_open", trigger_source, {
-        "hours": hours, "since_hours": since_hours, "limit": limit,
-        "with_ai": with_ai, "with_ensemble": with_ensemble,
-        "auto_lock": auto_lock, "only_missing": only_missing,
-    })
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        run_id = _create_run("daily_open", trigger_source, {
+            "hours": hours, "since_hours": since_hours, "limit": limit,
+            "with_ai": with_ai, "with_ensemble": with_ensemble,
+            "auto_lock": auto_lock, "only_missing": only_missing,
+        })
+        if not try_start_workflow(run_id):
+            return -1
+
         _run_refresh_step(run_id)
         _run_recompute_step(run_id, "post_match_recompute")
         _run_score_step(run_id)
@@ -992,7 +993,9 @@ def run_daily_open_workflow(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"daily_open workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1006,14 +1009,15 @@ def run_pre_match_workflow(
     trigger_source: str = "manual_button",
 ) -> int:
     """Run the pre-match workflow."""
-    run_id = _create_run("pre_match", trigger_source, {
-        "hours": hours, "limit": limit, "with_ai": with_ai,
-        "with_ensemble": with_ensemble, "only_missing": only_missing,
-    })
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        run_id = _create_run("pre_match", trigger_source, {
+            "hours": hours, "limit": limit, "with_ai": with_ai,
+            "with_ensemble": with_ensemble, "only_missing": only_missing,
+        })
+        if not try_start_workflow(run_id):
+            return -1
+
         _update_step(run_id, "refresh_results", "skipped", {"reason": "not_in_pre_match"})
         _update_step(run_id, "post_match_recompute", "skipped", {"reason": "not_in_pre_match"})
         _update_step(run_id, "post_match_score", "skipped", {"reason": "not_in_pre_match"})
@@ -1036,7 +1040,9 @@ def run_pre_match_workflow(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"pre_match workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1046,11 +1052,12 @@ def run_post_match_workflow(
     trigger_source: str = "manual_button",
 ) -> int:
     """Run the post-match workflow."""
-    run_id = _create_run("post_match", trigger_source, {"since_hours": since_hours})
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        run_id = _create_run("post_match", trigger_source, {"since_hours": since_hours})
+        if not try_start_workflow(run_id):
+            return -1
+
         _run_refresh_step(run_id)
         _run_recompute_step(run_id, "post_match_recompute")
         _run_score_step(run_id)
@@ -1064,7 +1071,9 @@ def run_post_match_workflow(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"post_match workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1074,11 +1083,12 @@ def run_lock_workflow(
     trigger_source: str = "manual_button",
 ) -> int:
     """Run the lock workflow."""
-    run_id = _create_run("lock", trigger_source, {"window_hours": window_hours})
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        run_id = _create_run("lock", trigger_source, {"window_hours": window_hours})
+        if not try_start_workflow(run_id):
+            return -1
+
         for step in ["refresh_results", "post_match_recompute", "post_match_score",
                       "pre_match_recompute", "ai_prediction", "ensemble_generation"]:
             _update_step(run_id, step, "skipped", {"reason": "not_in_lock"})
@@ -1090,7 +1100,9 @@ def run_lock_workflow(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"lock workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1106,15 +1118,16 @@ def run_full_workflow(
     trigger_source: str = "manual_button",
 ) -> int:
     """Run the full workflow."""
-    run_id = _create_run("full", trigger_source, {
-        "hours": hours, "since_hours": since_hours, "limit": limit,
-        "with_ai": with_ai, "with_ensemble": with_ensemble,
-        "auto_lock": auto_lock, "only_missing": only_missing,
-    })
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        run_id = _create_run("full", trigger_source, {
+            "hours": hours, "since_hours": since_hours, "limit": limit,
+            "with_ai": with_ai, "with_ensemble": with_ensemble,
+            "auto_lock": auto_lock, "only_missing": only_missing,
+        })
+        if not try_start_workflow(run_id):
+            return -1
+
         _run_refresh_step(run_id)
         _run_recompute_step(run_id, "post_match_recompute")
         _run_score_step(run_id)
@@ -1141,7 +1154,9 @@ def run_full_workflow(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"full workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1160,16 +1175,17 @@ async def run_daily_open_workflow_async(
     trigger_source: str = "auto_on_open",
 ) -> int:
     """Async version of run_daily_open_workflow for use within FastAPI async context."""
-    from app.workflows.state import try_start_workflow
-    run_id = _create_run("daily_open", trigger_source, {
-        "hours": hours, "since_hours": since_hours, "limit": limit,
-        "with_ai": with_ai, "with_ensemble": with_ensemble,
-        "auto_lock": auto_lock, "only_missing": only_missing,
-    })
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        from app.workflows.state import try_start_workflow
+        run_id = _create_run("daily_open", trigger_source, {
+            "hours": hours, "since_hours": since_hours, "limit": limit,
+            "with_ai": with_ai, "with_ensemble": with_ensemble,
+            "auto_lock": auto_lock, "only_missing": only_missing,
+        })
+        if not try_start_workflow(run_id):
+            return -1
+
         _run_refresh_step(run_id)
         _run_recompute_step(run_id, "post_match_recompute")
         _run_score_step(run_id)
@@ -1196,7 +1212,9 @@ async def run_daily_open_workflow_async(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"daily_open async workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1210,15 +1228,16 @@ async def run_pre_match_workflow_async(
     trigger_source: str = "manual_button",
 ) -> int:
     """Async version of run_pre_match_workflow for use within FastAPI async context."""
-    from app.workflows.state import try_start_workflow
-    run_id = _create_run("pre_match", trigger_source, {
-        "hours": hours, "limit": limit, "with_ai": with_ai,
-        "with_ensemble": with_ensemble, "only_missing": only_missing,
-    })
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        from app.workflows.state import try_start_workflow
+        run_id = _create_run("pre_match", trigger_source, {
+            "hours": hours, "limit": limit, "with_ai": with_ai,
+            "with_ensemble": with_ensemble, "only_missing": only_missing,
+        })
+        if not try_start_workflow(run_id):
+            return -1
+
         _update_step(run_id, "refresh_results", "skipped", {"reason": "not_in_pre_match"})
         _update_step(run_id, "post_match_recompute", "skipped", {"reason": "not_in_pre_match"})
         _update_step(run_id, "post_match_score", "skipped", {"reason": "not_in_pre_match"})
@@ -1241,7 +1260,9 @@ async def run_pre_match_workflow_async(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"pre_match async workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
 
@@ -1257,16 +1278,17 @@ async def run_full_workflow_async(
     trigger_source: str = "manual_button",
 ) -> int:
     """Async version of run_full_workflow for use within FastAPI async context."""
-    from app.workflows.state import try_start_workflow
-    run_id = _create_run("full", trigger_source, {
-        "hours": hours, "since_hours": since_hours, "limit": limit,
-        "with_ai": with_ai, "with_ensemble": with_ensemble,
-        "auto_lock": auto_lock, "only_missing": only_missing,
-    })
-    if not try_start_workflow(run_id):
-        return -1
-
+    run_id = -1
     try:
+        from app.workflows.state import try_start_workflow
+        run_id = _create_run("full", trigger_source, {
+            "hours": hours, "since_hours": since_hours, "limit": limit,
+            "with_ai": with_ai, "with_ensemble": with_ensemble,
+            "auto_lock": auto_lock, "only_missing": only_missing,
+        })
+        if not try_start_workflow(run_id):
+            return -1
+
         _run_refresh_step(run_id)
         _run_recompute_step(run_id, "post_match_recompute")
         _run_score_step(run_id)
@@ -1293,6 +1315,8 @@ async def run_full_workflow_async(
         overall = _determine_overall_status(run_id)
         _finish_run(run_id, overall)
     except Exception as e:
-        _finish_run(run_id, "failed", error=str(e))
+        logger.error(f"full async workflow failed: {e}")
+        if run_id >= 0:
+            _finish_run(run_id, "failed", error=str(e))
 
     return run_id
