@@ -144,6 +144,22 @@ def _is_live_window(session: Session, now: datetime | None = None) -> bool:
     return recent_match is not None
 
 
+def _repair_stuck_workflows(session: Session) -> None:
+    """Mark any 'running' workflows from a previous unclean shutdown as failed."""
+    now = datetime.now(timezone.utc)
+    stuck_steps = session.execute(
+        text("UPDATE workflow_steps SET status='failed', error_message='Server restarted - step interrupted', finished_at=:now WHERE status='running'"),
+        {"now": now.isoformat()},
+    )
+    stuck_runs = session.execute(
+        text("UPDATE workflow_runs SET status='failed', error_message='Server restarted - workflow interrupted', finished_at=:now WHERE status='running'"),
+        {"now": now.isoformat()},
+    )
+    total = (stuck_steps.rowcount or 0) + (stuck_runs.rowcount or 0)
+    if total:
+        logger.warning("repaired %d stuck workflow records from previous session", total)
+
+
 def initialize_database() -> None:
     create_database()
     with session_scope() as session:
@@ -171,6 +187,9 @@ def initialize_database() -> None:
             )
         repair_invalid_prediction_locks(session)
         lock_due_predictions(session)
+
+        # Repair stuck workflows from previous unclean shutdown
+        _repair_stuck_workflows(session)
 
 
 def create_app(start_background: bool = True) -> FastAPI:
