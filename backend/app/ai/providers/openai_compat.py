@@ -39,6 +39,7 @@ class OpenAICompatProvider(AIProviderBase):
     def __init__(self, provider_config: AIProviderConfig) -> None:
         super().__init__(provider_config)
         self._client: httpx.AsyncClient | None = None
+        self._clients_by_loop: dict[asyncio.AbstractEventLoop | None, httpx.AsyncClient] = {}
 
     def _get_client(self, timeout: float) -> httpx.AsyncClient:
         """Get or create an AsyncClient for the current event loop.
@@ -47,15 +48,28 @@ class OpenAICompatProvider(AIProviderBase):
         "bound to a different event loop" errors in long-lived local apps where
         FastAPI requests, background jobs, and direct asyncio.run() calls mix.
         """
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=timeout)
-        return self._client
+        try:
+            loop_key = asyncio.get_running_loop()
+        except RuntimeError:
+            loop_key = None
+
+        client = self._clients_by_loop.get(loop_key)
+        if client is None or client.is_closed:
+            client = httpx.AsyncClient(timeout=timeout)
+            self._clients_by_loop[loop_key] = client
+        self._client = client
+        return client
 
     async def close(self) -> None:
         """Close the HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
-            self._client = None
+        clients = {id(client): client for client in self._clients_by_loop.values()}
+        if self._client is not None:
+            clients[id(self._client)] = self._client
+        for client in clients.values():
+            if not client.is_closed:
+                await client.aclose()
+        self._clients_by_loop.clear()
+        self._client = None
 
     async def predict(
         self,

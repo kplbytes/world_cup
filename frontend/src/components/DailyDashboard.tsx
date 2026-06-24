@@ -18,6 +18,7 @@ import type { StatusItem } from "./ui/StatusStrip";
 import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
 import EmptyState from "./ui/EmptyState";
+import WorkflowProgressBar from "./ui/WorkflowProgressBar";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -326,6 +327,11 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
       {/* A. Status Summary Strip */}
       <SectionCard title="今日状态" badge={status ? formatChinaTimeShort(status.last_run_at ?? new Date().toISOString()) : "加载中"}>
         <StatusStrip items={statusItems} />
+        {status?.last_run?.progress ? (
+          <div style={{ marginTop: 12 }}>
+            <WorkflowProgressBar progress={status.last_run.progress} status={status.last_run.status} />
+          </div>
+        ) : null}
       </SectionCard>
 
       {/* B. Next Step Suggestion */}
@@ -347,7 +353,7 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
           )}
           {status?.next_action?.action === "run_ai_prediction" && (
             <button
-              onClick={() => preMatchMutation.mutate({ include_ai: true })}
+              onClick={() => preMatchMutation.mutate({ with_ai: true })}
               disabled={preMatchMutation.isPending || !aiBtn.enabled}
               style={{
                 padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
@@ -388,7 +394,7 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
             loading={preMatchMutation.isPending}
             estimatedCalls={aiBtn.estimated_calls}
             warningText={aiBtn.needs_ai && aiBtn.needs_ai > 0 ? `将处理 ${aiBtn.needs_ai} 场比赛，调用外部 API 产生费用` : undefined}
-            onClick={() => preMatchMutation.mutate({ include_ai: true })}
+            onClick={() => preMatchMutation.mutate({ with_ai: true })}
             variant="warning"
           />
           <ActionButton
@@ -407,10 +413,10 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
         {postMatchMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>同步赛果失败：{postMatchMutation.error instanceof Error ? postMatchMutation.error.message : "未知错误"}</div>}
         {preMatchMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>AI 预测失败：{preMatchMutation.error instanceof Error ? preMatchMutation.error.message : "未知错误"}</div>}
         {fullMutation.isError && <div style={{ color: "var(--risk-red)", fontSize: 12, marginTop: 8, padding: "8px 12px", background: "rgba(255,107,107,0.08)", borderLeft: "2px solid var(--risk-red)" }}>全流程失败：{fullMutation.error instanceof Error ? fullMutation.error.message : "未知错误"}</div>}
-        {dailyOpenMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>数据更新完成</div>}
-        {postMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>赛果同步完成</div>}
-        {preMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>AI 预测完成</div>}
-        {fullMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>全流程完成</div>}
+        {dailyOpenMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>数据更新已开始</div>}
+        {postMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>赛果同步已开始</div>}
+        {preMatchMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>AI 预测已开始</div>}
+        {fullMutation.isSuccess && <div style={{ color: "var(--success-green)", fontSize: 12, marginTop: 8 }}>全流程已开始</div>}
       </SectionCard>
 
       {/* C. Today's Key Matches */}

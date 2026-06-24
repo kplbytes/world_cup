@@ -7,9 +7,13 @@ import type { WorkflowRunInfo, ButtonState } from "../types";
 import { formatChinaTimeShort } from "../utils/time";
 import { statusDot, fmtDuration } from "../utils/workflow";
 import { useWorkflowActions } from "../hooks/useWorkflowActions";
+import WorkflowProgressBar from "./ui/WorkflowProgressBar";
 
 const STATUS_COLOR: Record<string, string> = {
   completed: "var(--mint)",
+  success: "var(--mint)",
+  partial_success: "var(--amber)",
+  skipped: "var(--muted)",
   running: "var(--amber)",
   failed: "var(--coral)",
   pending: "var(--muted)",
@@ -17,6 +21,9 @@ const STATUS_COLOR: Record<string, string> = {
 
 const STATUS_LABEL: Record<string, string> = {
   completed: "已完成",
+  success: "已完成",
+  partial_success: "部分完成",
+  skipped: "已跳过",
   running: "运行中",
   failed: "失败",
   pending: "等待中",
@@ -230,7 +237,7 @@ export default function LocalWorkflowCenter() {
           )}
           {postMatchMutation.data && (
             <div style={{ color: "var(--mint)", fontSize: 12, marginTop: 8 }}>
-              复盘完成
+              复盘已开始
             </div>
           )}
         </div>
@@ -470,7 +477,7 @@ export default function LocalWorkflowCenter() {
           </div>
           <button
             disabled={anyRunningAll || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled)}
-            onClick={() => dailyOpenMutation.mutate({ include_ai: true })}
+            onClick={() => preMatchMutation.mutate({ with_ai: true })}
             style={{
               border: 0,
               background: "var(--amber)",
@@ -481,22 +488,22 @@ export default function LocalWorkflowCenter() {
               opacity: anyRunningAll || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled) ? 0.55 : 1,
             }}
           >
-            {dailyOpenMutation.isPending
+            {preMatchMutation.isPending
               ? "AI 预测运行中..."
               : "运行 AI 预测（含费用）"}
           </button>
           <ButtonHelper btn={btnStates?.ai_prediction} loading={anyRunningAll} />
-          {dailyOpenMutation.isError && (
+          {preMatchMutation.isError && (
             <div style={{ color: "var(--coral)", fontSize: 12, marginTop: 8 }}>
               错误:{" "}
-              {dailyOpenMutation.error instanceof Error
-                ? dailyOpenMutation.error.message
+              {preMatchMutation.error instanceof Error
+                ? preMatchMutation.error.message
                 : "未知错误"}
             </div>
           )}
-          {dailyOpenMutation.data && (
+          {preMatchMutation.data && (
             <div style={{ color: "var(--mint)", fontSize: 12, marginTop: 8 }}>
-              AI 预测完成
+              AI 预测已开始
             </div>
           )}
         </div>
@@ -588,7 +595,7 @@ export default function LocalWorkflowCenter() {
           )}
           {lockMutation.data && (
             <div style={{ color: "var(--mint)", fontSize: 12, marginTop: 8 }}>
-              锁定完成
+              锁定已开始
             </div>
           )}
         </div>
@@ -645,7 +652,7 @@ export default function LocalWorkflowCenter() {
           )}
           {fullMutation.data && (
             <div style={{ color: "var(--mint)", fontSize: 12, marginTop: 8 }}>
-              全流程完成
+              全流程已开始
             </div>
           )}
         </div>
@@ -730,6 +737,11 @@ export default function LocalWorkflowCenter() {
                 {run.error_message}
               </div>
             )}
+            {run.progress && (
+              <div style={{ marginBottom: 8 }}>
+                <WorkflowProgressBar progress={run.progress} status={run.status} />
+              </div>
+            )}
             {run.steps?.length > 0 && (
               <div
                 style={{
@@ -746,7 +758,7 @@ export default function LocalWorkflowCenter() {
                       padding: "2px 8px",
                       borderRadius: 2,
                       background:
-                        step.status === "completed"
+                        step.status === "completed" || step.status === "success"
                           ? "oklch(34% .025 160 / .3)"
                           : step.status === "failed"
                             ? "oklch(34% .025 30 / .3)"
@@ -754,7 +766,7 @@ export default function LocalWorkflowCenter() {
                               ? "oklch(34% .025 80 / .3)"
                               : "oklch(34% .025 160 / .15)",
                       color:
-                        step.status === "completed"
+                        step.status === "completed" || step.status === "success"
                           ? "var(--mint)"
                           : step.status === "failed"
                             ? "var(--coral)"

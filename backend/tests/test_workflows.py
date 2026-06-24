@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import time
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -10,8 +11,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.db import create_database, session_scope
+from app.logging_config import workflow_run_id_var
 from app.main import create_app
 from app.models import WorkflowRun, WorkflowStep
+from app.workflows import service as workflow_service
 from app.workflows.state import set_current_run, is_workflow_running, get_current_run_id
 
 
@@ -34,6 +37,20 @@ def client(tmp_path):
     return TestClient(create_app(start_background=False))
 
 
+def wait_for_run(client: TestClient, run_id: int, timeout: float = 2.0) -> dict:
+    """Poll a background workflow until it leaves running state."""
+    deadline = time.monotonic() + timeout
+    last = {}
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/workflows/runs/{run_id}")
+        assert response.status_code == 200
+        last = response.json()
+        if last["status"] in ("success", "partial_success", "failed"):
+            return last
+        time.sleep(0.02)
+    return last
+
+
 # ---------------------------------------------------------------------------
 # 1. /api/workflows/status returns correct structure
 # ---------------------------------------------------------------------------
@@ -48,6 +65,46 @@ def test_workflow_status_returns_correct_structure(client):
     assert "upcoming_matches" in data
     assert "lock_status" in data
     assert data["today_status"] in ("needs_run", "already_run", "running")
+
+
+def test_workflow_status_ai_skipped_counts_only_today(client):
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+    now = datetime.now(timezone.utc)
+    with session_scope() as session:
+        old_run = WorkflowRun(
+            workflow_type="pre_match",
+            trigger_source="manual_button",
+            status="success",
+            started_at=yesterday,
+        )
+        today_run = WorkflowRun(
+            workflow_type="pre_match",
+            trigger_source="manual_button",
+            status="success",
+            started_at=now,
+        )
+        session.add_all([old_run, today_run])
+        session.flush()
+        session.add_all([
+            WorkflowStep(
+                workflow_run_id=old_run.id,
+                step_name="ai_prediction",
+                status="success",
+                summary_json={"skipped": 9},
+                finished_at=yesterday,
+            ),
+            WorkflowStep(
+                workflow_run_id=today_run.id,
+                step_name="ai_prediction",
+                status="success",
+                summary_json={"skipped": 2},
+                finished_at=now,
+            ),
+        ])
+
+    response = client.get("/api/workflows/status")
+    assert response.status_code == 200
+    assert response.json()["ai_stats"]["today_ai_skipped"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -65,13 +122,14 @@ def test_daily_open_can_be_triggered(client):
         data = response.json()
         assert data["status"] == "started"
         assert data["run_id"] > 0
+        assert data["progress"]["total_steps"] > 0
+        assert data["progress"]["percent"] == 0
 
         # Verify the run was recorded
-        with session_scope() as session:
-            run = session.get(WorkflowRun, data["run_id"])
-            assert run is not None
-            assert run.workflow_type == "daily_open"
-            assert run.status in ("success", "partial_success", "failed")
+        run = wait_for_run(client, data["run_id"])
+        assert run["workflow_type"] == "daily_open"
+        assert run["status"] in ("success", "partial_success", "failed")
+        assert "percent" in run["progress"]
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +160,8 @@ def test_daily_open_default_does_not_run_ai(client):
         data = response.json()
         if data["status"] == "started":
             run_id = data["run_id"]
+            run = wait_for_run(client, run_id)
+            assert "percent" in run["progress"]
             with session_scope() as session:
                 ai_step = session.scalar(
                     select(WorkflowStep)
@@ -124,11 +184,11 @@ def test_pre_match_manual_trigger(client):
         data = response.json()
         assert data["status"] == "started"
         assert data["run_id"] > 0
+        assert data["progress"]["percent"] == 0
 
-        with session_scope() as session:
-            run = session.get(WorkflowRun, data["run_id"])
-            assert run.workflow_type == "pre_match"
-            assert run.trigger_source == "manual_button"
+        run = wait_for_run(client, data["run_id"])
+        assert run["workflow_type"] == "pre_match"
+        assert run["trigger_source"] == "manual_button"
 
 
 # ---------------------------------------------------------------------------
@@ -145,10 +205,10 @@ def test_post_match_manual_trigger(client):
         data = response.json()
         assert data["status"] == "started"
         assert data["run_id"] > 0
+        assert data["progress"]["percent"] == 0
 
-        with session_scope() as session:
-            run = session.get(WorkflowRun, data["run_id"])
-            assert run.workflow_type == "post_match"
+        run = wait_for_run(client, data["run_id"])
+        assert run["workflow_type"] == "post_match"
 
 
 # ---------------------------------------------------------------------------
@@ -163,10 +223,10 @@ def test_lock_manual_trigger(client):
         data = response.json()
         assert data["status"] == "started"
         assert data["run_id"] > 0
+        assert data["progress"]["percent"] == 0
 
-        with session_scope() as session:
-            run = session.get(WorkflowRun, data["run_id"])
-            assert run.workflow_type == "lock"
+        run = wait_for_run(client, data["run_id"])
+        assert run["workflow_type"] == "lock"
 
 
 # ---------------------------------------------------------------------------
@@ -184,10 +244,10 @@ def test_full_manual_trigger(client):
         data = response.json()
         assert data["status"] == "started"
         assert data["run_id"] > 0
+        assert data["progress"]["percent"] == 0
 
-        with session_scope() as session:
-            run = session.get(WorkflowRun, data["run_id"])
-            assert run.workflow_type == "full"
+        run = wait_for_run(client, data["run_id"])
+        assert run["workflow_type"] == "full"
 
 
 # ---------------------------------------------------------------------------
@@ -233,10 +293,9 @@ def test_step_failure_results_in_partial_success(client):
         data = response.json()
         if data["status"] == "started":
             run_id = data["run_id"]
-            with session_scope() as session:
-                run = session.get(WorkflowRun, run_id)
-                # Should be partial_success or failed depending on other steps
-                assert run.status in ("partial_success", "failed", "success")
+            run = wait_for_run(client, run_id)
+            # Should be partial_success or failed depending on other steps
+            assert run["status"] in ("partial_success", "failed", "success")
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +313,7 @@ def test_run_all_limit_enforced(client, monkeypatch):
         response = client.post("/api/workflows/full", json={"with_ai": True, "limit": 100, "with_ensemble": False, "auto_lock": False})
         data = response.json()
         if data["status"] == "started":
+            wait_for_run(client, data["run_id"])
             # The AI step should have been called with clamped limit
             mock_ai.assert_called_once()
             call_kwargs = mock_ai.call_args
@@ -299,6 +359,66 @@ def test_workflow_runs_can_be_queried(client):
 def test_workflow_run_detail_404_for_missing(client):
     response = client.get("/api/workflows/runs/99999")
     assert response.status_code == 404
+
+
+def test_second_manual_workflow_is_rejected_immediately(client):
+    """The first request should reserve a run before background work starts."""
+    with patch("app.workflows.service._run_recompute_step", side_effect=lambda *_: time.sleep(0.2)), \
+         patch("app.workflows.service._run_artifact_step"):
+        first = client.post("/api/workflows/pre-match", json={"with_ai": False, "with_ensemble": False})
+        assert first.status_code == 200
+        assert first.json()["run_id"] > 0
+
+        second = client.post("/api/workflows/full", json={"with_ai": False, "with_ensemble": False, "auto_lock": False})
+        assert second.status_code == 409
+
+
+def test_start_workflow_run_clears_log_context_when_lock_unavailable(client):
+    """A failed lock reservation should not leave a stale workflow id in logs."""
+    set_current_run(123)
+
+    run_id = workflow_service.start_workflow_run("pre_match", "manual_button", {})
+
+    assert run_id == -1
+    assert workflow_run_id_var.get("") == ""
+    with session_scope() as session:
+        failed_run = session.scalar(
+            select(WorkflowRun)
+            .where(WorkflowRun.workflow_type == "pre_match")
+            .order_by(WorkflowRun.id.desc())
+            .limit(1)
+        )
+        assert failed_run is not None
+        assert failed_run.status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_async_workflow_lock_failure_marks_run_failed(client):
+    """Async workflow wrappers should use the same lock-failure semantics."""
+    set_current_run(123)
+
+    run_id = await workflow_service.run_pre_match_workflow_async(with_ai=False, with_ensemble=False)
+
+    assert run_id == -1
+    assert workflow_run_id_var.get("") == ""
+    with session_scope() as session:
+        failed_run = session.scalar(
+            select(WorkflowRun)
+            .where(WorkflowRun.workflow_type == "pre_match")
+            .order_by(WorkflowRun.id.desc())
+            .limit(1)
+        )
+        assert failed_run is not None
+        assert failed_run.status == "failed"
+
+
+def test_artifact_step_handles_missing_run_metadata(client):
+    """Artifact generation should not fail with an unbound summary."""
+    with patch("app.workflows.service._update_step") as update_step:
+        workflow_service._run_artifact_step(99999)
+
+    statuses = [call.args[2] for call in update_step.call_args_list]
+    assert statuses == ["running", "success"]
 
 
 # ---------------------------------------------------------------------------

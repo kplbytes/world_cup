@@ -8,7 +8,7 @@ import type {
   Match, ProfileEvaluation, TeamProfileEnvelope,
   MatchCountBreakdown, ErrorAttributionSummary,
   DecisionSnapshotStatus, ModelComparisonItem,
-  MatchScoreDetailItem, WorkflowStatus, WorkflowRunInfo,
+  MatchScoreDetailItem, WorkflowStatus, WorkflowRunInfo, WorkflowTriggerResponse,
 } from "./types";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -177,7 +177,7 @@ export async function getWorkflowStatus(): Promise<WorkflowStatus> {
   return res.json();
 }
 
-export async function triggerDailyOpen(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
+export async function triggerDailyOpen(params?: Record<string, unknown>): Promise<WorkflowTriggerResponse> {
   const res = await fetchWithTimeout("/api/workflows/daily-open", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -188,7 +188,7 @@ export async function triggerDailyOpen(params?: Record<string, unknown>): Promis
   return res.json();
 }
 
-export async function triggerPreMatch(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
+export async function triggerPreMatch(params?: Record<string, unknown>): Promise<WorkflowTriggerResponse> {
   const res = await fetchWithTimeout("/api/workflows/pre-match", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -199,7 +199,7 @@ export async function triggerPreMatch(params?: Record<string, unknown>): Promise
   return res.json();
 }
 
-export async function triggerPostMatch(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
+export async function triggerPostMatch(params?: Record<string, unknown>): Promise<WorkflowTriggerResponse> {
   const res = await fetchWithTimeout("/api/workflows/post-match", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -210,7 +210,7 @@ export async function triggerPostMatch(params?: Record<string, unknown>): Promis
   return res.json();
 }
 
-export async function triggerLock(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
+export async function triggerLock(params?: Record<string, unknown>): Promise<WorkflowTriggerResponse> {
   const res = await fetchWithTimeout("/api/workflows/lock", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -221,7 +221,7 @@ export async function triggerLock(params?: Record<string, unknown>): Promise<Wor
   return res.json();
 }
 
-export async function triggerFullWorkflow(params?: Record<string, unknown>): Promise<WorkflowRunInfo> {
+export async function triggerFullWorkflow(params?: Record<string, unknown>): Promise<WorkflowTriggerResponse> {
   const res = await fetchWithTimeout("/api/workflows/full", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -472,6 +472,14 @@ export interface WorkflowStepInfo {
   error_message: string | null;
 }
 
+export interface WorkflowProgress {
+  total_steps: number;
+  completed_steps: number;
+  percent: number;
+  running_step: string | null;
+  failed_steps: Array<{ step_name: string; error_message: string | null }>;
+}
+
 export interface WorkflowRunInfo {
   id: number;
   workflow_type: string;
@@ -483,6 +491,14 @@ export interface WorkflowRunInfo {
   steps: WorkflowStepInfo[];
   summary: Record<string, unknown> | null;
   error_message: string | null;
+  progress?: WorkflowProgress | null;
+}
+
+export interface WorkflowTriggerResponse {
+  status: string;
+  message?: string;
+  run_id?: number;
+  progress?: WorkflowProgress;
 }
 
 export interface ButtonState {

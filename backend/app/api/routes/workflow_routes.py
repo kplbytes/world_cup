@@ -11,12 +11,9 @@ from app.db import session_scope
 from app.models import WorkflowRun, WorkflowStep
 from app.workflows.schemas import (
     DailyOpenRequest, PreMatchRequest, PostMatchRequest,
-    LockRequest, FullWorkflowRequest, WorkflowRunStatus, WorkflowStepStatus,
+    LockRequest, FullWorkflowRequest,
 )
-from app.workflows.service import (
-    get_workflow_status, run_daily_open_workflow, run_pre_match_workflow,
-    run_post_match_workflow, run_lock_workflow, run_full_workflow,
-)
+from app.workflows import service as workflow_service
 from app.workflows.state import is_workflow_running
 from app.workflows.scheduler import should_auto_run_daily
 
@@ -31,7 +28,16 @@ _workflow_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workf
 @router.get("/status")
 def workflow_status():
     """Get the current workflow status for the local workflow center."""
-    return get_workflow_status()
+    return workflow_service.get_workflow_status()
+
+
+def _started_response(run_id: int, progress: dict) -> dict:
+    return {
+        "status": "started",
+        "message": "Workflow dispatched to background",
+        "run_id": run_id,
+        "progress": progress,
+    }
 
 
 def _check_ai_available_for_auto() -> tuple[bool, str]:
@@ -128,10 +134,23 @@ def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
     effective_with_ai = (req.with_ai or settings.auto_run_ai_on_open) and _check_ai_available_for_auto()[0]
 
     effective_limit = min(req.limit, settings.ai_run_all_max_limit)
+    run_id = workflow_service.start_workflow_run("daily_open", "auto_on_open", {
+        "hours": req.hours,
+        "since_hours": req.since_hours,
+        "limit": effective_limit,
+        "with_ai": effective_with_ai,
+        "with_ensemble": req.with_ensemble,
+        "auto_lock": req.auto_lock,
+        "only_missing": req.only_missing,
+    })
+    if run_id < 0:
+        return {"status": "already_running", "message": "A workflow is already running"}
+    progress = workflow_service.get_run_progress(run_id)
 
     def _run_in_background():
         try:
-            run_daily_open_workflow(
+            workflow_service.execute_daily_open_workflow(
+                run_id,
                 hours=req.hours,
                 since_hours=req.since_hours,
                 limit=effective_limit,
@@ -145,7 +164,7 @@ def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
             logger.exception("daily_open workflow background task failed")
 
     _workflow_executor.submit(_run_in_background)
-    return {"status": "started", "message": "Workflow dispatched to background"}
+    return _started_response(run_id, progress)
 
 
 @router.post("/pre-match")
@@ -155,10 +174,21 @@ def workflow_pre_match(req: PreMatchRequest = PreMatchRequest()):
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
     effective_limit = min(req.limit, settings.ai_run_all_max_limit)
+    run_id = workflow_service.start_workflow_run("pre_match", "manual_button", {
+        "hours": req.hours,
+        "limit": effective_limit,
+        "with_ai": req.with_ai,
+        "with_ensemble": req.with_ensemble,
+        "only_missing": req.only_missing,
+    })
+    if run_id < 0:
+        raise HTTPException(status_code=409, detail="A workflow is already running")
+    progress = workflow_service.get_run_progress(run_id)
 
     def _run_in_background():
         try:
-            run_pre_match_workflow(
+            workflow_service.execute_pre_match_workflow(
+                run_id,
                 hours=req.hours,
                 limit=effective_limit,
                 with_ai=req.with_ai,
@@ -170,7 +200,7 @@ def workflow_pre_match(req: PreMatchRequest = PreMatchRequest()):
             logger.exception("pre_match workflow background task failed")
 
     _workflow_executor.submit(_run_in_background)
-    return {"status": "started", "message": "Workflow dispatched to background"}
+    return _started_response(run_id, progress)
 
 
 @router.post("/post-match")
@@ -178,10 +208,17 @@ def workflow_post_match(req: PostMatchRequest = PostMatchRequest()):
     """Manually trigger post-match review workflow (background)."""
     if is_workflow_running():
         raise HTTPException(status_code=409, detail="A workflow is already running")
+    run_id = workflow_service.start_workflow_run("post_match", "manual_button", {
+        "since_hours": req.since_hours,
+    })
+    if run_id < 0:
+        raise HTTPException(status_code=409, detail="A workflow is already running")
+    progress = workflow_service.get_run_progress(run_id)
 
     def _run_in_background():
         try:
-            run_post_match_workflow(
+            workflow_service.execute_post_match_workflow(
+                run_id,
                 since_hours=req.since_hours,
                 trigger_source="manual_button",
             )
@@ -189,7 +226,7 @@ def workflow_post_match(req: PostMatchRequest = PostMatchRequest()):
             logger.exception("post_match workflow background task failed")
 
     _workflow_executor.submit(_run_in_background)
-    return {"status": "started", "message": "Workflow dispatched to background"}
+    return _started_response(run_id, progress)
 
 
 @router.post("/lock")
@@ -197,10 +234,17 @@ def workflow_lock(req: LockRequest = LockRequest()):
     """Manually trigger pre-match decision snapshot workflow (background)."""
     if is_workflow_running():
         raise HTTPException(status_code=409, detail="A workflow is already running")
+    run_id = workflow_service.start_workflow_run("lock", "manual_button", {
+        "window_hours": req.window_hours,
+    })
+    if run_id < 0:
+        raise HTTPException(status_code=409, detail="A workflow is already running")
+    progress = workflow_service.get_run_progress(run_id)
 
     def _run_in_background():
         try:
-            run_lock_workflow(
+            workflow_service.execute_lock_workflow(
+                run_id,
                 window_hours=req.window_hours,
                 trigger_source="manual_button",
             )
@@ -208,7 +252,7 @@ def workflow_lock(req: LockRequest = LockRequest()):
             logger.exception("lock workflow background task failed")
 
     _workflow_executor.submit(_run_in_background)
-    return {"status": "started", "message": "Workflow dispatched to background"}
+    return _started_response(run_id, progress)
 
 
 @router.post("/full")
@@ -218,10 +262,23 @@ def workflow_full(req: FullWorkflowRequest = FullWorkflowRequest()):
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
     effective_limit = min(req.limit, settings.ai_run_all_max_limit)
+    run_id = workflow_service.start_workflow_run("full", "manual_button", {
+        "hours": req.hours,
+        "since_hours": req.since_hours,
+        "limit": effective_limit,
+        "with_ai": req.with_ai,
+        "with_ensemble": req.with_ensemble,
+        "auto_lock": req.auto_lock,
+        "only_missing": req.only_missing,
+    })
+    if run_id < 0:
+        raise HTTPException(status_code=409, detail="A workflow is already running")
+    progress = workflow_service.get_run_progress(run_id)
 
     def _run_in_background():
         try:
-            run_full_workflow(
+            workflow_service.execute_full_workflow(
+                run_id,
                 hours=req.hours,
                 since_hours=req.since_hours,
                 limit=effective_limit,
@@ -235,7 +292,7 @@ def workflow_full(req: FullWorkflowRequest = FullWorkflowRequest()):
             logger.exception("full workflow background task failed")
 
     _workflow_executor.submit(_run_in_background)
-    return {"status": "started", "message": "Workflow dispatched to background"}
+    return _started_response(run_id, progress)
 
 
 @router.get("/runs")
@@ -272,6 +329,7 @@ def workflow_runs(limit: int = 20):
                     for s in steps
                 ],
                 "error_message": r.error_message,
+                "progress": workflow_service.build_workflow_progress(steps),
             })
     return {"runs": result}
 
@@ -311,4 +369,5 @@ def workflow_run_detail(run_id: int):
                 }
                 for s in steps
             ],
+            "progress": workflow_service.build_workflow_progress(steps),
         }

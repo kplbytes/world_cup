@@ -284,6 +284,24 @@ it("shows action buttons on daily dashboard", async () => {
   expect(await screen.findByText(/更新今日数据/)).toBeVisible();
 });
 
+it("sends with_ai when running AI predictions from daily dashboard", async () => {
+  renderApp();
+  const actionHeader = await screen.findByText("操作");
+  const sectionCard = actionHeader.closest(".section-card")!;
+  const expandBtn = within(sectionCard as HTMLElement).queryByText("展开");
+  if (expandBtn) await userEvent.click(expandBtn);
+
+  await userEvent.click(await screen.findByRole("button", { name: "运行 AI 预测" }));
+
+  expect(globalThis.fetch).toHaveBeenCalledWith(
+    "/api/workflows/pre-match",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ with_ai: true }),
+    }),
+  );
+});
+
 // Can navigate to match center
 it("navigates to match center", async () => {
   renderApp();

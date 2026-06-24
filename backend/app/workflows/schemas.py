@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DailyOpenRequest(BaseModel):
@@ -54,6 +54,14 @@ class WorkflowStepStatus(BaseModel):
     error_message: str | None = None
 
 
+class WorkflowProgress(BaseModel):
+    total_steps: int
+    completed_steps: int
+    percent: int
+    running_step: str | None = None
+    failed_steps: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class WorkflowRunStatus(BaseModel):
     id: int
     workflow_type: str
@@ -65,6 +73,7 @@ class WorkflowRunStatus(BaseModel):
     steps: list[WorkflowStepStatus] = []
     summary: dict[str, Any] | None = None
     error_message: str | None = None
+    progress: WorkflowProgress | None = None
 
 
 class WorkflowStatusResponse(BaseModel):

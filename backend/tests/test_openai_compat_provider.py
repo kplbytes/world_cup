@@ -81,6 +81,18 @@ class TestClientLifecycle:
         client2 = provider._get_client(30)
         assert client1 is client2
 
+    def test_get_client_recreates_for_different_event_loop(self):
+        provider = OpenAICompatProvider(_make_provider_config())
+
+        async def _get_client():
+            return provider._get_client(30)
+
+        client1 = asyncio.run(_get_client())
+        client2 = asyncio.run(_get_client())
+
+        assert client1 is not client2
+        asyncio.run(client2.aclose())
+
     def test_close_closes_client(self):
         async def _run():
             provider = OpenAICompatProvider(_make_provider_config())

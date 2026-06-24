@@ -12,8 +12,10 @@ import RiskBadge from "../components/ui/RiskBadge";
 import MetricCard from "../components/ui/MetricCard";
 import SectionCard from "../components/ui/SectionCard";
 import StatusStrip from "../components/ui/StatusStrip";
+import WorkflowProgressBar from "../components/ui/WorkflowProgressBar";
 import GroupNav from "../components/GroupNav";
 import Header from "../components/Header";
+import { workflowRunsRefetchInterval, workflowStatusRefetchInterval } from "../hooks/useWorkflowActions";
 import type { Match, Dashboard } from "../types";
 
 afterEach(() => {
@@ -235,6 +237,33 @@ describe("StatusStrip", () => {
     const items = [{ label: "状态", value: "正常" }];
     render(<StatusStrip items={items} />);
     expect(screen.getByText("正常")).toBeVisible();
+  });
+});
+
+// ── WorkflowProgressBar ─────────────────────────────────────────────
+
+describe("WorkflowProgressBar", () => {
+  it("renders completed step count and percent", () => {
+    render(<WorkflowProgressBar progress={{ total_steps: 9, completed_steps: 3, percent: 33, running_step: "ai_prediction", failed_steps: [] }} />);
+    expect(screen.getByText("运行进度")).toBeVisible();
+    expect(screen.getByText("3/9")).toBeVisible();
+    expect(screen.getByText("33%")).toBeVisible();
+    expect(screen.getByText("ai_prediction")).toBeVisible();
+  });
+});
+
+// ── Workflow polling ─────────────────────────────────────────────────
+
+describe("workflow polling intervals", () => {
+  it("polls status only while a workflow is running", () => {
+    expect(workflowStatusRefetchInterval({ state: { data: undefined } })).toBe(false);
+    expect(workflowStatusRefetchInterval({ state: { data: { today_status: "already_run", last_run: { status: "success" } } as never } })).toBe(false);
+    expect(workflowStatusRefetchInterval({ state: { data: { today_status: "running", last_run: { status: "running" } } as never } })).toBe(2_000);
+  });
+
+  it("polls run history only while a recent run is running", () => {
+    expect(workflowRunsRefetchInterval({ state: { data: { runs: [{ status: "success" }] as never } } })).toBe(false);
+    expect(workflowRunsRefetchInterval({ state: { data: { runs: [{ status: "running" }] as never } } })).toBe(2_000);
   });
 });
 

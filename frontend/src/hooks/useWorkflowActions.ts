@@ -23,6 +23,19 @@ interface UseWorkflowActionsOptions {
   extraInvalidateKeys?: string[][];
 }
 
+export function workflowStatusRefetchInterval(query: { state: { data?: WorkflowStatus } }): number | false {
+  const status = query.state.data;
+  if (!status) return false;
+  return status.today_status === "running" || status.last_run?.status === "running"
+    ? 2_000
+    : false;
+}
+
+export function workflowRunsRefetchInterval(query: { state: { data?: { runs?: WorkflowRunInfo[] } } }): number | false {
+  const runs = query.state.data?.runs ?? [];
+  return runs.some((run) => run.status === "running") ? 2_000 : false;
+}
+
 export function useWorkflowActions(options: UseWorkflowActionsOptions = {}) {
   const { runsLimit = 5, extraInvalidateKeys = [] } = options;
   const queryClient = useQueryClient();
@@ -33,12 +46,14 @@ export function useWorkflowActions(options: UseWorkflowActionsOptions = {}) {
     queryKey: ["workflow-status"],
     queryFn: getWorkflowStatus,
     staleTime: 30_000,
+    refetchInterval: workflowStatusRefetchInterval,
   });
 
   const runsQuery = useQuery({
     queryKey: ["workflow-runs"],
     queryFn: () => getWorkflowRuns(runsLimit),
     staleTime: 30_000,
+    refetchInterval: workflowRunsRefetchInterval,
   });
 
   const invalidateAll = () => {
