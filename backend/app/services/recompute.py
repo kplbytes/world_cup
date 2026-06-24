@@ -362,6 +362,43 @@ def recompute_tournament_projection(
     return projections
 
 
+def _prune_old_revisions(session: Session, keep: int = 5) -> None:
+    """Delete old revisions and their associated data to prevent database bloat."""
+    from sqlalchemy import func, text
+
+    max_id = session.scalar(select(func.max(DashboardRevision.id)))
+    if max_id is None:
+        return
+    cutoff = max_id - keep
+    if cutoff <= 0:
+        return
+
+    child_tables = [
+        "prediction_snapshots",
+        "match_predictions",
+        "qualification_predictions",
+        "standings_snapshots",
+        "team_profile_predictions",
+        "model_scores",
+    ]
+    session.execute(text("PRAGMA foreign_keys=OFF"))
+    try:
+        for table in child_tables:
+            result = session.execute(
+                text(f"DELETE FROM {table} WHERE revision_id <= :cutoff"),
+                {"cutoff": cutoff},
+            )
+            if result.rowcount:
+                logger.info("pruned %d rows from %s (revision <= %d)", result.rowcount, table, cutoff)
+        session.execute(
+            text("DELETE FROM dashboard_revisions WHERE id <= :cutoff AND active = 0"),
+            {"cutoff": cutoff},
+        )
+        session.flush()
+    finally:
+        session.execute(text("PRAGMA foreign_keys=ON"))
+
+
 def recompute_all(
     session: Session,
     iterations: int = 50_000,
@@ -402,6 +439,10 @@ def recompute_all(
         import app.services.dashboard as _dash_mod
         _dash_mod._dashboard_cache = None
         _dash_mod._dashboard_cache_ts = 0.0
+
+        # Clean up old revisions to prevent unbounded database growth.
+        # Keep at most 5 revisions total (including the one just created).
+        _prune_old_revisions(session, keep=5)
 
         return revision
     finally:

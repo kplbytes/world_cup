@@ -1,5 +1,8 @@
 """Workflow API routes - local workflow center."""
 
+import logging
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
 
@@ -17,8 +20,12 @@ from app.workflows.service import (
 from app.workflows.state import is_workflow_running
 from app.workflows.scheduler import should_auto_run_daily
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
+
+# Dedicated executor for workflow background tasks (max 1 thread to serialize workflows)
+_workflow_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="workflow-bg")
 
 
 @router.get("/status")
@@ -103,7 +110,11 @@ def _check_ai_available_for_auto() -> tuple[bool, str]:
 
 @router.post("/daily-open")
 def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
-    """Auto-trigger daily open workflow (called when frontend first loads)."""
+    """Auto-trigger daily open workflow (called when frontend first loads).
+
+    The workflow is executed in a background thread to avoid blocking the request
+    handler while recompute (25-40s) runs.
+    """
     if is_workflow_running():
         return {"status": "already_running", "message": "A workflow is already running"}
 
@@ -116,99 +127,115 @@ def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
     # if with_ai is explicitly True OR auto_run_ai_on_open is enabled
     effective_with_ai = (req.with_ai or settings.auto_run_ai_on_open) and _check_ai_available_for_auto()[0]
 
-    run_id = run_daily_open_workflow(
-        hours=req.hours,
-        since_hours=req.since_hours,
-        limit=min(req.limit, settings.ai_run_all_max_limit),
-        with_ai=effective_with_ai,
-        with_ensemble=req.with_ensemble,
-        auto_lock=req.auto_lock,
-        only_missing=req.only_missing,
-        trigger_source="auto_on_open",
-    )
+    effective_limit = min(req.limit, settings.ai_run_all_max_limit)
 
-    if run_id < 0:
-        return {"status": "already_running", "message": "A workflow is already running"}
+    def _run_in_background():
+        try:
+            run_daily_open_workflow(
+                hours=req.hours,
+                since_hours=req.since_hours,
+                limit=effective_limit,
+                with_ai=effective_with_ai,
+                with_ensemble=req.with_ensemble,
+                auto_lock=req.auto_lock,
+                only_missing=req.only_missing,
+                trigger_source="auto_on_open",
+            )
+        except Exception:
+            logger.exception("daily_open workflow background task failed")
 
-    return {"status": "started", "run_id": run_id}
+    _workflow_executor.submit(_run_in_background)
+    return {"status": "started", "message": "Workflow dispatched to background"}
 
 
 @router.post("/pre-match")
 def workflow_pre_match(req: PreMatchRequest = PreMatchRequest()):
-    """Manually trigger pre-match prediction workflow."""
+    """Manually trigger pre-match prediction workflow (background)."""
     if is_workflow_running():
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
-    run_id = run_pre_match_workflow(
-        hours=req.hours,
-        limit=min(req.limit, settings.ai_run_all_max_limit),
-        with_ai=req.with_ai,
-        with_ensemble=req.with_ensemble,
-        only_missing=req.only_missing,
-        trigger_source="manual_button",
-    )
+    effective_limit = min(req.limit, settings.ai_run_all_max_limit)
 
-    if run_id < 0:
-        raise HTTPException(status_code=409, detail="A workflow is already running")
+    def _run_in_background():
+        try:
+            run_pre_match_workflow(
+                hours=req.hours,
+                limit=effective_limit,
+                with_ai=req.with_ai,
+                with_ensemble=req.with_ensemble,
+                only_missing=req.only_missing,
+                trigger_source="manual_button",
+            )
+        except Exception:
+            logger.exception("pre_match workflow background task failed")
 
-    return {"status": "started", "run_id": run_id}
+    _workflow_executor.submit(_run_in_background)
+    return {"status": "started", "message": "Workflow dispatched to background"}
 
 
 @router.post("/post-match")
 def workflow_post_match(req: PostMatchRequest = PostMatchRequest()):
-    """Manually trigger post-match review workflow."""
+    """Manually trigger post-match review workflow (background)."""
     if is_workflow_running():
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
-    run_id = run_post_match_workflow(
-        since_hours=req.since_hours,
-        trigger_source="manual_button",
-    )
+    def _run_in_background():
+        try:
+            run_post_match_workflow(
+                since_hours=req.since_hours,
+                trigger_source="manual_button",
+            )
+        except Exception:
+            logger.exception("post_match workflow background task failed")
 
-    if run_id < 0:
-        raise HTTPException(status_code=409, detail="A workflow is already running")
-
-    return {"status": "started", "run_id": run_id}
+    _workflow_executor.submit(_run_in_background)
+    return {"status": "started", "message": "Workflow dispatched to background"}
 
 
 @router.post("/lock")
 def workflow_lock(req: LockRequest = LockRequest()):
-    """Manually trigger pre-match decision snapshot workflow."""
+    """Manually trigger pre-match decision snapshot workflow (background)."""
     if is_workflow_running():
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
-    run_id = run_lock_workflow(
-        window_hours=req.window_hours,
-        trigger_source="manual_button",
-    )
+    def _run_in_background():
+        try:
+            run_lock_workflow(
+                window_hours=req.window_hours,
+                trigger_source="manual_button",
+            )
+        except Exception:
+            logger.exception("lock workflow background task failed")
 
-    if run_id < 0:
-        raise HTTPException(status_code=409, detail="A workflow is already running")
-
-    return {"status": "started", "run_id": run_id}
+    _workflow_executor.submit(_run_in_background)
+    return {"status": "started", "message": "Workflow dispatched to background"}
 
 
 @router.post("/full")
 def workflow_full(req: FullWorkflowRequest = FullWorkflowRequest()):
-    """Manually trigger full workflow."""
+    """Manually trigger full workflow (background)."""
     if is_workflow_running():
         raise HTTPException(status_code=409, detail="A workflow is already running")
 
-    run_id = run_full_workflow(
-        hours=req.hours,
-        since_hours=req.since_hours,
-        limit=min(req.limit, settings.ai_run_all_max_limit),
-        with_ai=req.with_ai,
-        with_ensemble=req.with_ensemble,
-        auto_lock=req.auto_lock,
-        only_missing=req.only_missing,
-        trigger_source="manual_button",
-    )
+    effective_limit = min(req.limit, settings.ai_run_all_max_limit)
 
-    if run_id < 0:
-        raise HTTPException(status_code=409, detail="A workflow is already running")
+    def _run_in_background():
+        try:
+            run_full_workflow(
+                hours=req.hours,
+                since_hours=req.since_hours,
+                limit=effective_limit,
+                with_ai=req.with_ai,
+                with_ensemble=req.with_ensemble,
+                auto_lock=req.auto_lock,
+                only_missing=req.only_missing,
+                trigger_source="manual_button",
+            )
+        except Exception:
+            logger.exception("full workflow background task failed")
 
-    return {"status": "started", "run_id": run_id}
+    _workflow_executor.submit(_run_in_background)
+    return {"status": "started", "message": "Workflow dispatched to background"}
 
 
 @router.get("/runs")

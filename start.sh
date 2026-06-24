@@ -42,7 +42,7 @@ sleep 2
 # 启动后端
 echo "[1/2] 启动后端..."
 cd "$BACKEND_DIR"
-.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+arch -arm64 .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$PID_DIR/backend.pid"
 echo "  后端 PID: $BACKEND_PID (http://127.0.0.1:8000)"
