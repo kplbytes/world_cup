@@ -43,11 +43,25 @@ cp .env.example .env
 数据同步 → 基线预测 (Elo+Poisson) → AI 预测 → 集成融合 → 24h 锁定 → 开赛 → 评分
 ```
 
-1. **基线模型**：`elo-poisson-v1` 生成胜/平/负概率、xG 和比分矩阵
+1. **基线模型**：`elo-poisson-v1` 生成胜/平/负概率、xG 和比分矩阵。`elo-poisson-v3-profile` 在基线之上融合球队画像（攻防、状态、FIFA 排名）进行预测调整
 2. **AI 预测**：多个 AI 模型独立生成预测（v2 提示词不含基线概率，避免锚定偏差）
 3. **集成融合**：基线 + 市场赔率 + AI 预测的加权融合，缺失来源自动权重重分配
 4. **24h 锁定**：赛前 24h 内生成快照，开赛时冻结，赛后数据不可覆盖赛前决策
 5. **评分**：赛后 Brier 分数、Log Loss、命中率评估
+
+### xG 校准与 Poisson 色散
+
+基线模型已针对 WC 2026 实际数据校准：
+
+| 参数 | v1 | 校准后 | 效果 |
+|------|-----|--------|------|
+| `base_goal_mean_home` | 1.25 | 1.55 | xG 从 2.37 → ~2.93（实际 3.03） |
+| `base_goal_mean_away` | 1.10 | 1.35 | 同上 |
+| `strength_coeff_home` | 0.90 | 1.20 | 强弱队 xG 分化更明显 |
+| `max_xg` | 3.50 | 4.50 | 允许高比分预测 |
+| `poisson_dispersion` | — | 1.10 | 幂变换轻微展平分布 |
+
+回测对比（37 场 WC 2026 比赛）：精确比分 5.4% → 13.5%（2.5 倍），±1 球 73.0% → 75.7%，方向 48.6% → 51.4%，Brier 0.6071 → 0.6096（噪声范围内）。
 
 ### AI 预测
 
@@ -68,13 +82,12 @@ cp .env.example .env
 
 ### 球队画像
 
-- 当前定位：仅用于球队画像展示，不参与 Baseline / AI / Ensemble 预测计算
+- **已接入预测引擎**：`elo-poisson-v3-profile` 模型通过 `profile_adapter.py` 将画像分数（0-100）转换为 `MatchContext` 调整项，在 `predict_match()` 中按 `profile_weight` 加权影响攻防、状态、FIFA 排名；`profile_weight=0` 时完全回退到 v1 行为
 - 使用 Mart Jürisoo 国际比赛结果快照（2022-01-01 至 2026-06-19 已完赛比赛）构建真实历史样本；`seed_mock_v1` 仅作无真实样本时的本地 fallback，并会降低数据可信度
 - FIFA 排名优先从 FIFA 官方 FDCP API 导入，当前覆盖 48/48 支球队；Elo/FIFA source 会进入球队画像 `source_list`
 - 七个结构化模块：基础实力、近期状态、攻防能力、战术风格、阵容与球员风险、比赛环境适应、数据可信度
 - 阵容模块已接入 FIFA 官方 2026-06-20 Squad List，覆盖 48/48 队 26 人名单、位置深度、国家队出场和进球；伤停、停赛和首发确认仍保持 unavailable
 - 比赛环境模块已用真实赛程和场地 registry 补充 `rest_days`、`schedule_fatigue_score`、旅行距离、时差、下一场和后续场地；历史气候基线来自 Open-Meteo Historical Weather API，且标记为 `is_match_forecast=false`
-- 历史气候基线可由 `backend/scripts/build_venue_climate_baseline.py` 重新生成；未生成快照时不填气候字段
 - 缺失数据显式标记 `unavailable` / `missing`，不会用 mock 伪装真实伤停、首发、旅行、气候或球员信息
 - `data_quality_score` 会列出关键缺失 penalty；StatsBomb xG 只覆盖 2018/2022 世界杯样本，命中球队会在 `attack_defense.xg` 展示样本均值，未覆盖球队保留 `xg=unavailable`
 - 前端在球队详情和比赛详情中展示画像分、优势、风险、缺失字段、数据来源和更新时间
@@ -182,6 +195,24 @@ cp .env.example .env
 | **赛事中心** | 对阵表、晋级概率、球队路径、积分榜 |
 
 比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页。
+
+### 界面预览
+
+**今日工作台** — 首屏展示今日运行状态、昨夜比赛复盘、即将开赛预测和工作流操作入口。
+
+![今日工作台](docs/screenshots/daily-dashboard.png)
+
+**比赛中心** — 按小组/今日/淘汰赛维度浏览所有比赛，点击比赛卡片查看详细预测。
+
+![比赛中心](docs/screenshots/match-center.png)
+
+**模型复盘** — 模型版本对比、AI 独立性评估、误差归因分析和校准曲线。
+
+![模型复盘](docs/screenshots/model-review.png)
+
+**冠军与赛程** — 淘汰赛对阵表、球队晋级概率投影和小组积分榜。
+
+![冠军与赛程](docs/screenshots/tournament-center.png)
 
 ## 后端结构
 
