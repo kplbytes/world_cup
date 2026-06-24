@@ -1,7 +1,10 @@
 from fastapi import APIRouter, HTTPException
 
+from sqlalchemy import select
+
 from app.config import settings
 from app.db import session_scope
+from app.models import DashboardRevision
 from app.providers.football_data import FootballDataProvider, is_configured as fd_is_configured
 from app.providers.openfootball import OpenFootballProvider
 from app.providers.worldcup26 import WorldCup26Provider
@@ -26,13 +29,14 @@ def health():
     from app.ai.model_registry import get_provider_config, list_enabled_models
     from app.main import _scheduler
 
-    # Database check
+    # Database check - lightweight query instead of full build_dashboard
     with session_scope() as session:
-        try:
-            dashboard = build_dashboard(session)
-            revision_id = dashboard["revision"]["id"]
-        except LookupError:
-            revision_id = None
+        active = session.scalar(
+            select(DashboardRevision.id)
+            .where(DashboardRevision.active.is_(True))
+            .limit(1)
+        )
+        revision_id = active
 
     # AI providers availability
     ai_models = list_enabled_models()

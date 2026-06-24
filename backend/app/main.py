@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 from starlette.responses import Response
@@ -19,6 +19,9 @@ from app.api.routes.dashboard_routes import _build_providers
 from app.config import PROJECT_ROOT, settings
 from app.db import create_database, session_scope
 from app.logging_config import setup_logging
+
+import logging
+logger = logging.getLogger(__name__)
 from app.middleware import AccessLogMiddleware, RequestIdMiddleware
 from app.models import DashboardRevision, Match, Team, TeamProfile
 from app.schemas import TournamentPayload
@@ -200,6 +203,29 @@ def create_app(start_background: bool = True) -> FastAPI:
         with session_scope() as session:
             lock_due_predictions(session)
 
+    def scheduled_maintenance() -> None:
+        """Periodically clean up old non-revision-bound data."""
+        from datetime import timedelta
+
+        with session_scope() as session:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            cutoff_str = cutoff.isoformat()
+
+            # data_snapshots: keep 7 days for checksum dedup
+            r1 = session.execute(
+                text("DELETE FROM data_snapshots WHERE fetched_at < :cutoff"),
+                {"cutoff": cutoff_str},
+            )
+            # match_intelligence: keep 7 days
+            r2 = session.execute(
+                text("DELETE FROM match_intelligence WHERE fetched_at < :cutoff"),
+                {"cutoff": cutoff_str},
+            )
+            total = (r1.rowcount or 0) + (r2.rowcount or 0)
+            if total:
+                logger.info("maintenance: pruned %d old records (data_snapshots=%d, match_intelligence=%d)",
+                           total, r1.rowcount or 0, r2.rowcount or 0)
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         if start_background:
@@ -220,6 +246,15 @@ def create_app(start_background: bool = True) -> FastAPI:
                 max_instances=1,
                 coalesce=True,
                 next_run_time=datetime.now(timezone.utc),
+            )
+            scheduler.add_job(
+                scheduled_maintenance,
+                "interval",
+                hours=6,
+                id="world-cup-maintenance",
+                max_instances=1,
+                coalesce=True,
+                next_run_time=datetime.now(timezone.utc) + timedelta(minutes=5),
             )
             scheduler.start()
         yield
