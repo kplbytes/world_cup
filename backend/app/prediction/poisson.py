@@ -293,6 +293,8 @@ def predict_match(
         draw = blended["draw"]
         away_win = blended["away_win"]
 
+    matrix = _rebalance_matrix_to_outcomes(matrix, home_win, draw, away_win)
+
     exact_scores = [
         ScorelineProbability(home, away, float(matrix[home, away]))
         for home in range(_MAX_EXACT_GOALS + 1)
@@ -380,3 +382,34 @@ def _goal_probabilities(expected_goals: float, dispersion: float = 1.0) -> np.nd
         values = values / values.sum()
 
     return values
+
+
+def _rebalance_matrix_to_outcomes(
+    matrix: np.ndarray,
+    home_win: float,
+    draw: float,
+    away_win: float,
+) -> np.ndarray:
+    """Scale score cells so the matrix matches final outcome probabilities."""
+    row_idx, col_idx = np.indices(matrix.shape)
+    masks = {
+        "home_win": row_idx > col_idx,
+        "draw": row_idx == col_idx,
+        "away_win": row_idx < col_idx,
+    }
+    targets = {
+        "home_win": home_win,
+        "draw": draw,
+        "away_win": away_win,
+    }
+
+    rebalanced = matrix.astype(float, copy=True)
+    for key, mask in masks.items():
+        current = float(rebalanced[mask].sum())
+        if current > 0:
+            rebalanced[mask] *= targets[key] / current
+
+    total = float(rebalanced.sum())
+    if total > 0:
+        rebalanced /= total
+    return rebalanced

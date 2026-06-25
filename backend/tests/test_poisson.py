@@ -18,6 +18,21 @@ def neutral_context(**overrides):
     return MatchContext(**values)
 
 
+def matrix_outcomes(score_matrix):
+    home_win = 0.0
+    draw = 0.0
+    away_win = 0.0
+    for home_goals, row in enumerate(score_matrix):
+        for away_goals, probability in enumerate(row):
+            if home_goals > away_goals:
+                home_win += probability
+            elif home_goals == away_goals:
+                draw += probability
+            else:
+                away_win += probability
+    return home_win, draw, away_win
+
+
 def test_prediction_probabilities_cover_the_full_outcome_space():
     prediction = predict_match(0.72, 0.51, neutral_context())
 
@@ -58,3 +73,29 @@ def test_manual_adjustments_shift_expected_goals():
 
     assert adjusted.home_xg < base.home_xg
     assert adjusted.away_xg > base.away_xg
+
+
+def test_score_matrix_matches_probability_adjustments_after_market_blend():
+    config = type("Config", (), {
+        "market_blend_weight": 0.60,
+        "smart_market_blend": False,
+        "dynamic_draw_boost": False,
+    })()
+    prediction = predict_match(
+        0.72,
+        0.51,
+        neutral_context(
+            market_probs={
+                "home_win": 0.10,
+                "draw": 0.15,
+                "away_win": 0.75,
+            }
+        ),
+        config=config,
+    )
+
+    matrix_home, matrix_draw, matrix_away = matrix_outcomes(prediction.score_matrix)
+
+    assert matrix_home == pytest.approx(prediction.home_win)
+    assert matrix_draw == pytest.approx(prediction.draw)
+    assert matrix_away == pytest.approx(prediction.away_win)
