@@ -920,8 +920,8 @@ class TestRunAIPredictionDedup:
         assert result["home_win"] == 0.5
 
     @pytest.mark.asyncio
-    async def test_force_true_still_calls_provider(self, db_session):
-        """run_ai_prediction with force=True still calls the provider even when prediction exists."""
+    async def test_force_true_calls_provider_after_cooldown(self, db_session):
+        """run_ai_prediction with force=True calls the provider when the previous prediction is old."""
         from unittest.mock import patch, AsyncMock, MagicMock
 
         from app.ai.service import run_ai_prediction, get_prompt_version
@@ -940,7 +940,7 @@ class TestRunAIPredictionDedup:
             parsed_away_win=0.2,
             confidence=0.8,
             recommended_label="home_win",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=2),
         )
         db_session.add(pred)
         db_session.flush()
@@ -955,6 +955,41 @@ class TestRunAIPredictionDedup:
 
         mock_call.assert_called_once()
         assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_force_true_skips_recent_existing_prediction(self, db_session):
+        """run_ai_prediction with force=True respects the one-hour match cooldown."""
+        from unittest.mock import patch, AsyncMock
+
+        from app.ai.service import run_ai_prediction, get_prompt_version
+        from app.models import AIPrediction
+
+        _create_match_and_teams(db_session)
+        prompt_ver = get_prompt_version()
+        pred = AIPrediction(
+            match_id="match-1",
+            provider="deepseek",
+            model_id="model-a",
+            model_version="v1",
+            prompt_version=prompt_ver,
+            parsed_home_win=0.5,
+            parsed_draw=0.3,
+            parsed_away_win=0.2,
+            confidence=0.8,
+            recommended_label="home_win",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+        db_session.add(pred)
+        db_session.flush()
+
+        with patch("app.ai.service.is_ai_enabled", return_value=True), \
+             patch("app.ai.service._call_ai_provider", new_callable=AsyncMock) as mock_call:
+            result = await run_ai_prediction(db_session, "match-1", "v1", force=True)
+
+        mock_call.assert_not_called()
+        assert result["status"] == "skipped_cooldown"
+        assert result["match_id"] == "match-1"
+        assert result["retry_after_seconds"] > 0
 
     @pytest.mark.asyncio
     async def test_force_false_calls_provider_when_no_existing(self, db_session):
@@ -1080,8 +1115,8 @@ class TestRunAIPredictionsForMatchDedup:
         assert "success" in statuses
 
     @pytest.mark.asyncio
-    async def test_force_true_runs_all_models(self, db_session):
-        """run_ai_predictions_for_match with force=True runs all models even with existing predictions."""
+    async def test_force_true_runs_all_models_after_cooldown(self, db_session):
+        """run_ai_predictions_for_match with force=True runs models when previous prediction is old."""
         from unittest.mock import patch, MagicMock, AsyncMock
 
         from app.ai.providers.base import AIModelConfig
@@ -1101,7 +1136,7 @@ class TestRunAIPredictionsForMatchDedup:
             parsed_away_win=0.2,
             confidence=0.8,
             recommended_label="home_win",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc) - timedelta(hours=2),
         )
         db_session.add(pred)
         db_session.flush()
@@ -1131,6 +1166,57 @@ class TestRunAIPredictionsForMatchDedup:
         mock_call.assert_called_once()
         assert len(results) == 1
         assert results[0]["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_force_true_skips_whole_match_with_recent_prediction(self, db_session):
+        """run_ai_predictions_for_match with force=True respects match-level cooldown."""
+        from unittest.mock import patch, MagicMock, AsyncMock
+
+        from app.ai.providers.base import AIModelConfig
+        from app.ai.service import run_ai_predictions_for_match, get_prompt_version
+        from app.models import AIPrediction
+
+        _create_match_and_teams(db_session)
+        prompt_ver = get_prompt_version()
+        pred = AIPrediction(
+            match_id="match-1",
+            provider="deepseek",
+            model_id="model-a",
+            model_version="v1",
+            prompt_version=prompt_ver,
+            parsed_home_win=0.5,
+            parsed_draw=0.3,
+            parsed_away_win=0.2,
+            confidence=0.8,
+            recommended_label="home_win",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+        db_session.add(pred)
+        db_session.flush()
+
+        model_v1 = AIModelConfig(
+            provider_name="deepseek",
+            model_id="model-a",
+            enabled=True,
+            model_version="v1",
+            display_name="Model V1",
+            cost_tier="medium",
+            latency_tier="medium",
+            role="general",
+        )
+
+        with patch("app.ai.service.list_enabled_models", return_value=[model_v1]), \
+             patch("app.ai.service._call_ai_provider", new_callable=AsyncMock) as mock_call, \
+             patch("app.ai.service.get_provider_config", return_value=MagicMock()), \
+             patch("app.ai.service._get_provider") as mock_get_provider:
+            mock_provider = MagicMock()
+            mock_provider.is_configured.return_value = True
+            mock_get_provider.return_value = mock_provider
+            results = await run_ai_predictions_for_match(db_session, "match-1", force=True)
+
+        mock_call.assert_not_called()
+        assert len(results) == 1
+        assert results[0]["status"] == "skipped_cooldown"
 
 
 # ===================================================================

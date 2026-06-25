@@ -134,6 +134,11 @@ def _compute_deviations(p_home: float, p_draw: float, p_away: float,
     }
 
 
+def _is_visible_ai_version(model_version: str | None) -> bool:
+    version = (model_version or "").lower()
+    return "xiaomi" not in version and "mimo" not in version
+
+
 def _compute_match_review(
     match: Match,
     snapshot: PredictionSnapshot | None,
@@ -196,7 +201,7 @@ def _compute_match_review(
         # Use the first effective AI prediction (no error, has parsed probs)
         effective_ai = None
         for ai in ai_preds:
-            if ai.error_code is None and ai.parsed_home_win is not None:
+            if _is_visible_ai_version(ai.model_version) and ai.error_code is None and ai.parsed_home_win is not None:
                 effective_ai = ai
                 break
         if effective_ai:
@@ -359,7 +364,8 @@ def build_dashboard(session: Session) -> dict:
         .where(AIPrediction.match_id.in_(all_match_ids))
         .order_by(AIPrediction.created_at.desc())
     ):
-        ai_preds_by_match[row.match_id].append(row)
+        if _is_visible_ai_version(row.model_version):
+            ai_preds_by_match[row.match_id].append(row)
 
     ensemble_preds_by_match: dict[str, list[EnsemblePrediction]] = defaultdict(list)
     for row in session.scalars(
@@ -1124,7 +1130,7 @@ def _ai_prediction_summary(ai_preds: list[AIPrediction]) -> dict | None:
         return None
     # Pick the first effective prediction (no error, has parsed probs)
     for ai in ai_preds:
-        if ai.error_code is None and ai.parsed_home_win is not None:
+        if _is_visible_ai_version(ai.model_version) and ai.error_code is None and ai.parsed_home_win is not None:
             return {
                 "home_win": ai.parsed_home_win,
                 "draw": ai.parsed_draw,

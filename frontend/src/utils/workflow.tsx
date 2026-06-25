@@ -1,15 +1,5 @@
 import React from "react";
 
-export const AUTO_DAILY_OPEN_PARAMS = {
-  with_ai: true,
-  with_ensemble: true,
-  auto_lock: true,
-  only_missing: true,
-  limit: 10,
-  hours: 48,
-  since_hours: 24,
-} as const;
-
 /** Render a small coloured dot indicator. */
 export function statusDot(color: string): React.ReactElement {
   return (

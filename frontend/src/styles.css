@@ -244,26 +244,6 @@ h3 { font-weight: 600; }
   font-weight: 500;
 }
 
-.app-header__sync-btn {
-  border: 0;
-  padding: 7px 18px;
-  border-radius: 20px;
-  font-weight: 600;
-  font-size: var(--text-sm);
-  cursor: pointer;
-  background: var(--accent-blue);
-  color: #ffffff;
-  transition: all var(--duration-fast) var(--ease-apple);
-}
-.app-header__sync-btn:hover:not(:disabled) {
-  background: #0070e9;
-  transform: scale(1.02);
-}
-.app-header__sync-btn:active:not(:disabled) {
-  transform: scale(0.98);
-}
-.app-header__sync-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
 .app-header__nav { display: flex; }
 
 /* ═══════════════════════════════════════════════════════
@@ -2134,7 +2114,6 @@ h1 { font-size: clamp(32px, 5vw, 56px); max-width: 950px; font-weight: 800; lett
   .app-header--home { height: 52px; padding: 0 var(--space-3); }
   .app-header--compact { height: 44px; padding: 0 var(--space-3); }
   .app-header__brand { font-size: var(--text-sm); }
-  .app-header__sync-btn { padding: 5px 12px; font-size: var(--text-xs); }
   .nav-tabs { overflow-x: auto; }
   .nav-tabs button { padding: 8px 10px; font-size: var(--text-xs); }
   .section-card__body { padding: var(--space-3); }

@@ -250,3 +250,60 @@ class TestOnlyMissingAndRetryFailed:
         # The match should have been processed (not just skipped)
         non_skipped = [r for r in results if r.get("status") != "skipped"]
         assert len(non_skipped) >= 1
+
+    @pytest.mark.asyncio
+    async def test_batch_ai_skips_started_matches_and_uses_limit_for_future_matches(self, session):
+        """Already-started scheduled matches should not consume the AI batch limit."""
+        from app.ai.service import run_ai_predictions_batch
+
+        _make_team(session, "NF1", "NoFuture1")
+        _make_team(session, "NF2", "NoFuture2")
+        _make_team(session, "NF3", "NoFuture3")
+        _make_team(session, "NF4", "NoFuture4")
+
+        started = _make_match(session, "started_scheduled", "NF1", "NF2")
+        started.kickoff = datetime.now(timezone.utc) - timedelta(hours=1)
+        future = _make_match(session, "future_missing_ai", "NF3", "NF4")
+        future.kickoff = datetime.now(timezone.utc) + timedelta(hours=1)
+        session.flush()
+
+        with patch("app.ai.service.run_ai_predictions_for_match", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = [{"status": "success", "match_id": "future_missing_ai"}]
+
+            await run_ai_predictions_batch(
+                session, limit=1, only_missing=True, retry_failed=False,
+            )
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[1] == "future_missing_ai"
+
+    @pytest.mark.asyncio
+    async def test_only_missing_processes_matches_with_no_valid_ai_not_partial_coverage(self, session):
+        """Default only_missing mode should match the dashboard count: no valid AI at all."""
+        from app.ai.service import run_ai_predictions_batch
+        from app.ai.model_registry import list_enabled_models
+
+        _make_team(session, "PM1", "PartialMissing1")
+        _make_team(session, "PM2", "PartialMissing2")
+        _make_team(session, "PM3", "PartialMissing3")
+        _make_team(session, "PM4", "PartialMissing4")
+
+        partial = _make_match(session, "partial_ai_match", "PM1", "PM2")
+        partial.kickoff = datetime.now(timezone.utc) + timedelta(hours=1)
+        no_ai = _make_match(session, "no_ai_match", "PM3", "PM4")
+        no_ai.kickoff = datetime.now(timezone.utc) + timedelta(hours=2)
+
+        models = list_enabled_models()
+        assert len(models) > 1
+        _make_ai_prediction(session, "partial_ai_match", models[0].model_version)
+        session.flush()
+
+        with patch("app.ai.service.run_ai_predictions_for_match", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = [{"status": "success", "match_id": "no_ai_match"}]
+
+            await run_ai_predictions_batch(
+                session, limit=2, only_missing=True, retry_failed=False,
+            )
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[1] == "no_ai_match"

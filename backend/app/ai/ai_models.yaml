@@ -71,57 +71,6 @@ providers:
 #         latency_tier: medium
 #         role: reasoning_strong
 #         ensemble_weight: 0.50
-
-  xiaomi:
-    enabled: true
-    api_key_env: XIAOMI_API_KEY
-    base_url_env: XIAOMI_BASE_URL
-    default_timeout_seconds: 30
-    default_temperature: 0
-    max_retries: 2
-    models:
-      - model_id: mimo-v2.5-pro
-        enabled: true
-        model_version: ai-xiaomi-mimo-v2.5-pro-v1
-        display_name: MiMo V2.5 Pro
-        cost_tier: high
-        latency_tier: slow
-        role: reasoning_strong
-        ensemble_weight: 0.67
-        prompt_version: worldcup-ai-v1
-
-      - model_id: mimo-v2-pro
-        enabled: true
-        model_version: ai-xiaomi-mimo-v2-pro-v1
-        display_name: MiMo V2 Pro
-        cost_tier: low
-        latency_tier: fast
-        role: fast_baseline
-        ensemble_weight: 0.33
-        prompt_version: worldcup-ai-v1
-
-      - model_id: mimo-v2.5-pro
-        enabled: false
-        model_version: ai-xiaomi-mimo-v2.5-pro-v2
-        display_name: MiMo V2.5 Pro (Independent)
-        cost_tier: high
-        latency_tier: slow
-        role: shadow
-        ensemble_weight: 0
-        prompt_version: worldcup-ai-v2
-        include_in_ensemble: false
-
-      - model_id: mimo-v2-pro
-        enabled: true
-        model_version: ai-xiaomi-mimo-v2-pro-v2
-        display_name: MiMo V2 Pro (Independent)
-        cost_tier: low
-        latency_tier: fast
-        role: independent_judge
-        ensemble_weight: 0.33
-        prompt_version: worldcup-ai-v2
-        include_in_ensemble: true
-
 ensemble_defaults:
   # Research-enhanced: increased market weight from 0.20 to 0.30
   # Odds data has proven 8.7% Brier improvement and 13.3% accuracy improvement over Elo+Poisson

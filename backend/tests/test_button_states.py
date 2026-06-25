@@ -65,7 +65,7 @@ def test_workflow_status_returns_button_states(client):
 # ---------------------------------------------------------------------------
 
 def test_ai_button_unavailable_when_no_key():
-    with patch("app.workflows.service._check_ai_available", return_value=(False, "未配置 API Key（deepseek, xiaomi）")):
+    with patch("app.workflows.service._check_ai_available", return_value=(False, "未配置 API Key（deepseek）")):
         states = _compute_button_states(
             running=False,
             cooldown_active=False,
@@ -156,10 +156,10 @@ def test_estimated_ai_calls_capped_by_limit():
 
 
 # ---------------------------------------------------------------------------
-# 6. Manual buttons not affected by cooldown
+# 6. Cooldown applies only to manual AI prediction
 # ---------------------------------------------------------------------------
 
-def test_manual_buttons_not_affected_by_cooldown():
+def test_cooldown_only_disables_ai_prediction_button():
     with patch("app.workflows.service._check_ai_available", return_value=(True, "AI 可用")), \
          patch("app.ai.model_registry.list_enabled_models", return_value=[MagicMock()]):
         states = _compute_button_states(
@@ -169,13 +169,12 @@ def test_manual_buttons_not_affected_by_cooldown():
             yesterday_info=_default_yesterday(count=2, needs_review=True),
             lock_info=_default_lock(needs_lock=1),
         )
-    # daily_open is disabled by cooldown
-    assert states["daily_open"]["enabled"] is False
-    assert "冷却" in states["daily_open"]["reason"]
 
-    # Manual buttons should still be enabled
+    assert states["daily_open"]["enabled"] is True
+    assert states["post_match"]["enabled"] is True
     assert states["pre_match"]["enabled"] is True
     assert states["full"]["enabled"] is True
-    assert states["ai_prediction"]["enabled"] is True
-    assert states["post_match"]["enabled"] is True
     assert states["lock"]["enabled"] is True
+
+    assert states["ai_prediction"]["enabled"] is False
+    assert "60分钟冷却期内" in states["ai_prediction"]["reason"]

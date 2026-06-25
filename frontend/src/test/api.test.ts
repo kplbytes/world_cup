@@ -293,6 +293,16 @@ describe("API functions", () => {
       );
     });
 
+    it("sends force=true when manual refresh requests a re-run", async () => {
+      mockFetchResponse({});
+
+      await runAIPrediction("m1", undefined, true);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/ai-predictions/run?match_id=m1&force=true",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
     it("throws on non-ok response", async () => {
       mockFetchResponse(null, false, 500);
       await expect(runAIPrediction("m1")).rejects.toThrow("AI prediction run failed: 500");

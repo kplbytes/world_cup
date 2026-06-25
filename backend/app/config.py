@@ -50,8 +50,8 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "*"
 
     # Local workflow settings
-    auto_run_daily_workflow_on_open: bool = True
-    auto_run_ai_on_open: bool = True
+    auto_run_daily_workflow_on_open: bool = False
+    auto_run_ai_on_open: bool = False
     workflow_auto_run_cooldown_minutes: int = 60
     workflow_default_hours: int = 48
     workflow_default_since_hours: int = 24

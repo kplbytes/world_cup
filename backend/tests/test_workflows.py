@@ -25,8 +25,11 @@ from app.workflows.state import set_current_run, is_workflow_running, get_curren
 @pytest.fixture(autouse=True)
 def _reset_workflow_state():
     """Reset global workflow state between tests."""
+    from app.main import _rate_limit_store
+    _rate_limit_store.clear()
     set_current_run(None)
     yield
+    _rate_limit_store.clear()
     set_current_run(None)
 
 
@@ -49,6 +52,15 @@ def wait_for_run(client: TestClient, run_id: int, timeout: float = 2.0) -> dict:
             return last
         time.sleep(0.02)
     return last
+
+
+def wait_until_not_running(timeout: float = 2.0) -> None:
+    """Wait for the in-process workflow lock to be released without HTTP polling."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not is_workflow_running():
+            return
+        time.sleep(0.02)
 
 
 # ---------------------------------------------------------------------------
@@ -133,15 +145,21 @@ def test_daily_open_can_be_triggered(client):
 
 
 # ---------------------------------------------------------------------------
-# 3. daily-open skipped when cooldown active
+# 3. daily-open manual trigger bypasses cooldown
 # ---------------------------------------------------------------------------
 
-def test_daily_open_skipped_when_cooldown_active(client):
-    with patch("app.workflows.state.can_auto_run", return_value=False):
+def test_daily_open_can_be_manually_triggered_when_cooldown_active(client):
+    with patch("app.workflows.state.can_auto_run", return_value=False), \
+         patch("app.workflows.service._run_refresh_step"), \
+         patch("app.workflows.service._run_recompute_step"), \
+         patch("app.workflows.service._run_accuracy_update_step"), \
+         patch("app.workflows.service._run_artifact_step"), \
+         patch("app.workflows.service._run_ensemble_step"):
         response = client.post("/api/workflows/daily-open", json={"with_ai": False, "with_ensemble": False, "auto_lock": False})
-        # When cooldown is active and with_ai=False, it returns skipped
         data = response.json()
-        assert data["status"] in ("skipped", "started", "already_running")
+        assert data["status"] == "started"
+        assert data["run_id"] > 0
+        wait_until_not_running()
 
 
 # ---------------------------------------------------------------------------

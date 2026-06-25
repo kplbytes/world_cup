@@ -15,7 +15,6 @@ from app.workflows.schemas import (
 )
 from app.workflows import service as workflow_service
 from app.workflows.state import is_workflow_running
-from app.workflows.scheduler import should_auto_run_daily
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +115,7 @@ def _check_ai_available_for_auto() -> tuple[bool, str]:
 
 @router.post("/daily-open")
 def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
-    """Auto-trigger daily open workflow (called when frontend first loads).
+    """Manually trigger daily open workflow.
 
     The workflow is executed in a background thread to avoid blocking the request
     handler while recompute (25-40s) runs.
@@ -124,17 +123,10 @@ def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
     if is_workflow_running():
         return {"status": "already_running", "message": "A workflow is already running"}
 
-    # Check cooldown
-    from app.workflows.state import can_auto_run
-    if not can_auto_run():
-        return {"status": "skipped", "message": "Already ran recently, cooldown active"}
-
-    # Auto AI: run AI for upcoming 48h matches missing predictions
-    # if with_ai is explicitly True OR auto_run_ai_on_open is enabled
-    effective_with_ai = (req.with_ai or settings.auto_run_ai_on_open) and _check_ai_available_for_auto()[0]
+    effective_with_ai = req.with_ai and _check_ai_available_for_auto()[0]
 
     effective_limit = min(req.limit, settings.ai_run_all_max_limit)
-    run_id = workflow_service.start_workflow_run("daily_open", "auto_on_open", {
+    run_id = workflow_service.start_workflow_run("daily_open", "manual_button", {
         "hours": req.hours,
         "since_hours": req.since_hours,
         "limit": effective_limit,
@@ -158,7 +150,7 @@ def workflow_daily_open(req: DailyOpenRequest = DailyOpenRequest()):
                 with_ensemble=req.with_ensemble,
                 auto_lock=req.auto_lock,
                 only_missing=req.only_missing,
-                trigger_source="auto_on_open",
+                trigger_source="manual_button",
             )
         except Exception:
             logger.exception("daily_open workflow background task failed")

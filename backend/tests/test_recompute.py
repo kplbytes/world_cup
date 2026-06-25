@@ -1,17 +1,21 @@
 from pathlib import Path
+from datetime import timedelta
 
 from sqlalchemy import func, select
 
 from app.models import (
     DashboardRevision,
+    Match,
     MatchPrediction,
+    ModelScore,
+    PredictionSnapshot,
     QualificationPrediction,
     StandingSnapshot,
     Team,
     TeamProfilePrediction,
 )
 from app.providers.openfootball import OpenFootballProvider
-from app.services.recompute import _compute_data_context, recompute_all
+from app.services.recompute import _compute_data_context, _prune_old_revisions, recompute_all
 from app.services.seed import seed_ratings, seed_tournament
 
 
@@ -81,3 +85,109 @@ def test_data_context_uses_available_snapshots(db_session):
     assert freshness >= 0.0
     assert ranking_coverage == 1.0
     assert provider_agreement > 0.5
+
+
+def test_prune_old_revisions_preserves_scoring_history(db_session):
+    seed_database(db_session)
+    match = db_session.scalar(select(Match).order_by(Match.kickoff))
+    team = db_session.scalar(select(Team).order_by(Team.id))
+
+    revisions = []
+    for idx in range(6):
+        revision = DashboardRevision(
+            model_version=f"test-v{idx}",
+            simulation_iterations=1,
+            simulation_seed=idx,
+            active=idx == 5,
+        )
+        db_session.add(revision)
+        db_session.flush()
+        revisions.append(revision)
+
+    old_revision = revisions[0]
+    old_revision_id = old_revision.id
+    db_session.add(
+        MatchPrediction(
+            revision_id=old_revision_id,
+            match_id=match.id,
+            home_xg=1.2,
+            away_xg=0.8,
+            home_win=0.5,
+            draw=0.3,
+            away_win=0.2,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.8,
+            confidence_label="High",
+            data_confidence=0.8,
+            data_confidence_label="High",
+            model_confidence=0.8,
+            model_confidence_label="High",
+            explanation="historical prediction",
+            model_inputs={},
+            model_version="baseline",
+        )
+    )
+    db_session.add(
+        PredictionSnapshot(
+            match_id=match.id,
+            revision_id=old_revision_id,
+            kickoff=match.kickoff,
+            snapshotted_at=match.kickoff - timedelta(hours=1),
+            home_win=0.5,
+            draw=0.3,
+            away_win=0.2,
+            home_xg=1.2,
+            away_xg=0.8,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.8,
+            confidence_label="High",
+            model_inputs={},
+            model_version="baseline",
+        )
+    )
+    db_session.add(
+        ModelScore(
+            revision_id=old_revision_id,
+            matches_scored=1,
+            brier_score=0.1,
+            log_loss=0.2,
+            outcome_hit_rate=1.0,
+            top_score_hit_rate=0.0,
+            xg_mae=0.4,
+            per_match=[],
+        )
+    )
+    db_session.add(
+        QualificationPrediction(
+            revision_id=old_revision_id,
+            team_id=team.id,
+            first_probability=0.25,
+            second_probability=0.25,
+            third_probability=0.25,
+            fourth_probability=0.25,
+            qualify_probability=0.5,
+            standard_error=0.0,
+        )
+    )
+    db_session.commit()
+
+    _prune_old_revisions(db_session, keep=5)
+    db_session.commit()
+
+    assert db_session.get(DashboardRevision, old_revision_id) is not None
+    assert db_session.scalar(
+        select(func.count(MatchPrediction.id)).where(MatchPrediction.revision_id == old_revision_id)
+    ) == 1
+    assert db_session.scalar(
+        select(func.count(PredictionSnapshot.id)).where(PredictionSnapshot.revision_id == old_revision_id)
+    ) == 1
+    assert db_session.scalar(
+        select(func.count(ModelScore.id)).where(ModelScore.revision_id == old_revision_id)
+    ) == 1
+    assert db_session.scalar(
+        select(func.count(QualificationPrediction.id)).where(
+            QualificationPrediction.revision_id == old_revision_id
+        )
+    ) == 0

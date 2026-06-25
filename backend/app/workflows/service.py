@@ -499,6 +499,25 @@ def _check_ai_available() -> tuple[bool, str]:
     return True, "AI 可用"
 
 
+def _is_ai_prediction_cooldown_active() -> bool:
+    """Return whether a recent successful AI workflow is still in cooldown."""
+    cooldown = timedelta(minutes=settings.workflow_auto_run_cooldown_minutes)
+    cutoff = datetime.now(timezone.utc) - cooldown
+    with session_scope() as session:
+        recent_runs = list(session.scalars(
+            select(WorkflowRun)
+            .where(WorkflowRun.started_at >= cutoff)
+            .where(WorkflowRun.status.in_(["success", "partial_success"]))
+            .order_by(WorkflowRun.started_at.desc())
+            .limit(20)
+        ))
+    for run in recent_runs:
+        options = run.options_json or {}
+        if options.get("with_ai") is True:
+            return True
+    return False
+
+
 def _compute_button_states(
     running: bool,
     cooldown_active: bool,
@@ -511,11 +530,9 @@ def _compute_button_states(
 
     needs_ai = upcoming_info.get("needs_ai", 0)
 
-    # daily_open: disabled if workflow running OR cooldown active
+    # daily_open: manual data refresh, not blocked by cooldown.
     if running:
         daily_open = {"enabled": False, "reason": "当前已有工作流正在运行"}
-    elif cooldown_active:
-        daily_open = {"enabled": False, "reason": "60分钟冷却期内"}
     else:
         daily_open = {"enabled": True, "reason": "可运行"}
 
@@ -525,7 +542,7 @@ def _compute_button_states(
     else:
         pre_match = {"enabled": True, "reason": "可运行"}
 
-    # ai_prediction: disabled if workflow running OR AI not enabled OR no API key OR needs_ai == 0
+    # ai_prediction: disabled if workflow running, unavailable, no need, or recent AI run cooldown.
     ai_available, ai_reason = _check_ai_available()
     num_enabled_models = len(list_enabled_models())
     estimated_calls = min(needs_ai, settings.ai_run_all_max_limit) * num_enabled_models
@@ -535,6 +552,8 @@ def _compute_button_states(
         ai_prediction = {"enabled": False, "reason": ai_reason, "estimated_calls": 0, "needs_ai": needs_ai}
     elif needs_ai == 0:
         ai_prediction = {"enabled": False, "reason": "没有需要AI预测的比赛", "estimated_calls": 0, "needs_ai": 0}
+    elif cooldown_active:
+        ai_prediction = {"enabled": False, "reason": "60分钟冷却期内", "estimated_calls": 0, "needs_ai": needs_ai}
     else:
         ai_prediction = {
             "enabled": True,
@@ -665,7 +684,7 @@ def get_workflow_status() -> dict:
             }
 
     running = is_workflow_running()
-    cooldown_active = not can_auto_run()
+    cooldown_active = _is_ai_prediction_cooldown_active()
     upcoming_info = _get_upcoming_matches_info()
     yesterday_info = _get_yesterday_matches_info()
     lock_info = _get_lock_status_info()

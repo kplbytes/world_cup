@@ -132,12 +132,12 @@ describe("MatchDetailDrawer AI model display", () => {
     const aiPredictions = [
       { model_version: "ai-deepseek-v4-flash-v1", parsed_home_win: 0.6, parsed_draw: 0.25, parsed_away_win: 0.15 },
       { model_version: "ai-deepseek-v4-flash-v2", parsed_home_win: 0.55, parsed_draw: 0.3, parsed_away_win: 0.15 },
-      { model_version: "ai-xiaomi-mimo-v2.5-pro-v1", parsed_home_win: 0.62, parsed_draw: 0.23, parsed_away_win: 0.15 },
+      { model_version: "ai-deepseek-v4-pro-v1", parsed_home_win: 0.62, parsed_draw: 0.23, parsed_away_win: 0.15 },
     ];
     const versions = [...new Set(aiPredictions.map(p => p.model_version))];
     expect(versions).toContain("ai-deepseek-v4-flash-v1");
     expect(versions).toContain("ai-deepseek-v4-flash-v2");
-    expect(versions).toContain("ai-xiaomi-mimo-v2.5-pro-v1");
+    expect(versions).toContain("ai-deepseek-v4-pro-v1");
     expect(versions.length).toBe(3);
   });
 

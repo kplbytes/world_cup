@@ -181,6 +181,49 @@ def test_sync_runs_returns_list(tmp_path):
     assert isinstance(response.json(), list)
 
 
+def test_ai_predictions_service_hides_disabled_model_versions(tmp_path):
+    api_client(tmp_path)
+    match_id = "2026-B-QAT-SUI-2026-06-13"
+    with session_scope() as session:
+        from app.models import AIPrediction
+
+        for provider, version in (
+            ("deepseek", "ai-deepseek-v4-flash-v1"),
+            ("xiaomi", "ai-xiaomi-mimo-v2.5-pro-v1"),
+        ):
+            session.add(
+                AIPrediction(
+                    match_id=match_id,
+                    provider=provider,
+                    model_id="model",
+                    model_version=version,
+                    prompt_version="worldcup-ai-v1",
+                    input_snapshot_json={},
+                    raw_response_text="{}",
+                    raw_response_json={},
+                    parsed_home_win=0.5,
+                    parsed_draw=0.3,
+                    parsed_away_win=0.2,
+                    confidence=0.8,
+                    risk_flags_json=[],
+                    key_factors_json=[],
+                    reason="test",
+                    uncertainties_json=[],
+                    disagreement_with_system="",
+                    disagreement_with_market="",
+                    recommended_label="home_win",
+                    created_at=datetime(2026, 6, 14, 9, tzinfo=timezone.utc),
+                )
+            )
+
+    from app.ai.service import get_ai_predictions
+    with session_scope() as session:
+        predictions = get_ai_predictions(session, match_id)
+
+    versions = [item["model_version"] for item in predictions]
+    assert versions == ["ai-deepseek-v4-flash-v1"]
+
+
 def test_ai_independence_endpoint_returns_summary(tmp_path):
     client = api_client(tmp_path)
     with session_scope() as session:

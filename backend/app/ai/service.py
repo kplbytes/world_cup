@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -26,6 +26,8 @@ from app.config import settings
 from app.models import AIPrediction, Match, MarketSnapshot, PredictionSnapshot
 
 logger = logging.getLogger(__name__)
+
+AI_REPREDICTION_COOLDOWN = timedelta(hours=1)
 
 
 def is_ai_enabled() -> bool:
@@ -60,6 +62,45 @@ def _find_existing_prediction(session: Session, match_id: str, model_version: st
     )
 
 
+def _ensure_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _latest_successful_prediction(session: Session, match_id: str) -> AIPrediction | None:
+    return session.scalar(
+        select(AIPrediction)
+        .where(
+            AIPrediction.match_id == match_id,
+            AIPrediction.error_code.is_(None),
+            AIPrediction.parsed_home_win.isnot(None),
+        )
+        .order_by(AIPrediction.created_at.desc())
+        .limit(1)
+    )
+
+
+def _prediction_cooldown_result(session: Session, match_id: str) -> dict[str, Any] | None:
+    latest = _latest_successful_prediction(session, match_id)
+    if latest is None or latest.created_at is None:
+        return None
+
+    now = datetime.now(timezone.utc)
+    available_at = _ensure_utc(latest.created_at) + AI_REPREDICTION_COOLDOWN
+    if available_at <= now:
+        return None
+
+    return {
+        "status": "skipped_cooldown",
+        "match_id": match_id,
+        "prediction_id": latest.id,
+        "last_prediction_at": _ensure_utc(latest.created_at).isoformat(),
+        "retry_after_seconds": max(0, int((available_at - now).total_seconds())),
+        "reason": "AI prediction was refreshed less than one hour ago",
+    }
+
+
 async def run_ai_prediction(
     session: Session,
     match_id: str,
@@ -75,6 +116,12 @@ async def run_ai_prediction(
 
     model_config = get_model_config(model_version)
     prompt_ver = model_config.prompt_version if model_config else get_prompt_version()
+
+    if force:
+        cooldown = _prediction_cooldown_result(session, match_id)
+        if cooldown:
+            cooldown["model_version"] = model_version
+            return cooldown
 
     if not force:
         existing = _find_existing_prediction(session, match_id, model_version, prompt_ver)
@@ -328,6 +375,11 @@ async def run_ai_predictions_for_match(
     if not models:
         return []
 
+    if force:
+        cooldown = _prediction_cooldown_result(session, match_id)
+        if cooldown:
+            return [cooldown]
+
     # Skip models whose provider is not configured (no API key)
     runnable_models = []
     for model in models:
@@ -421,7 +473,12 @@ async def run_ai_predictions_batch(
         only_missing: If True, skip matches that already have AI predictions
         retry_failed: If True, also retry models that previously failed
     """
-    query = select(Match).where(Match.status != "final")
+    now = datetime.now(timezone.utc)
+    query = (
+        select(Match)
+        .where(Match.status != "final")
+        .where(Match.kickoff >= now)
+    )
     if stage:
         query = query.where(Match.stage == stage)
     query = query.order_by(Match.kickoff).limit(limit)
@@ -467,6 +524,15 @@ async def run_ai_predictions_batch(
                     })
                 continue
 
+            if versions_with_success and not retry_failed:
+                results.append({
+                    "status": "skipped",
+                    "match_id": match.id,
+                    "reason": "already_has_ai_prediction",
+                    "existing_versions": list(versions_with_success),
+                })
+                continue
+
         match_results = await run_ai_predictions_for_match(session, match.id)
         results.extend(match_results)
 
@@ -484,7 +550,11 @@ def get_ai_predictions(session: Session, match_id: str) -> list[dict[str, Any]]:
     # Get baseline system prediction for comparison
     baseline_probs = _get_baseline_probs(session, match_id)
 
-    return [_serialize_ai_prediction(row, baseline_probs) for row in rows]
+    return [
+        _serialize_ai_prediction(row, baseline_probs)
+        for row in rows
+        if "xiaomi" not in row.model_version.lower() and "mimo" not in row.model_version.lower()
+    ]
 
 
 def list_ai_model_status(session: Session) -> list[dict[str, Any]]:

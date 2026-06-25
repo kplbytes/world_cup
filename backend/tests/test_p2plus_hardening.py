@@ -162,6 +162,16 @@ class TestAIRegistry:
         # Both current models are enabled; verify None for unknown
         assert get_model_config("ai-unknown-v1") is None
 
+    def test_xiaomi_mimo_models_not_loaded(self):
+        """Xiaomi MiMo is disabled due to billing and should not be exposed."""
+        from app.ai.model_registry import get_model_config, list_enabled_models, list_enabled_providers, reload
+        reload()
+        versions = [m.model_version for m in list_enabled_models()]
+        providers = [p.provider_name for p in list_enabled_providers()]
+        assert "xiaomi" not in providers
+        assert all("xiaomi" not in version and "mimo" not in version for version in versions)
+        assert get_model_config("ai-xiaomi-mimo-v2.5-pro-v1") is None
+
     def test_n_model_extensibility(self):
         """Verify the YAML structure supports N models."""
         import yaml

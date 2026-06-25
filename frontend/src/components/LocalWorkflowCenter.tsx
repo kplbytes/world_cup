@@ -48,6 +48,17 @@ function ButtonHelper({ btn, loading }: { btn: ButtonState | undefined; loading:
   return null;
 }
 
+function normalizePercent(value: number | null | undefined): number | null {
+  return typeof value === "number"
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : null;
+}
+
+function runningText(idleLabel: string, runningLabel: string, percent: number | null | undefined) {
+  const safePercent = normalizePercent(percent);
+  return safePercent == null ? `${runningLabel}...` : `${idleLabel} ${safePercent}%`;
+}
+
 export default function LocalWorkflowCenter() {
   const queryClient = useQueryClient();
 
@@ -62,6 +73,12 @@ export default function LocalWorkflowCenter() {
     anyRunning,
     btnStates,
   } = useWorkflowActions({ runsLimit: 10 });
+  const activeRun = status?.last_run?.status === "running" ? status.last_run : null;
+  const activePercent = activeRun?.progress?.percent ?? null;
+  const workflowRunning = (workflowType: string) =>
+    activeRun?.workflow_type === workflowType;
+  const workflowProgress = (workflowType: string) =>
+    workflowRunning(workflowType) ? activePercent : null;
 
   const invalidateAll = () => {
     queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
@@ -81,7 +98,12 @@ export default function LocalWorkflowCenter() {
   const anyRunningAll =
     anyRunning ||
     postMatchMutation.isPending ||
-    lockMutation.isPending;
+    lockMutation.isPending ||
+    activeRun != null;
+  const postMatchRunning = postMatchMutation.isPending || workflowRunning("post_match");
+  const preMatchRunning = preMatchMutation.isPending || workflowRunning("pre_match");
+  const lockRunning = lockMutation.isPending || workflowRunning("lock");
+  const fullRunning = fullMutation.isPending || workflowRunning("full");
 
   const todayStatusColor =
     status?.today_status === "already_run" || status?.today_status === "completed" || status?.today_status === "success"
@@ -106,7 +128,7 @@ export default function LocalWorkflowCenter() {
           lineHeight: 1.6,
         }}
       >
-        每天第一次打开页面会自动更新赛果、复盘、预测，并在配置允许时自动运行 AI。60 分钟内重复打开不会重复执行。
+        页面打开时不会自动更新数据。需要更新赛程、赛果或 AI 预测时，请手动点击对应按钮。
       </div>
 
       {/* 1. 今日运行状态 */}
@@ -224,7 +246,9 @@ export default function LocalWorkflowCenter() {
               opacity: anyRunningAll || (btnStates?.post_match && !btnStates.post_match.enabled) ? 0.55 : 1,
             }}
           >
-            {postMatchMutation.isPending ? "复盘运行中..." : "运行赛后复盘"}
+            {postMatchRunning
+              ? runningText("运行赛后复盘", "复盘运行中", workflowProgress("post_match"))
+              : "运行赛后复盘"}
           </button>
           <ButtonHelper btn={btnStates?.post_match} loading={anyRunningAll} />
           {postMatchMutation.isError && (
@@ -332,8 +356,8 @@ export default function LocalWorkflowCenter() {
               opacity: anyRunningAll || (btnStates?.pre_match && !btnStates.pre_match.enabled) ? 0.55 : 1,
             }}
           >
-            {preMatchMutation.isPending
-              ? "赛前更新运行中..."
+            {preMatchRunning
+              ? runningText("运行赛前更新", "赛前更新运行中", workflowProgress("pre_match"))
               : "运行赛前更新（不含AI）"}
           </button>
           <ButtonHelper btn={btnStates?.pre_match} loading={anyRunningAll} />
@@ -488,8 +512,8 @@ export default function LocalWorkflowCenter() {
               opacity: anyRunningAll || (btnStates?.ai_prediction && !btnStates.ai_prediction.enabled) ? 0.55 : 1,
             }}
           >
-            {preMatchMutation.isPending
-              ? "AI 预测运行中..."
+            {preMatchRunning
+              ? runningText("运行 AI 预测", "AI 预测运行中", workflowProgress("pre_match"))
               : "运行 AI 预测（含费用）"}
           </button>
           <ButtonHelper btn={btnStates?.ai_prediction} loading={anyRunningAll} />
@@ -582,7 +606,9 @@ export default function LocalWorkflowCenter() {
               opacity: anyRunningAll || (btnStates?.lock && !btnStates.lock.enabled) ? 0.55 : 1,
             }}
           >
-            {lockMutation.isPending ? "锁定运行中..." : "锁定即将开赛比赛"}
+            {lockRunning
+              ? runningText("锁定即将开赛比赛", "锁定运行中", workflowProgress("lock"))
+              : "锁定即将开赛比赛"}
           </button>
           <ButtonHelper btn={btnStates?.lock} loading={anyRunningAll} />
           {lockMutation.isError && (
@@ -637,8 +663,8 @@ export default function LocalWorkflowCenter() {
               opacity: anyRunningAll || (btnStates?.full && !btnStates.full.enabled) ? 0.55 : 1,
             }}
           >
-            {fullMutation.isPending
-              ? "全流程运行中..."
+            {fullRunning
+              ? runningText("运行一键全流程", "全流程运行中", workflowProgress("full"))
               : "运行一键全流程（含 AI，产生费用）"}
           </button>
           <ButtonHelper btn={btnStates?.full} loading={anyRunningAll} />

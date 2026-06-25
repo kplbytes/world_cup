@@ -13,6 +13,7 @@ import MetricCard from "../components/ui/MetricCard";
 import SectionCard from "../components/ui/SectionCard";
 import StatusStrip from "../components/ui/StatusStrip";
 import WorkflowProgressBar from "../components/ui/WorkflowProgressBar";
+import ActionButton from "../components/ActionButton";
 import GroupNav from "../components/GroupNav";
 import Header from "../components/Header";
 import { workflowRunsRefetchInterval, workflowStatusRefetchInterval } from "../hooks/useWorkflowActions";
@@ -249,6 +250,25 @@ describe("WorkflowProgressBar", () => {
     expect(screen.getByText("3/9")).toBeVisible();
     expect(screen.getByText("33%")).toBeVisible();
     expect(screen.getByText("ai_prediction")).toBeVisible();
+  });
+});
+
+// ── ActionButton ────────────────────────────────────────────────────
+
+describe("ActionButton", () => {
+  it("shows running percentage when workflow progress is available", () => {
+    render(
+      <ActionButton
+        label="同步赛果"
+        enabled={true}
+        loading={true}
+        progressPercent={44}
+        onClick={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "同步赛果 44%" })).toBeDisabled();
+    expect(screen.getByRole("progressbar", { name: "同步赛果进度" })).toHaveAttribute("aria-valuenow", "44");
   });
 });
 

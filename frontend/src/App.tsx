@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { getDashboard, refreshDashboard } from "./api";
+import { useQuery } from "@tanstack/react-query";
+import { getDashboard } from "./api";
 import TeamDetail from "./components/TeamDetail";
 import DailyDashboard from "./components/DailyDashboard";
 import MatchCenter from "./components/MatchCenter";
@@ -24,9 +24,7 @@ export default function App() {
   const [selectedGroup, setSelectedGroup] = useState("A");
   const [view, setView] = useState<ViewType>("daily");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
-  const client = useQueryClient();
   const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, staleTime: 30_000 });
-  const refresh = useMutation({ mutationFn: refreshDashboard, onSuccess: () => client.invalidateQueries({ queryKey: ["dashboard"] }) });
 
   if (dashboard.isLoading) return <div className="state-screen"><span>正在加载赛事数据</span></div>;
   if (dashboard.isError || !dashboard.data) return <div className="state-screen error"><span>无法读取本地赛事数据</span><button onClick={() => dashboard.refetch()}>重试</button></div>;
@@ -43,8 +41,6 @@ export default function App() {
         subtitle={isHome ? "赛前预测 · AI 辅助 · 赛后复盘" : undefined}
         version={String(dashboard.data.revision.id).padStart(3, "0")}
         modelVersion={dashboard.data.revision.model_version}
-        onSync={() => refresh.mutate()}
-        syncing={refresh.isPending}
         nav={
           !isHome ? (
             <div className="nav-tabs" role="tablist">

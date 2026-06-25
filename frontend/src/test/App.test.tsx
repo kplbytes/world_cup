@@ -69,6 +69,42 @@ const dashboard = {
   })),
 };
 
+function dashboardWithFinishedAiOnlyReview() {
+  const copy = JSON.parse(JSON.stringify(dashboard));
+  copy.groups[0].matches[0] = {
+    ...copy.groups[0].matches[0],
+    id: "A-final-ai-only",
+    kickoff: "2026-06-24T10:00:00Z",
+    status: "final",
+    home_score: 2,
+    away_score: 1,
+    prediction: null,
+    snapshot_status: {
+      locked: false,
+      locked_at: null,
+      is_fallback: false,
+      participates_in_model_score: false,
+      real_time_only: false,
+    },
+    ai_prediction: {
+      home_win: 0.48,
+      draw: 0.27,
+      away_win: 0.25,
+      model_version: "ai-deepseek-v4-flash-v1",
+      recommended_label: "主胜",
+    },
+    ensemble_prediction: {
+      home_win: 0.52,
+      draw: 0.25,
+      away_win: 0.23,
+      model_version: "ensemble-v1",
+      system_weight: 0.45,
+      market_weight: 0.25,
+    },
+  };
+  return copy;
+}
+
 const mockTeamProfile = () => ({
   team_id: "A1",
   team_code: "A1",
@@ -213,7 +249,21 @@ const modelScore = {
   },
 };
 
-function renderApp() {
+function workflowStatus(overrides: Record<string, unknown> = {}) {
+  return {
+    today_status: "completed",
+    last_run_at: "2026-06-13T08:00:00Z",
+    recommended_action: null,
+    button_states: {},
+    yesterday_matches: { count: 0, scored: 0, needs_review: false },
+    upcoming_matches: { count_24h: 0, count_48h: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, needs_ai: 0 },
+    lock_status: { matches_near_kickoff: 0, locked: 0, needs_lock: 0, real_time_only: 0 },
+    ai_stats: { today_ai_calls: 0, today_ai_failed: 0, today_ai_skipped: 0, cooldown_skipped: false, only_missing_skipped: 0 },
+    ...overrides,
+  };
+}
+
+function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflowStatus()) {
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
     const url = String(input);
     if (url.includes("/api/model-score")) return { ok: true, json: async () => modelScore };
@@ -224,14 +274,7 @@ function renderApp() {
       data_quality: null, ai_evaluation: { system: { sample_count: 0, brier: null, logloss: null, hit_rate: null }, ai_by_version: {}, ensemble: { sample_count: 0, brier: null, logloss: null, hit_rate: null, helped: 0, hurt: 0 }, ai_effect: {} },
       ai_models: { enabled: false, models: [] },
     }) };
-    if (url.includes("/api/workflows/status")) return { ok: true, json: async () => ({
-      today_status: "completed", last_run_at: "2026-06-13T08:00:00Z",
-      recommended_action: null, button_states: {},
-      yesterday_matches: { count: 0, scored: 0, needs_review: false },
-      upcoming_matches: { count_24h: 0, count_48h: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, needs_ai: 0 },
-      lock_status: { matches_near_kickoff: 0, locked: 0, needs_lock: 0, real_time_only: 0 },
-      ai_stats: { today_ai_calls: 0, today_ai_failed: 0, today_ai_skipped: 0, cooldown_skipped: false, only_missing_skipped: 0 },
-    }) };
+    if (url.includes("/api/workflows/status")) return { ok: true, json: async () => workflowStatusPayload };
     if (url.includes("/api/workflows/runs")) return { ok: true, json: async () => ({ runs: [] }) };
     if (url.includes("/api/adaptive-weights")) return { ok: true, json: async () => ({
       weights: { system: 0.35, market: 0.30, "ai_ai-test-v1": 0.35 },
@@ -249,7 +292,7 @@ function renderApp() {
     if (url.includes("/api/team-profiles/evaluation")) return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
     if (url.includes("/api/team-profiles/") && !url.includes("evaluation")) return { ok: true, json: async () => ({ profile: mockTeamProfile(), summary: "防守优先，大赛经验丰富" }) };
     if (url.includes("/api/team-profiles")) return { ok: true, json: async () => ({ profiles: [], total: 0 }) };
-    return { ok: true, json: async () => dashboard };
+    return { ok: true, json: async () => dashboardPayload };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
@@ -268,10 +311,26 @@ it("defaults to 今日工作台 on load", async () => {
   expect(await screen.findByRole("tab", { name: "今日工作台" })).toHaveClass("active");
 });
 
+it("does not show the legacy header sync button on the daily dashboard", async () => {
+  const { container } = renderApp();
+  expect(await screen.findByText("2026 世界杯预测工作台")).toBeVisible();
+  expect(container.querySelector(".app-header__sync-btn")).toBeNull();
+});
+
 // Daily dashboard shows today's status
 it("shows today's status on daily dashboard", async () => {
   renderApp();
   expect(await screen.findByText(/今日状态/)).toBeVisible();
+});
+
+it("separates pre-match snapshot status from AI and Ensemble records in finished review", async () => {
+  renderApp(dashboardWithFinishedAiOnlyReview());
+
+  expect(await screen.findByText("赛前快照：无")).toBeVisible();
+  expect(screen.getByText("AI：有")).toBeVisible();
+  expect(screen.getByText("Ensemble：有")).toBeVisible();
+  expect(screen.getByText("未纳入：无赛前快照")).toBeVisible();
+  expect(screen.queryByText("赛前预测：无")).not.toBeInTheDocument();
 });
 
 // Daily dashboard shows workflow action buttons
@@ -282,6 +341,46 @@ it("shows action buttons on daily dashboard", async () => {
   const expandBtn = within(sectionCard as HTMLElement).queryByText("展开");
   if (expandBtn) await userEvent.click(expandBtn);
   expect(await screen.findByText(/更新今日数据/)).toBeVisible();
+});
+
+it("does not auto-trigger daily update when the page loads", async () => {
+  renderApp(dashboard, workflowStatus({
+    today_status: "needs_run",
+    recommended_action: "run_daily_open_workflow",
+    next_action: { message: "建议运行每日更新", action: "run_daily_open_workflow" },
+  }));
+
+  expect(await screen.findByRole("button", { name: "立即更新" })).toBeVisible();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
+  expect(calls.some(([url, init]) => String(url).includes("/api/workflows/daily-open") && init?.method === "POST")).toBe(false);
+});
+
+it("shows workflow progress percent on the running daily action button", async () => {
+  renderApp(dashboard, workflowStatus({
+    today_status: "running",
+    last_run: {
+      id: 7,
+      workflow_type: "post_match",
+      trigger_source: "manual",
+      status: "running",
+      started_at: "2026-06-13T08:00:00Z",
+      finished_at: null,
+      duration_seconds: null,
+      steps: [],
+      summary: null,
+      error_message: null,
+      progress: { total_steps: 9, completed_steps: 4, percent: 44, running_step: "update_results", failed_steps: [] },
+    },
+  }));
+  const actionHeader = await screen.findByText("操作");
+  const sectionCard = actionHeader.closest(".section-card")!;
+  const expandBtn = within(sectionCard as HTMLElement).queryByText("展开");
+  if (expandBtn) await userEvent.click(expandBtn);
+
+  expect(await screen.findByRole("button", { name: "同步赛果 44%" })).toBeDisabled();
+  expect(screen.getByRole("progressbar", { name: "同步赛果进度" })).toHaveAttribute("aria-valuenow", "44");
 });
 
 it("sends with_ai when running AI predictions from daily dashboard", async () => {

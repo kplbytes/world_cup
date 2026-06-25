@@ -72,6 +72,16 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
     runsLimit: 5,
     extraInvalidateKeys: [["dashboard"]],
   });
+  const activeRun = status?.last_run?.status === "running" ? status.last_run : null;
+  const activePercent = activeRun?.progress?.percent ?? null;
+  const workflowProgress = (workflowType: string) =>
+    activeRun?.workflow_type === workflowType ? activePercent : null;
+  const workflowRunning = (workflowType: string) =>
+    activeRun?.workflow_type === workflowType;
+  const dailyOpenRunning = dailyOpenMutation.isPending || workflowRunning("daily_open");
+  const postMatchRunning = postMatchMutation.isPending || workflowRunning("post_match");
+  const preMatchRunning = preMatchMutation.isPending || workflowRunning("pre_match");
+  const fullRunning = fullMutation.isPending || workflowRunning("full");
 
   const accQuery = useQuery({
     queryKey: ["accuracy-command-center"],
@@ -341,27 +351,31 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
           {status?.next_action?.action === "run_daily_open_workflow" && (
             <button
               onClick={() => dailyOpenMutation.mutate({})}
-              disabled={dailyOpenMutation.isPending || !dailyOpenBtn.enabled}
+              disabled={dailyOpenRunning || !dailyOpenBtn.enabled}
               style={{
                 padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
-                background: dailyOpenMutation.isPending ? "var(--muted)" : "var(--accent-yellow)",
+                background: dailyOpenRunning ? "var(--muted)" : "var(--accent-yellow)",
                 color: "#000", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap",
               }}
             >
-              {dailyOpenMutation.isPending ? "更新中..." : "立即更新"}
+              {dailyOpenRunning && workflowProgress("daily_open") != null
+                ? `更新中 ${Math.round(workflowProgress("daily_open") ?? 0)}%`
+                : dailyOpenRunning ? "更新中..." : "立即更新"}
             </button>
           )}
           {status?.next_action?.action === "run_ai_prediction" && (
             <button
               onClick={() => preMatchMutation.mutate({ with_ai: true })}
-              disabled={preMatchMutation.isPending || !aiBtn.enabled}
+              disabled={preMatchRunning || !aiBtn.enabled}
               style={{
                 padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
-                background: preMatchMutation.isPending ? "var(--muted)" : "var(--accent-yellow)",
+                background: preMatchRunning ? "var(--muted)" : "var(--accent-yellow)",
                 color: "#000", fontWeight: 600, fontSize: 12, whiteSpace: "nowrap",
               }}
             >
-              {preMatchMutation.isPending ? "运行中..." : "运行 AI 预测"}
+              {preMatchRunning && workflowProgress("pre_match") != null
+                ? `运行中 ${Math.round(workflowProgress("pre_match") ?? 0)}%`
+                : preMatchRunning ? "运行中..." : "运行 AI 预测"}
             </button>
           )}
         </div>
@@ -374,7 +388,8 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
             label="更新今日数据"
             enabled={dailyOpenBtn.enabled}
             disabledReason={dailyOpenBtn.reason}
-            loading={dailyOpenMutation.isPending}
+            loading={dailyOpenRunning}
+            progressPercent={workflowProgress("daily_open")}
             estimatedCalls={dailyOpenBtn.estimated_calls}
             onClick={() => dailyOpenMutation.mutate({})}
             variant="primary"
@@ -383,7 +398,8 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
             label="同步赛果"
             enabled={postMatchBtn.enabled}
             disabledReason={postMatchBtn.reason}
-            loading={postMatchMutation.isPending}
+            loading={postMatchRunning}
+            progressPercent={workflowProgress("post_match")}
             onClick={() => postMatchMutation.mutate({})}
             variant="primary"
           />
@@ -391,7 +407,8 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
             label="运行 AI 预测"
             enabled={aiBtn.enabled}
             disabledReason={aiBtn.reason}
-            loading={preMatchMutation.isPending}
+            loading={preMatchRunning}
+            progressPercent={workflowProgress("pre_match")}
             estimatedCalls={aiBtn.estimated_calls}
             warningText={aiBtn.needs_ai && aiBtn.needs_ai > 0 ? `将处理 ${aiBtn.needs_ai} 场比赛，调用外部 API 产生费用` : undefined}
             onClick={() => preMatchMutation.mutate({ with_ai: true })}
@@ -401,7 +418,8 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
             label="一键更新全部"
             enabled={fullBtn.enabled}
             disabledReason={fullBtn.reason}
-            loading={fullMutation.isPending}
+            loading={fullRunning}
+            progressPercent={workflowProgress("full")}
             estimatedCalls={fullBtn.estimated_calls}
             warningText="包含 AI 预测步骤，会调用外部 API 产生费用"
             onClick={() => fullMutation.mutate({})}
@@ -514,6 +532,8 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
               const pred = m.prediction;
               const review = m.match_review;
               const hasPreMatchSnapshot = m.snapshot_status?.locked ?? false;
+              const hasAiPrediction = Boolean(m.ai_prediction);
+              const hasEnsemblePrediction = Boolean(m.ensemble_prediction);
               const scoringText = m.snapshot_status?.participates_in_model_score
                 ? "已纳入评分"
                 : m.snapshot_status?.real_time_only
@@ -540,7 +560,13 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
                     <span style={{ fontWeight: 600, minWidth: 160 }}>{home} vs {away}</span>
                     <span style={{ fontWeight: 700, minWidth: 60 }}>{score}</span>
                     <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
-                      赛前预测：{hasPreMatchSnapshot ? "有" : "无"}
+                      赛前快照：{hasPreMatchSnapshot ? "有" : "无"}
+                    </span>
+                    <span style={{ fontSize: 11, color: hasAiPrediction ? "var(--success-green)" : "var(--text-secondary)" }}>
+                      AI：{hasAiPrediction ? "有" : "无"}
+                    </span>
+                    <span style={{ fontSize: 11, color: hasEnsemblePrediction ? "var(--success-green)" : "var(--text-secondary)" }}>
+                      Ensemble：{hasEnsemblePrediction ? "有" : "无"}
                     </span>
                     <span style={{ fontSize: 11, color: m.snapshot_status?.participates_in_model_score ? "var(--success-green)" : "var(--text-secondary)" }}>
                       {scoringText}

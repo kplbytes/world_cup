@@ -121,10 +121,13 @@ export async function getAIPredictions(matchId: string): Promise<{ match_id: str
   return response.json();
 }
 
-export async function runAIPrediction(matchId: string, modelVersion?: string): Promise<Record<string, unknown>> {
+export async function runAIPrediction(matchId: string, modelVersion?: string, force = false): Promise<Record<string, unknown>> {
   let url = `/api/ai-predictions/run?match_id=${encodeURIComponent(matchId)}`;
   if (modelVersion && modelVersion !== "default") {
     url += `&model_version=${encodeURIComponent(modelVersion)}`;
+  }
+  if (force) {
+    url += "&force=true";
   }
   const response = await fetchWithTimeout(url, { method: "POST", timeoutMs: 60_000 });
   if (!response.ok) throw new Error(`AI prediction run failed: ${response.status}`);

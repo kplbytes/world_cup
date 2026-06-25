@@ -106,7 +106,7 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
   const refreshAIMutation = useMutation({
     mutationFn: async () => {
       if (!match) throw new Error("未选择比赛");
-      const runResp = await runAIPrediction(match.id);
+      const runResp = await runAIPrediction(match.id, undefined, true);
       await runEnsemble(match.id);
       return runResp;
     },

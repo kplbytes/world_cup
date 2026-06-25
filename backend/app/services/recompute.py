@@ -363,7 +363,7 @@ def recompute_tournament_projection(
 
 
 def _prune_old_revisions(session: Session, keep: int = 5) -> None:
-    """Delete old revisions and their associated data to prevent database bloat."""
+    """Delete non-scoring data from old revisions to prevent database bloat."""
     from sqlalchemy import func, text
 
     max_id = session.scalar(select(func.max(DashboardRevision.id)))
@@ -374,29 +374,40 @@ def _prune_old_revisions(session: Session, keep: int = 5) -> None:
         return
 
     child_tables = [
-        "prediction_snapshots",
-        "match_predictions",
         "qualification_predictions",
         "standings_snapshots",
         "team_profile_predictions",
-        "model_scores",
     ]
-    session.execute(text("PRAGMA foreign_keys=OFF"))
-    try:
-        for table in child_tables:
-            result = session.execute(
-                text(f"DELETE FROM {table} WHERE revision_id <= :cutoff"),
-                {"cutoff": cutoff},
-            )
-            if result.rowcount:
-                logger.info("pruned %d rows from %s (revision <= %d)", result.rowcount, table, cutoff)
-        session.execute(
-            text("DELETE FROM dashboard_revisions WHERE id <= :cutoff AND active = 0"),
+    for table in child_tables:
+        result = session.execute(
+            text(f"DELETE FROM {table} WHERE revision_id <= :cutoff"),
             {"cutoff": cutoff},
         )
-        session.flush()
-    finally:
-        session.execute(text("PRAGMA foreign_keys=ON"))
+        if result.rowcount:
+            logger.info("pruned %d rows from %s (revision <= %d)", result.rowcount, table, cutoff)
+    session.execute(
+        text(
+            """
+            DELETE FROM dashboard_revisions
+            WHERE id <= :cutoff
+              AND active = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM prediction_snapshots
+                  WHERE prediction_snapshots.revision_id = dashboard_revisions.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM match_predictions
+                  WHERE match_predictions.revision_id = dashboard_revisions.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM model_scores
+                  WHERE model_scores.revision_id = dashboard_revisions.id
+              )
+            """
+        ),
+        {"cutoff": cutoff},
+    )
+    session.flush()
 
 
 def recompute_all(

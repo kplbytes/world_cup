@@ -8,8 +8,6 @@ type AppHeaderProps = {
   subtitle?: string;
   version?: string;
   modelVersion?: string;
-  onSync?: () => void;
-  syncing?: boolean;
   nav?: ReactNode;
 };
 
@@ -19,8 +17,6 @@ export default function AppHeader({
   subtitle,
   version,
   modelVersion,
-  onSync,
-  syncing,
   nav,
 }: AppHeaderProps) {
   if (mode === "home") {
@@ -39,15 +35,6 @@ export default function AppHeader({
           {modelVersion && (
             <span className="app-header__model">{modelVersion}</span>
           )}
-          {onSync && (
-            <button
-              className="app-header__sync-btn"
-              onClick={onSync}
-              disabled={syncing}
-            >
-              {syncing ? "同步中..." : "同步赛果"}
-            </button>
-          )}
         </div>
       </header>
     );
@@ -64,15 +51,6 @@ export default function AppHeader({
         )}
         {modelVersion && (
           <span className="app-header__model">{modelVersion}</span>
-        )}
-        {onSync && (
-          <button
-            className="app-header__sync-btn"
-            onClick={onSync}
-            disabled={syncing}
-          >
-            {syncing ? "同步中..." : "同步"}
-          </button>
         )}
       </div>
       {nav && <nav className="app-header__nav">{nav}</nav>}
