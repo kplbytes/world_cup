@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.db import create_database, session_scope
 from app.logging_config import workflow_run_id_var
 from app.main import create_app
-from app.models import WorkflowRun, WorkflowStep
+from app.models import AIPrediction, DashboardRevision, Match, PredictionSnapshot, Team, WorkflowRun, WorkflowStep
 from app.workflows import service as workflow_service
 from app.workflows.state import set_current_run, is_workflow_running, get_current_run_id
 
@@ -61,6 +61,27 @@ def wait_until_not_running(timeout: float = 2.0) -> None:
         if not is_workflow_running():
             return
         time.sleep(0.02)
+
+
+def seed_match(session, *, match_id: str, kickoff: datetime, status: str = "scheduled") -> Match:
+    session.add_all([
+        Team(id=f"{match_id}_H", name=f"{match_id} Home", short_name="Home", code=f"H{match_id[-1]}", group_code="A"),
+        Team(id=f"{match_id}_A", name=f"{match_id} Away", short_name="Away", code=f"A{match_id[-1]}", group_code="A"),
+    ])
+    session.flush()
+    match = Match(
+        id=match_id,
+        group_code="A",
+        home_team_id=f"{match_id}_H",
+        away_team_id=f"{match_id}_A",
+        kickoff=kickoff,
+        status=status,
+        source="test",
+        stage="group",
+    )
+    session.add(match)
+    session.flush()
+    return match
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +138,77 @@ def test_workflow_status_ai_skipped_counts_only_today(client):
     response = client.get("/api/workflows/status")
     assert response.status_code == 200
     assert response.json()["ai_stats"]["today_ai_skipped"] == 2
+
+
+def test_workflow_status_yesterday_scored_uses_latest_pre_kickoff_rule(client):
+    now = datetime.now(timezone.utc)
+    kickoff = now - timedelta(hours=2)
+    with session_scope() as session:
+        match = seed_match(session, match_id="yesterday-score", kickoff=kickoff, status="final")
+        match.home_score = 1
+        match.away_score = 0
+        revision = DashboardRevision(active=True, model_version="elo-poisson-v1", simulation_iterations=1, simulation_seed=1)
+        session.add(revision)
+        session.flush()
+        session.add(
+            PredictionSnapshot(
+                match_id=match.id,
+                revision_id=revision.id,
+                kickoff=kickoff,
+                is_pre_match_locked=False,
+                is_fallback_locked=True,
+                home_win=0.55,
+                draw=0.25,
+                away_win=0.20,
+                home_xg=1.4,
+                away_xg=0.9,
+                scorelines=[],
+                score_matrix=[],
+                confidence=0.8,
+                confidence_label="High",
+                model_inputs={},
+                model_version="elo-poisson-v1",
+                snapshotted_at=kickoff - timedelta(minutes=30),
+            )
+        )
+
+    response = client.get("/api/workflows/status")
+    assert response.status_code == 200
+    data = response.json()["yesterday_matches"]
+    assert data["count"] == 1
+    assert data["scored"] == 1
+    assert data["needs_review"] is False
+
+
+def test_workflow_status_ignores_hidden_xiaomi_predictions_in_ai_ready(client):
+    now = datetime.now(timezone.utc)
+    kickoff = now + timedelta(hours=6)
+    with session_scope() as session:
+        match = seed_match(session, match_id="future-hidden-ai", kickoff=kickoff, status="scheduled")
+        session.add(
+            AIPrediction(
+                match_id=match.id,
+                provider="xiaomi",
+                model_id="mimo-v2.5-pro",
+                model_version="ai-xiaomi-mimo-v2.5-pro-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                parsed_home_win=0.60,
+                parsed_draw=0.20,
+                parsed_away_win=0.20,
+                confidence=0.7,
+                created_at=now,
+                error_code=None,
+            )
+        )
+
+    response = client.get("/api/workflows/status")
+    assert response.status_code == 200
+    data = response.json()["upcoming_matches"]
+    assert data["count_24h"] == 1
+    assert data["ai_ready"] == 0
+    assert data["needs_ai"] == 1
 
 
 # ---------------------------------------------------------------------------

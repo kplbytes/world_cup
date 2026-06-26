@@ -86,7 +86,7 @@ def _display_snapshots(session: Session, matches: list[Match]) -> dict[str, Pred
     for snapshot in session.scalars(
         select(PredictionSnapshot)
         .where(PredictionSnapshot.match_id.in_(matches_by_id))
-        .order_by(PredictionSnapshot.snapshotted_at.desc())
+        .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
     ):
         grouped[snapshot.match_id].append(snapshot)
 
@@ -1395,46 +1395,47 @@ def build_decision(session: Session) -> dict:
     upset_risk = [_match_card(m, p, market_snaps.get(m.id)) for m, p in upset if p.home_win > 0.45 or p.away_win > 0.45]
 
     # Recent review: yesterday's finalized matches
-    snapshots = _display_snapshots(session, matches)
+    recent_review_matches = [
+        match
+        for match in matches
+        if match.status == "final"
+        and match.home_score is not None
+        and yesterday_start <= _ensure_aware(match.kickoff) < today_start
+    ]
+    snapshots = _display_snapshots(session, recent_review_matches)
     review_pairs = []
-    for m in matches:
+    for m in recent_review_matches:
         snap = snapshots.get(m.id)
-        if not snap or m.status != "final" or m.home_score is None:
+        if not snap:
             continue
-        kickoff_aware = _ensure_aware(m.kickoff)
-        if yesterday_start <= kickoff_aware < today_start:
-            review_pairs.append((snap, m))
+        review_pairs.append((snap, m))
 
     review_report = score_predictions(review_pairs, display_names)
     review_details = {detail.match_id: detail for detail in review_report.per_match}
     recent = []
-    for m in matches:
-        if m.status != "final" or m.home_score is None:
-            continue
-        kickoff_aware = _ensure_aware(m.kickoff)
-        if yesterday_start <= kickoff_aware < today_start:
-            snap = snapshots.get(m.id)
-            card = _match_card(m)
-            detail = review_details.get(m.id)
-            if snap and detail:
-                card["snapshot"] = {
-                    "home_win": snap.home_win,
-                    "draw": snap.draw,
-                    "away_win": snap.away_win,
-                    "outcome_correct": detail.outcome_correct,
-                }
-                card["prediction"] = _snapshot_prediction(snap)
-                card["review"] = {
-                    "brier": detail.brier,
-                    "log_loss": detail.log_loss,
-                    "xg_error": detail.xg_error,
-                    "bias_explanation": _bias_explanation(
-                        snap,
-                        m,
-                        detail.outcome_correct,
-                    ),
-                }
-            recent.append(card)
+    for m in recent_review_matches:
+        snap = snapshots.get(m.id)
+        card = _match_card(m)
+        detail = review_details.get(m.id)
+        if snap and detail:
+            card["snapshot"] = {
+                "home_win": snap.home_win,
+                "draw": snap.draw,
+                "away_win": snap.away_win,
+                "outcome_correct": detail.outcome_correct,
+            }
+            card["prediction"] = _snapshot_prediction(snap)
+            card["review"] = {
+                "brier": detail.brier,
+                "log_loss": detail.log_loss,
+                "xg_error": detail.xg_error,
+                "bias_explanation": _bias_explanation(
+                    snap,
+                    m,
+                    detail.outcome_correct,
+                ),
+            }
+        recent.append(card)
 
     intelligence_risks = []
     for m in matches:

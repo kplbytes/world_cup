@@ -49,6 +49,11 @@ STEP_NAMES = [
 TERMINAL_STEP_STATUSES = {"success", "failed", "skipped", "partial_success"}
 
 
+def _is_visible_ai_version(model_version: str | None) -> bool:
+    version = (model_version or "").lower()
+    return "xiaomi" not in version and "mimo" not in version
+
+
 def build_workflow_progress(steps: list[WorkflowStep]) -> dict[str, Any]:
     """Build a compact progress payload for API consumers."""
     total = len(steps)
@@ -168,61 +173,67 @@ def _finish_run(run_id: int, status: str, summary: dict | None = None, error: st
 def _get_upcoming_matches_info() -> dict:
     """Get info about upcoming matches."""
     now = datetime.now(timezone.utc)
+    cutoff_24h = now + timedelta(hours=24)
+    cutoff_48h = now + timedelta(hours=48)
     with session_scope() as session:
-        count_24h = session.scalar(
-            select(func.count(Match.id))
-            .where(Match.status != "final")
-            .where(Match.kickoff >= now)
-            .where(Match.kickoff <= now + timedelta(hours=24))
-        ) or 0
-
-        count_48h = session.scalar(
-            select(func.count(Match.id))
-            .where(Match.status != "final")
-            .where(Match.kickoff >= now)
-            .where(Match.kickoff <= now + timedelta(hours=48))
-        ) or 0
-
-        # Check baseline/AI/ensemble readiness
         upcoming = list(session.scalars(
             select(Match)
             .where(Match.status != "final")
             .where(Match.kickoff >= now)
-            .where(Match.kickoff <= now + timedelta(hours=48))
+            .where(Match.kickoff <= cutoff_48h)
         ))
+        count_48h = len(upcoming)
+        count_24h = sum(
+            1
+            for match in upcoming
+            if match.kickoff and _ensure_utc(match.kickoff) <= cutoff_24h
+        )
+        match_ids = [match.id for match in upcoming]
+
+        baseline_match_ids = set(
+            row[0]
+            for row in session.execute(
+                select(PredictionSnapshot.match_id)
+                .where(PredictionSnapshot.match_id.in_(match_ids))
+                .distinct()
+            )
+        ) if match_ids else set()
+        ai_match_ids = set()
+        if match_ids:
+            for row in session.scalars(
+                select(AIPrediction)
+                .where(AIPrediction.match_id.in_(match_ids))
+                .where(AIPrediction.error_code.is_(None))
+                .where(AIPrediction.parsed_home_win.is_not(None))
+                .where(AIPrediction.parsed_draw.is_not(None))
+                .where(AIPrediction.parsed_away_win.is_not(None))
+            ):
+                if _is_visible_ai_version(row.model_version):
+                    ai_match_ids.add(row.match_id)
+        ensemble_match_ids = set(
+            row[0]
+            for row in session.execute(
+                select(EnsemblePrediction.match_id)
+                .where(EnsemblePrediction.match_id.in_(match_ids))
+                .distinct()
+            )
+        ) if match_ids else set()
 
         baseline_ready = 0
         ai_ready = 0
         ensemble_ready = 0
         needs_ai = 0
 
-        for m in upcoming:
-            snap = session.scalar(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == m.id)
-                .order_by(PredictionSnapshot.snapshotted_at.desc())
-                .limit(1)
-            )
-            if snap:
+        for match in upcoming:
+            if match.id in baseline_match_ids:
                 baseline_ready += 1
 
-            ai_preds = list(session.scalars(
-                select(AIPrediction)
-                .where(AIPrediction.match_id == m.id)
-                .where(AIPrediction.error_code.is_(None))
-            ))
-            ai_versions = {p.model_version for p in ai_preds}
-            if ai_versions:
+            if match.id in ai_match_ids:
                 ai_ready += 1
             else:
                 needs_ai += 1
 
-            ens = session.scalar(
-                select(EnsemblePrediction)
-                .where(EnsemblePrediction.match_id == m.id)
-                .limit(1)
-            )
-            if ens:
+            if match.id in ensemble_match_ids:
                 ensemble_ready += 1
 
         return {
@@ -240,19 +251,35 @@ def _get_yesterday_matches_info() -> dict:
     now = datetime.now(timezone.utc)
     yesterday = now - timedelta(hours=24)
     with session_scope() as session:
-        count = session.scalar(
-            select(func.count(Match.id))
+        finished_matches = list(session.scalars(
+            select(Match)
             .where(Match.status == "final")
             .where(Match.kickoff >= yesterday)
-        ) or 0
+        ))
+        match_ids = [match.id for match in finished_matches]
+        snapshot_rows = session.execute(
+            select(
+                PredictionSnapshot.match_id,
+                PredictionSnapshot.snapshotted_at,
+                Match.kickoff,
+            )
+            .join(Match, PredictionSnapshot.match_id == Match.id)
+            .where(Match.id.in_(match_ids))
+            .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
+        ).all() if match_ids else []
 
-        scored = session.scalar(
-            select(func.count(PredictionSnapshot.match_id))
-            .where(PredictionSnapshot.is_pre_match_locked == True)
-            .where(PredictionSnapshot.kickoff >= yesterday)
-        ) or 0
+        scored_match_ids: set[str] = set()
+        for match_id, snapshotted_at, kickoff in snapshot_rows:
+            if match_id in scored_match_ids:
+                continue
+            kickoff_utc = _ensure_utc(kickoff)
+            snapshotted_at_utc = _ensure_utc(snapshotted_at)
+            if kickoff_utc is not None and snapshotted_at_utc is not None and snapshotted_at_utc < kickoff_utc:
+                scored_match_ids.add(match_id)
 
-        return {"count": count, "scored": min(scored, count), "needs_review": count > scored}
+        count = len(finished_matches)
+        scored = len(scored_match_ids)
+        return {"count": count, "scored": scored, "needs_review": count > scored}
 
 
 def _get_lock_status_info() -> dict:
@@ -270,20 +297,24 @@ def _get_lock_status_info() -> dict:
             .where(Match.kickoff >= now)
             .where(Match.kickoff <= window_end)
         ))
+        match_ids = [match.id for match in near_kickoff]
+        locked_match_ids = set(
+            row[0]
+            for row in session.execute(
+                select(PredictionSnapshot.match_id)
+                .where(PredictionSnapshot.match_id.in_(match_ids))
+                .where(PredictionSnapshot.is_pre_match_locked == True)
+                .distinct()
+            )
+        ) if match_ids else set()
 
         locked = 0
         needs_lock = 0
         real_time_only = 0
 
-        for m in near_kickoff:
-            lock = compute_match_lock_status(m, now)
-            snap = session.scalar(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == m.id)
-                .where(PredictionSnapshot.is_pre_match_locked == True)
-                .limit(1)
-            )
-            if snap:
+        for match in near_kickoff:
+            lock = compute_match_lock_status(match, now)
+            if match.id in locked_match_ids:
                 locked += 1
             else:
                 needs_lock += 1
@@ -304,8 +335,6 @@ def _get_decision_snapshot_status_info() -> dict:
     Under the new scoring rule, any pre-kickoff snapshot is a valid
     decision snapshot. The latest one before kickoff is used for scoring.
     """
-    from app.ai.lock_status import compute_decision_snapshot_status
-
     now = datetime.now(timezone.utc)
     cutoff_future = now + timedelta(days=7)
     cutoff_past = now - timedelta(days=3)
@@ -317,6 +346,15 @@ def _get_decision_snapshot_status_info() -> dict:
             .where(Match.kickoff <= cutoff_future)
             .order_by(Match.kickoff)
         ))
+        grouped_snapshots: dict[str, list[datetime]] = {}
+        match_ids = [match.id for match in matches]
+        snapshot_rows = session.execute(
+            select(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at)
+            .where(PredictionSnapshot.match_id.in_(match_ids))
+            .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
+        ).all() if match_ids else []
+        for match_id, snapshotted_at in snapshot_rows:
+            grouped_snapshots.setdefault(match_id, []).append(snapshotted_at)
 
         matches_total = len(matches)
         snapshots_ready = 0
@@ -324,18 +362,20 @@ def _get_decision_snapshot_status_info() -> dict:
         last_snapshot_at = None
 
         for match in matches:
-            snapshots = list(session.scalars(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == match.id)
-                .order_by(PredictionSnapshot.snapshotted_at.desc())
-            ))
+            kickoff = _ensure_utc(match.kickoff)
+            latest_pre_kickoff_snapshot = None
+            if kickoff is not None:
+                for snapshotted_at in grouped_snapshots.get(match.id, []):
+                    snapshotted_at = _ensure_utc(snapshotted_at)
+                    if snapshotted_at is not None and snapshotted_at < kickoff:
+                        latest_pre_kickoff_snapshot = snapshotted_at
+                        break
 
-            status = compute_decision_snapshot_status(match, snapshots, now)
-
-            if status.has_decision_snapshot:
+            if latest_pre_kickoff_snapshot is not None:
                 snapshots_ready += 1
-                if last_snapshot_at is None or (status.snapshot_at and status.snapshot_at > last_snapshot_at):
-                    last_snapshot_at = status.snapshot_at
+                snapshot_at = _ensure_utc(latest_pre_kickoff_snapshot)
+                if snapshot_at is not None and (last_snapshot_at is None or snapshot_at > last_snapshot_at):
+                    last_snapshot_at = snapshot_at
             else:
                 missing += 1
 

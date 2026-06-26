@@ -25,6 +25,20 @@ def _configure_sqlite(engine: Engine) -> None:
         cursor.execute("PRAGMA busy_timeout=30000")
         cursor.close()
 
+
+def _ensure_supporting_indexes(engine: Engine) -> None:
+    """Create lightweight read-path indexes that should exist on every database."""
+    with engine.begin() as conn:
+        prediction_snapshots_exists = conn.scalar(text(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='prediction_snapshots'"
+        ))
+        if prediction_snapshots_exists:
+            conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_prediction_snapshots_match_id_snapshotted_at
+                ON prediction_snapshots(match_id, snapshotted_at DESC)
+            """))
+
+
 def _upgrade_schema(engine: Engine) -> None:
     """Lightweight and idempotent SQLite schema migration."""
     with engine.begin() as conn:
@@ -299,6 +313,18 @@ def _upgrade_schema(engine: Engine) -> None:
 
                 conn.execute(text("PRAGMA user_version = 6"))
 
+            if version < 7:
+                logger.info("Upgrading database schema to version 7 (prediction snapshot access indexes)...")
+                prediction_snapshots_exists = conn.scalar(text(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='prediction_snapshots'"
+                ))
+                if prediction_snapshots_exists:
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS ix_prediction_snapshots_match_id_snapshotted_at
+                        ON prediction_snapshots(match_id, snapshotted_at DESC)
+                    """))
+                conn.execute(text("PRAGMA user_version = 7"))
+
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")
             raise
@@ -321,6 +347,7 @@ def create_database(path: str | Path | None = None) -> Engine:
     _configure_sqlite(engine)
     _upgrade_schema(engine)
     Base.metadata.create_all(engine)
+    _ensure_supporting_indexes(engine)
     _engine = engine
     _session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     return engine

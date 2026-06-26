@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -289,6 +289,7 @@ class PredictionSnapshot(Base):
     __tablename__ = "prediction_snapshots"
     __table_args__ = (
         UniqueConstraint("match_id", "revision_id", "model_version", name="uq_prediction_snapshot_match_revision_version"),
+        Index("ix_prediction_snapshots_match_id_snapshotted_at", "match_id", "snapshotted_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

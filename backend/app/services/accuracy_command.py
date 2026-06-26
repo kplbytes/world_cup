@@ -18,23 +18,28 @@ logger = logging.getLogger(__name__)
 def get_accuracy_command_center(session: Session) -> dict[str, Any]:
     """Build the unified accuracy command center payload."""
     from app.ai.service import is_ai_enabled
-    from app.services.scoring import _scorable_snapshot_rows, model_score_by_version
+    from app.services.scoring import (
+        _scorable_snapshot_rows,
+        get_scoring_exclusions,
+        model_score_by_version,
+    )
     from app.services.model_recommendation import get_model_recommendation
 
+    scored_rows = _scorable_snapshot_rows(session)
+    version_scores = model_score_by_version(session)
+    total_scored = len(scored_rows)
+
     # 1. Model recommendation
-    recommendation = get_model_recommendation(session)
+    recommendation = get_model_recommendation(session, version_scores=version_scores)
 
     # 2. Version scores (system baseline)
-    version_scores = model_score_by_version(session)
-
     # 3. AI/ensemble evaluation
     ai_eval = _evaluate_all_sources(session)
 
     # 4. Error pattern analysis
-    error_analysis = _analyze_error_patterns(session)
+    error_analysis = _analyze_error_patterns(session, scored_rows=scored_rows)
 
     # 5. Sample size assessment
-    total_scored = len(_scorable_snapshot_rows(session))
     sample_sufficient = total_scored >= 20
 
     # 6. Build per-model scores
@@ -58,14 +63,13 @@ def get_accuracy_command_center(session: Session) -> dict[str, Any]:
     max_error_type = top_errors[0]["type"] if top_errors else None
 
     # 9. Recent match scores (last 5)
-    recent_match_scores = _get_recent_match_scores(session)
+    recent_match_scores = _get_recent_match_scores(session, scored_rows=scored_rows)
 
     # 10. Upcoming matches needing predictions
     upcoming_matches = _get_upcoming_matches(session)
 
     # 11. Scoring exclusions - explain why finished matches are not scored
-    from app.services.scoring import get_scoring_exclusions
-    scoring_exclusions = get_scoring_exclusions(session)
+    scoring_exclusions = get_scoring_exclusions(session, scored_rows=scored_rows)
 
     return {
         "recommended_model": recommendation.get("recommended_model_version", "elo-poisson-v1"),
@@ -125,12 +129,15 @@ def _evaluate_all_sources(session: Session) -> dict[str, Any]:
         return {}
 
 
-def _analyze_error_patterns(session: Session) -> dict[str, Any]:
+def _analyze_error_patterns(
+    session: Session,
+    scored_rows: list[tuple[Any, Match]] | None = None,
+) -> dict[str, Any]:
     """Analyze common error patterns across all predictions."""
     from app.services.scoring import _scorable_snapshot_rows
     from app.services.error_attribution import classify_error
 
-    rows = _scorable_snapshot_rows(session)
+    rows = scored_rows if scored_rows is not None else _scorable_snapshot_rows(session)
 
     error_counts: dict[str, int] = {}
     draw_miss = 0
@@ -241,13 +248,17 @@ def _get_insufficient_reason(
     return "；".join(reasons)
 
 
-def _get_recent_match_scores(session: Session, limit: int = 5) -> list[dict[str, Any]]:
+def _get_recent_match_scores(
+    session: Session,
+    limit: int = 5,
+    scored_rows: list[tuple[Any, Match]] | None = None,
+) -> list[dict[str, Any]]:
     """Get the last N scored match details."""
     from app.services.scoring import _scorable_snapshot_rows
 
     team_names = {row.id: row.short_name for row in session.scalars(select(Team))}
     rows = sorted(
-        _scorable_snapshot_rows(session),
+        scored_rows if scored_rows is not None else _scorable_snapshot_rows(session),
         key=lambda row: row[1].kickoff,
         reverse=True,
     )[:limit]
@@ -362,24 +373,25 @@ def _get_upcoming_matches(session: Session, limit: int = 10) -> list[dict[str, A
         .order_by(Match.kickoff)
         .limit(limit)
     ).all()
+    match_ids = [match.id for match in rows]
+    ai_match_ids = set(
+        row[0]
+        for row in session.execute(
+            select(AIPrediction.match_id)
+            .where(AIPrediction.match_id.in_(match_ids))
+            .where(AIPrediction.error_code.is_(None))
+            .where(AIPrediction.parsed_home_win.isnot(None))
+        )
+    ) if match_ids else set()
 
     results = []
     for match in rows:
-        # Check if AI predictions exist
-        existing_count = session.scalar(
-            select(AIPrediction.id)
-            .where(AIPrediction.match_id == match.id)
-            .where(AIPrediction.error_code.is_(None))
-            .where(AIPrediction.parsed_home_win.isnot(None))
-            .limit(1)
-        )
-
         results.append({
             "match_id": match.id,
             "home_team": team_names.get(match.home_team_id, match.home_team_id),
             "away_team": team_names.get(match.away_team_id, match.away_team_id),
             "kickoff": match.kickoff.isoformat() if match.kickoff else "",
             "stage": match.stage,
-            "has_ai_prediction": existing_count is not None,
+            "has_ai_prediction": match.id in ai_match_ids,
         })
     return results

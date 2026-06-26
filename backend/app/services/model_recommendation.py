@@ -13,7 +13,10 @@ from sqlalchemy.orm import Session
 from app.services.scoring import model_score_by_version
 
 
-def get_model_recommendation(session: Session) -> dict[str, Any]:
+def get_model_recommendation(
+    session: Session,
+    version_scores: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """Generate a model version recommendation for the next round.
 
     Rules:
@@ -24,7 +27,7 @@ def get_model_recommendation(session: Session) -> dict[str, Any]:
     5. If new model has more overconfident_wrong, don't recommend
     6. If version only good on few matches, don't recommend as default
     """
-    versions = model_score_by_version(session)
+    versions = version_scores if version_scores is not None else model_score_by_version(session)
 
     if not versions:
         return {

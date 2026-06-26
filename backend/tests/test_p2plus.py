@@ -5,7 +5,7 @@ import math
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import (
@@ -685,6 +685,13 @@ class TestStageScoring:
 # ==================== AI Model Version Independent Scoring ====================
 
 class TestAIModelScoring:
+    def test_ai_brier_uses_actual_outcome_indicator(self, db_session):
+        from app.ai.evaluation import _compute_brier
+
+        assert _compute_brier({"home_win": 1.0, "draw": 0.0, "away_win": 0.0}, "home") == pytest.approx(0.0)
+        assert _compute_brier({"home_win": 0.0, "draw": 1.0, "away_win": 0.0}, "draw") == pytest.approx(0.0)
+        assert _compute_brier({"home_win": 0.0, "draw": 0.0, "away_win": 1.0}, "away") == pytest.approx(0.0)
+
     def test_ai_model_version_independent_scoring(self, db_session):
         """AI predictions are scored independently from system predictions."""
         _seed_teams_and_match(db_session, "m_ai1", "group", "A")
@@ -774,6 +781,333 @@ class TestAIModelScoring:
         from app.ai.evaluation import evaluate_ai_predictions
         result = evaluate_ai_predictions(db_session)
         assert result["ensemble"]["sample_count"] >= 1
+
+    def test_evaluate_ai_predictions_uses_bounded_select_count(self, db_session):
+        """AI evaluation should preload shared data instead of per-match repeated SELECTs."""
+        first_match = _seed_teams_and_match(db_session, "m_eval_1", "group", "A")
+        second_match = Match(
+            id="m_eval_2",
+            group_code="A",
+            home_team_id="T3",
+            away_team_id="T4",
+            kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
+            status="scheduled",
+            source="test",
+            stage="group",
+        )
+        db_session.add(second_match)
+        db_session.flush()
+
+        for match in (first_match, second_match):
+            match.home_score = 1
+            match.away_score = 0
+            match.status = "final"
+
+        rev = DashboardRevision(active=True, model_version="elo-poisson-v1", simulation_iterations=1, simulation_seed=1)
+        db_session.add(rev)
+        db_session.flush()
+
+        for match_id in ("m_eval_1", "m_eval_2"):
+            db_session.add(
+                PredictionSnapshot(
+                    match_id=match_id,
+                    revision_id=rev.id,
+                    kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
+                    snapshotted_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+                    is_pre_match_locked=True,
+                    home_win=0.55,
+                    draw=0.25,
+                    away_win=0.20,
+                    home_xg=1.5,
+                    away_xg=0.8,
+                    scorelines=[],
+                    score_matrix=[],
+                    confidence=0.8,
+                    confidence_label="High",
+                    model_inputs={},
+                    model_version="elo-poisson-v1",
+                )
+            )
+            db_session.add_all([
+                AIPrediction(
+                    match_id=match_id,
+                    provider="deepseek",
+                    model_id="deepseek-v4-flash",
+                    model_version="ai-deepseek-v4-flash-v1",
+                    prompt_version="worldcup-ai-v1",
+                    input_snapshot_json={},
+                    raw_response_text="{}",
+                    parsed_home_win=0.60,
+                    parsed_draw=0.20,
+                    parsed_away_win=0.20,
+                    confidence=0.75,
+                    is_pre_match_locked=True,
+                    created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+                ),
+                AIPrediction(
+                    match_id=match_id,
+                    provider="deepseek",
+                    model_id="deepseek-v4-pro",
+                    model_version="ai-deepseek-v4-pro-v1",
+                    prompt_version="worldcup-ai-v1",
+                    input_snapshot_json={},
+                    raw_response_text="{}",
+                    parsed_home_win=0.57,
+                    parsed_draw=0.23,
+                    parsed_away_win=0.20,
+                    confidence=0.78,
+                    is_pre_match_locked=True,
+                    created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+                ),
+                EnsemblePrediction(
+                    match_id=match_id,
+                    model_version="ensemble-v1",
+                    system_model_version="elo-poisson-v1",
+                    system_weight=0.7,
+                    market_weight=0.15,
+                    ai_weights_json={"ai-deepseek-v4-flash-v1": 0.15},
+                    source_probabilities_json={},
+                    ensemble_home_win=0.58,
+                    ensemble_draw=0.22,
+                    ensemble_away_win=0.20,
+                    confidence=0.75,
+                    is_pre_match_locked=True,
+                    created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+                ),
+            ])
+        db_session.flush()
+
+        select_statements: list[str] = []
+
+        def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                select_statements.append(statement)
+
+        event.listen(db_session.bind, "before_cursor_execute", _before_cursor_execute)
+        try:
+            from app.ai.evaluation import evaluate_ai_predictions
+            result = evaluate_ai_predictions(db_session)
+        finally:
+            event.remove(db_session.bind, "before_cursor_execute", _before_cursor_execute)
+
+        assert result["system"]["sample_count"] == 2
+        assert result["ensemble"]["sample_count"] == 2
+        assert result["ai_by_version"]["ai-deepseek-v4-flash-v1"]["sample_count"] == 2
+        assert result["ai_by_version"]["ai-deepseek-v4-pro-v1"]["sample_count"] == 2
+        assert len(select_statements) <= 6
+
+    def test_select_ai_predictions_prefers_fallback_over_later_plain_prediction(self, db_session):
+        """Fallback-locked rows still outrank later plain pre-kickoff rows."""
+        match = _seed_teams_and_match(db_session, "m_eval_pick", "group", "A")
+        match.home_score = 1
+        match.away_score = 0
+        match.status = "final"
+
+        db_session.add_all([
+            AIPrediction(
+                match_id=match.id,
+                provider="deepseek",
+                model_id="deepseek-v4-flash",
+                model_version="ai-deepseek-v4-flash-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                parsed_home_win=0.52,
+                parsed_draw=0.28,
+                parsed_away_win=0.20,
+                confidence=0.7,
+                is_fallback_locked=True,
+                created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+            ),
+            AIPrediction(
+                match_id=match.id,
+                provider="deepseek",
+                model_id="deepseek-v4-flash",
+                model_version="ai-deepseek-v4-flash-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                parsed_home_win=0.61,
+                parsed_draw=0.19,
+                parsed_away_win=0.20,
+                confidence=0.72,
+                created_at=datetime(2026, 6, 15, 11, 30, tzinfo=timezone.utc),
+            ),
+        ])
+        db_session.flush()
+
+        from app.ai.evaluation import _select_ai_predictions
+
+        selected = _select_ai_predictions(db_session, [match])
+
+        chosen = selected[match.id]["ai-deepseek-v4-flash-v1"]
+        assert chosen.parsed_home_win == pytest.approx(0.52)
+        assert chosen.is_fallback_locked is True
+
+    def test_evaluate_ai_predictions_skips_heavy_json_columns(self, db_session):
+        """Bulk evaluation should not hydrate large JSON/text payload columns."""
+        match = _seed_teams_and_match(db_session, "m_eval_sql", "group", "A")
+        match.home_score = 1
+        match.away_score = 0
+        match.status = "final"
+
+        rev = DashboardRevision(active=True, model_version="elo-poisson-v1", simulation_iterations=1, simulation_seed=1)
+        db_session.add(rev)
+        db_session.flush()
+
+        db_session.add(
+            PredictionSnapshot(
+                match_id=match.id,
+                revision_id=rev.id,
+                kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
+                snapshotted_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+                is_pre_match_locked=True,
+                home_win=0.55,
+                draw=0.25,
+                away_win=0.20,
+                home_xg=1.5,
+                away_xg=0.8,
+                scorelines=[{"score": "1-0", "prob": 0.12}],
+                score_matrix={"1-0": 0.12},
+                confidence=0.8,
+                confidence_label="High",
+                model_inputs={"elo_gap": 120},
+                model_version="elo-poisson-v1",
+            )
+        )
+        db_session.add_all([
+            AIPrediction(
+                match_id=match.id,
+                provider="deepseek",
+                model_id="deepseek-v4-flash",
+                model_version="ai-deepseek-v4-flash-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={"huge": ["payload"]},
+                raw_response_text='{"large":"body"}',
+                parsed_home_win=0.60,
+                parsed_draw=0.20,
+                parsed_away_win=0.20,
+                confidence=0.75,
+                is_pre_match_locked=True,
+                created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+            ),
+            EnsemblePrediction(
+                match_id=match.id,
+                model_version="ensemble-v1",
+                system_model_version="elo-poisson-v1",
+                system_weight=0.7,
+                market_weight=0.15,
+                ai_weights_json={"ai-deepseek-v4-flash-v1": 0.15},
+                source_probabilities_json={"system": {"home_win": 0.55}},
+                ensemble_home_win=0.58,
+                ensemble_draw=0.22,
+                ensemble_away_win=0.20,
+                confidence=0.75,
+                is_pre_match_locked=True,
+                created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+            ),
+        ])
+        db_session.flush()
+
+        select_statements: list[str] = []
+
+        def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                select_statements.append(statement)
+
+        event.listen(db_session.bind, "before_cursor_execute", _before_cursor_execute)
+        try:
+            from app.ai.evaluation import evaluate_ai_predictions
+            result = evaluate_ai_predictions(db_session)
+        finally:
+            event.remove(db_session.bind, "before_cursor_execute", _before_cursor_execute)
+
+        assert result["system"]["sample_count"] == 1
+        relevant_sql = "\n".join(
+            stmt
+            for stmt in select_statements
+            if "prediction_snapshots" in stmt or "ai_predictions" in stmt or "ensemble_predictions" in stmt
+        )
+        assert relevant_sql
+        assert "prediction_snapshots.scorelines" not in relevant_sql
+        assert "prediction_snapshots.score_matrix" not in relevant_sql
+        assert "prediction_snapshots.model_inputs" not in relevant_sql
+        assert "ai_predictions.input_snapshot_json" not in relevant_sql
+        assert "ai_predictions.raw_response_text" not in relevant_sql
+        assert "ensemble_predictions.ai_weights_json" not in relevant_sql
+        assert "ensemble_predictions.source_probabilities_json" not in relevant_sql
+
+    def test_evaluate_ai_predictions_hides_xiaomi_mimo_versions(self, db_session):
+        """Historical Xiaomi/MiMo rows should not leak into current AI evaluation output."""
+        match = _seed_teams_and_match(db_session, "m_eval_hidden", "group", "A")
+        match.home_score = 1
+        match.away_score = 0
+        match.status = "final"
+
+        rev = DashboardRevision(active=True, model_version="elo-poisson-v1", simulation_iterations=1, simulation_seed=1)
+        db_session.add(rev)
+        db_session.flush()
+
+        db_session.add(
+            PredictionSnapshot(
+                match_id=match.id,
+                revision_id=rev.id,
+                kickoff=datetime(2026, 6, 15, 12, tzinfo=timezone.utc),
+                snapshotted_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+                is_pre_match_locked=True,
+                home_win=0.55,
+                draw=0.25,
+                away_win=0.20,
+                home_xg=1.5,
+                away_xg=0.8,
+                scorelines=[],
+                score_matrix=[],
+                confidence=0.8,
+                confidence_label="High",
+                model_inputs={},
+                model_version="elo-poisson-v1",
+            )
+        )
+        db_session.add_all([
+            AIPrediction(
+                match_id=match.id,
+                provider="deepseek",
+                model_id="deepseek-v4-flash",
+                model_version="ai-deepseek-v4-flash-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                parsed_home_win=0.60,
+                parsed_draw=0.20,
+                parsed_away_win=0.20,
+                confidence=0.75,
+                is_pre_match_locked=True,
+                created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+            ),
+            AIPrediction(
+                match_id=match.id,
+                provider="xiaomi",
+                model_id="mimo-v2.5-pro",
+                model_version="ai-xiaomi-mimo-v2.5-pro-v1",
+                prompt_version="worldcup-ai-v1",
+                input_snapshot_json={},
+                raw_response_text="{}",
+                parsed_home_win=0.61,
+                parsed_draw=0.19,
+                parsed_away_win=0.20,
+                confidence=0.74,
+                is_pre_match_locked=True,
+                created_at=datetime(2026, 6, 15, 10, tzinfo=timezone.utc),
+            ),
+        ])
+        db_session.flush()
+
+        from app.ai.evaluation import evaluate_ai_predictions
+
+        result = evaluate_ai_predictions(db_session)
+
+        assert "ai-deepseek-v4-flash-v1" in result["ai_by_version"]
+        assert "ai-xiaomi-mimo-v2.5-pro-v1" not in result["ai_by_version"]
 
 
 # ==================== Prompt Builder Tests ====================

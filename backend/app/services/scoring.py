@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import DashboardRevision, MarketSnapshot, Match, ModelScore, PredictionSnapshot
@@ -63,54 +63,52 @@ def _select_scorable_snapshot(
 
 def _scorable_snapshot_rows(session: Session) -> list[tuple[PredictionSnapshot, Match]]:
     """Return one scoring snapshot per final match."""
-    rows = session.execute(
-        select(PredictionSnapshot, Match)
+    ranked = (
+        select(
+            PredictionSnapshot.id.label("snapshot_id"),
+            Match.id.label("match_id"),
+            func.row_number().over(
+                partition_by=PredictionSnapshot.match_id,
+                order_by=PredictionSnapshot.snapshotted_at.desc(),
+            ).label("rn"),
+        )
         .join(Match, PredictionSnapshot.match_id == Match.id)
         .where(Match.status == "final")
-        .order_by(
-            PredictionSnapshot.match_id,
-            PredictionSnapshot.snapshotted_at.desc(),
-        )
+        .where(PredictionSnapshot.snapshotted_at < Match.kickoff)
+        .subquery()
+    )
+    return session.execute(
+        select(PredictionSnapshot, Match)
+        .join(ranked, PredictionSnapshot.id == ranked.c.snapshot_id)
+        .join(Match, Match.id == ranked.c.match_id)
+        .where(ranked.c.rn == 1)
+        .order_by(Match.kickoff, Match.id)
     ).all()
-
-    grouped: dict[str, tuple[Match, list[PredictionSnapshot]]] = {}
-    for snap, match in rows:
-        state = grouped.setdefault(match.id, (match, []))
-        state[1].append(snap)
-
-    deduped: list[tuple[PredictionSnapshot, Match]] = []
-    for match, snapshots in grouped.values():
-        chosen = _select_scorable_snapshot(snapshots, match)
-        if chosen is not None:
-            deduped.append((chosen, match))
-    return deduped
 
 
 def _scorable_snapshot_rows_by_version(session: Session) -> list[tuple[PredictionSnapshot, Match]]:
     """Return one scoring snapshot per (match, model_version) pair."""
-    rows = session.execute(
-        select(PredictionSnapshot, Match)
+    ranked = (
+        select(
+            PredictionSnapshot.id.label("snapshot_id"),
+            Match.id.label("match_id"),
+            func.row_number().over(
+                partition_by=(PredictionSnapshot.match_id, PredictionSnapshot.model_version),
+                order_by=PredictionSnapshot.snapshotted_at.desc(),
+            ).label("rn"),
+        )
         .join(Match, PredictionSnapshot.match_id == Match.id)
         .where(Match.status == "final")
-        .order_by(
-            PredictionSnapshot.match_id,
-            PredictionSnapshot.model_version,
-            PredictionSnapshot.snapshotted_at.desc(),
-        )
+        .where(PredictionSnapshot.snapshotted_at < Match.kickoff)
+        .subquery()
+    )
+    return session.execute(
+        select(PredictionSnapshot, Match)
+        .join(ranked, PredictionSnapshot.id == ranked.c.snapshot_id)
+        .join(Match, Match.id == ranked.c.match_id)
+        .where(ranked.c.rn == 1)
+        .order_by(Match.kickoff, Match.id, PredictionSnapshot.model_version)
     ).all()
-
-    grouped: dict[tuple[str, str], tuple[Match, list[PredictionSnapshot]]] = {}
-    for snap, match in rows:
-        key = (match.id, snap.model_version or "")
-        state = grouped.setdefault(key, (match, []))
-        state[1].append(snap)
-
-    deduped: list[tuple[PredictionSnapshot, Match]] = []
-    for match, snapshots in grouped.values():
-        chosen = _select_scorable_snapshot(snapshots, match)
-        if chosen is not None:
-            deduped.append((chosen, match))
-    return deduped
 
 
 @dataclass(frozen=True)
@@ -885,7 +883,10 @@ def model_score_by_stage(session: Session) -> dict[str, list[dict[str, Any]]]:
     return result
 
 
-def get_scoring_exclusions(session: Session) -> list[dict[str, Any]]:
+def get_scoring_exclusions(
+    session: Session,
+    scored_rows: list[tuple[PredictionSnapshot, Match]] | None = None,
+) -> list[dict[str, Any]]:
     """List finished matches that were NOT scored and explain why.
 
     A match is excluded from scoring if:
@@ -908,12 +909,17 @@ def get_scoring_exclusions(session: Session) -> list[dict[str, Any]]:
     ))
 
     # Matches that have scorable snapshots (these ARE scored)
-    scored_match_ids = {snap.match_id for snap, _match in _scorable_snapshot_rows(session)}
+    scored_match_ids = {
+        snap.match_id
+        for snap, _match in (scored_rows if scored_rows is not None else _scorable_snapshot_rows(session))
+    }
+    finished_match_ids = [match.id for match in finished_matches]
 
     # Matches that have AI predictions (no error)
     ai_match_ids = set(
         row[0] for row in session.execute(
             select(AIPrediction.match_id)
+            .where(AIPrediction.match_id.in_(finished_match_ids))
             .where(AIPrediction.error_code.is_(None))
             .where(AIPrediction.parsed_home_win.isnot(None))
         )
@@ -923,6 +929,7 @@ def get_scoring_exclusions(session: Session) -> list[dict[str, Any]]:
     ensemble_match_ids = set(
         row[0] for row in session.execute(
             select(EnsemblePrediction.match_id)
+            .where(EnsemblePrediction.match_id.in_(finished_match_ids))
         )
     )
 
@@ -930,8 +937,27 @@ def get_scoring_exclusions(session: Session) -> list[dict[str, Any]]:
     prediction_match_ids = set(
         row[0] for row in session.execute(
             select(MatchPrediction.match_id)
+            .where(MatchPrediction.match_id.in_(finished_match_ids))
         )
     )
+
+    snapshot_rows = session.execute(
+        select(
+            PredictionSnapshot.match_id,
+            PredictionSnapshot.snapshotted_at,
+            Match.kickoff,
+        )
+        .join(Match, PredictionSnapshot.match_id == Match.id)
+        .where(Match.status == "final")
+    ).all()
+    matches_with_any_snapshot = set()
+    matches_with_pre_kickoff_snapshot = set()
+    for match_id, snapshotted_at, kickoff in snapshot_rows:
+        matches_with_any_snapshot.add(match_id)
+        kickoff_utc = _ensure_utc(kickoff)
+        snapshotted_at_utc = _ensure_utc(snapshotted_at)
+        if kickoff_utc and snapshotted_at_utc and snapshotted_at_utc < kickoff_utc:
+            matches_with_pre_kickoff_snapshot.add(match_id)
 
     exclusions = []
     for match in finished_matches:
@@ -952,24 +978,8 @@ def get_scoring_exclusions(session: Session) -> list[dict[str, Any]]:
             reason_codes.append("no_prediction")
 
         if not has_scorable_snap:
-            # Check if it has any snapshot at all
-            has_any_snap = session.scalar(
-                select(PredictionSnapshot.match_id)
-                .where(PredictionSnapshot.match_id == match.id)
-                .limit(1)
-            )
-            if has_any_snap:
-                # Check if any snapshot was created before kickoff
-                kickoff = _ensure_utc(match.kickoff)
-                has_pre_kickoff_snap = session.scalar(
-                    select(PredictionSnapshot.match_id)
-                    .where(
-                        PredictionSnapshot.match_id == match.id,
-                        PredictionSnapshot.snapshotted_at < kickoff,
-                    )
-                    .limit(1)
-                )
-                if has_pre_kickoff_snap:
+            if match.id in matches_with_any_snapshot:
+                if match.id in matches_with_pre_kickoff_snapshot:
                     # This shouldn't happen under new rule since any pre-kickoff snap is scorable
                     # But keep as safety net
                     pass

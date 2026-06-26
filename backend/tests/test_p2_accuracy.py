@@ -372,6 +372,29 @@ class TestModelRecommendation:
         assert "reason" in result
         assert "fallback_model_version" in result
 
+    def test_recommendation_can_reuse_precomputed_version_scores(self, db_session, monkeypatch):
+        from app.services import model_recommendation
+
+        def _should_not_be_called(_session):
+            raise AssertionError("model_score_by_version should not run when version_scores are provided")
+
+        monkeypatch.setattr(model_recommendation, "model_score_by_version", _should_not_be_called)
+
+        result = model_recommendation.get_model_recommendation(
+            db_session,
+            version_scores=[
+                {
+                    "model_version": "elo-poisson-v1",
+                    "sample_count": 8,
+                    "brier": 0.25,
+                    "logloss": 0.6,
+                    "overconfident_wrong_count": 1,
+                }
+            ],
+        )
+
+        assert result["recommended_model_version"] == "elo-poisson-v1"
+
 
 # ============================================================================
 # Data Quality Tests
