@@ -343,6 +343,10 @@ def create_database(path: str | Path | None = None) -> Engine:
     engine = create_engine(
         f"sqlite:///{database_path}",
         connect_args={"check_same_thread": False, "timeout": 30},
+        pool_size=20,
+        max_overflow=20,
+        pool_timeout=60,
+        pool_pre_ping=True,
     )
     _configure_sqlite(engine)
     _upgrade_schema(engine)

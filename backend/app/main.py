@@ -249,14 +249,15 @@ def create_app(start_background: bool = True) -> FastAPI:
     async def lifespan(_app: FastAPI):
         if start_background:
             initialize_database()
-            scheduler.add_job(
-                scheduled_refresh,
-                "interval",
-                minutes=settings.refresh_interval_minutes,
-                id="world-cup-refresh",
-                max_instances=1,
-                coalesce=True,
-            )
+            if settings.enable_scheduled_refresh:
+                scheduler.add_job(
+                    scheduled_refresh,
+                    "interval",
+                    minutes=settings.refresh_interval_minutes,
+                    id="world-cup-refresh",
+                    max_instances=1,
+                    coalesce=True,
+                )
             scheduler.add_job(
                 scheduled_snapshot_lock,
                 "interval",

@@ -35,8 +35,6 @@
 | `AI_RUN_MODE` | `manual` | `manual`（手动触发）/ `auto`（自动运行） |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
-| `XIAOMI_API_KEY` | 空 | 小米 MiMo API 密钥 |
-| `XIAOMI_BASE_URL` | `https://api.xiaomimimo.com/v1` | 小米 MiMo API 地址 |
 | `AI_TEMPERATURE` | `0` | AI 采样温度 |
 | `AI_TIMEOUT_SECONDS` | `30` | 请求超时（秒） |
 | `AI_MAX_RETRIES` | `2` | 最大重试次数 |
@@ -50,6 +48,7 @@
 |------|--------|------|
 | `REFRESH_INTERVAL_MINUTES` | `15` | 常规数据刷新间隔 |
 | `LIVE_REFRESH_INTERVAL_MINUTES` | `2` | 比赛期间刷新间隔 |
+| `ENABLE_SCHEDULED_REFRESH` | `false` | 是否启用后台定时刷新 |
 | `SNAPSHOT_LOCK_INTERVAL_MINUTES` | `1` | 快照锁定检查间隔 |
 | `SIMULATION_ITERATIONS` | `50000` | Monte Carlo 迭代次数 |
 | `SIMULATION_SEED` | `20260613` | 随机种子 |
@@ -67,9 +66,9 @@
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `APP_MODE` | `local` | 运行模式：`local` / `test` / `production` |
-| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `true` | 前端打开时自动运行每日工作流 |
-| `AUTO_RUN_AI_ON_OPEN` | `true` | 自动运行 AI 预测 |
-| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | 自动运行冷却时间 |
+| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 前端打开时是否自动运行每日工作流 |
+| `AUTO_RUN_AI_ON_OPEN` | `false` | 前端打开时是否自动运行 AI 预测 |
+| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流冷却时间 |
 | `WORKFLOW_DEFAULT_HOURS` | `48` | 默认前瞻小时数 |
 | `WORKFLOW_DEFAULT_SINCE_HOURS` | `24` | 默认回溯小时数 |
 | `WORKFLOW_DEFAULT_LIMIT` | `10` | 默认 AI 批量限制 |
@@ -81,6 +80,7 @@
 
 - [ ] **环境变量**：复制 `.env.example` 到 `.env`，填写所有必需配置
 - [ ] **API Key**：配置至少一个 AI 提供商的 API Key
+- [ ] **定时刷新策略**：明确是否需要把 `ENABLE_SCHEDULED_REFRESH` 打开；默认保持手动刷新
 - [ ] **ADMIN_API_KEY**：设置强密码，启用写接口认证
 - [ ] **CORS_ALLOWED_ORIGINS**：设置为实际前端域名，不使用 `*`
 - [ ] **APP_MODE**：设置为 `production`
@@ -118,7 +118,7 @@ curl http://127.0.0.1:8000/api/health
 # 仪表盘可访问
 curl -s http://127.0.0.1:8000/api/dashboard | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Revision: {d[\"revision\"][\"id\"]}, Groups: {len(d[\"groups\"])}')"
 
-# 前端可访问
+# 前端可访问（start.sh 开发入口）
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/
 ```
 
@@ -268,7 +268,7 @@ sqlite3 data/world-cup.sqlite3 "VACUUM;"
 
 ### AI 预测不工作
 
-1. **API Key 未配置**：检查 `.env` 中 `DEEPSEEK_API_KEY` 或 `XIAOMI_API_KEY`
+1. **API Key 未配置**：检查 `.env` 中 `DEEPSEEK_API_KEY`
 2. **AI 未启用**：检查 `ENABLE_AI_PREDICTION=true`
 3. **网络问题**：`curl https://api.deepseek.com` 测试连通性
 4. **配额用尽**：检查 AI 提供商的 API 配额

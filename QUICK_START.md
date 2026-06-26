@@ -65,18 +65,13 @@ DATABASE_PATH=data/world-cup.sqlite3
 ```env
 ENABLE_AI_PREDICTION=true
 
-# DeepSeek（二选一或都配）
+# DeepSeek
 DEEPSEEK_API_KEY=sk-your-deepseek-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-
-# 小米 MiMo（二选一或都配）
-XIAOMI_API_KEY=your-xiaomi-key
-XIAOMI_BASE_URL=https://api.xiaomimimo.com/v1
 ```
 
 > **获取 API Key：**
 > - DeepSeek：访问 https://platform.deepseek.com 注册并创建 API Key
-> - 小米 MiMo：访问 https://xiaomimimo.com 注册并获取 API Key
 
 ## 启动系统
 
@@ -131,6 +126,9 @@ curl http://127.0.0.1:8000/api/health
     "database": "ok",
     "ai_providers": "available",
     "apscheduler": "running",
+    "scheduled_refresh": "disabled",
+    "snapshot_lock": "enabled",
+    "maintenance": "enabled",
     "last_successful_run": "2026-06-19T08:00:00+00:00"
   }
 }
@@ -138,6 +136,7 @@ curl http://127.0.0.1:8000/api/health
 
 - `status: "ok"` — 系统正常运行
 - `status: "degraded"` — 数据库未初始化或调度器未运行
+- `scheduled_refresh: "disabled"` — 默认不启用后台自动刷新，需手动点击工作台按钮
 
 ### 2. 查看仪表盘
 
@@ -181,14 +180,21 @@ curl -X POST "http://127.0.0.1:8000/api/ai-predictions/run-all?limit=10&only_mis
 curl -X POST "http://127.0.0.1:8000/api/ensemble/run?match_id=MATCH_ID"
 ```
 
-### 5. 通过工作流一键运行
+### 5. 通过工作流运行
 
 ```bash
-# 每日打开工作流（含 AI 预测 + 集成融合 + 锁定）
+# 每日更新：同步赛果、重算、集成、锁定（默认不跑 AI）
 curl -X POST "http://127.0.0.1:8000/api/workflows/daily-open" \
   -H "Content-Type: application/json" \
-  -d '{"with_ai": true, "with_ensemble": true, "auto_lock": true}'
+  -d '{"with_ai": false, "with_ensemble": true, "auto_lock": true}'
+
+# AI 预测工作流：对应首页“运行 AI 预测”
+curl -X POST "http://127.0.0.1:8000/api/workflows/pre-match" \
+  -H "Content-Type: application/json" \
+  -d '{"with_ai": true, "with_ensemble": true, "only_missing": true}'
 ```
+
+> 首页刷新不会自动触发上述工作流；当前默认是纯手动点击执行。
 
 ## 常见问题
 

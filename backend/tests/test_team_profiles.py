@@ -1,9 +1,10 @@
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import event, select
 
-from app.models import Match, Team, TeamProfile, TeamProfileMatchHistory, TeamRating
+from app.models import DashboardRevision, Match, PredictionSnapshot, Team, TeamProfile, TeamProfileMatchHistory, TeamProfilePrediction, TeamRating
 from app.team_profiles.feature_engineering import classify_opponent_tier
+from app.team_profiles.evaluation import evaluate_profile_model
 from app.team_profiles.scorer import apply_profile_adjustment
 from app.team_profiles.data_loader import load_profile_match_history_snapshot, load_world_cup_history_snapshot
 import app.team_profiles.service as team_profile_service
@@ -20,6 +21,64 @@ def _teams(session):
         TeamRating(team_id="B", effective_date=date(2025, 1, 1), elo=1500, source="test"),
     ])
     session.flush()
+
+
+def _count_selects(session, fn):
+    engine = session.get_bind()
+    count = 0
+
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        nonlocal count
+        if statement.lstrip().upper().startswith("SELECT"):
+            count += 1
+
+    event.listen(engine, "before_cursor_execute", before_cursor_execute)
+    try:
+        result = fn()
+    finally:
+        event.remove(engine, "before_cursor_execute", before_cursor_execute)
+    return result, count
+
+
+def _add_profile_prediction(
+    session,
+    *,
+    revision_id: int,
+    match_id: str,
+    kickoff: datetime,
+    home_win: float,
+    draw: float,
+    away_win: float,
+    triggered_traits: list[str],
+    created_at: datetime,
+    is_pre_match_locked: bool = False,
+    is_fallback_locked: bool = False,
+):
+    session.add(TeamProfilePrediction(
+        revision_id=revision_id,
+        match_id=match_id,
+        model_version="elo-poisson-v1-team-profile",
+        profile_version="test-profile-v1",
+        profile_as_of=kickoff - timedelta(days=1),
+        base_home_win=0.5,
+        base_draw=0.25,
+        base_away_win=0.25,
+        home_win=home_win,
+        draw=draw,
+        away_win=away_win,
+        home_xg=1.1,
+        away_xg=0.9,
+        probability_deltas_json={},
+        xg_deltas_json={},
+        risk_flags_json=[],
+        triggered_traits_json=triggered_traits,
+        explanation="test profile prediction",
+        is_pre_match_locked=is_pre_match_locked,
+        is_fallback_locked=is_fallback_locked,
+        real_time_only=False,
+        locked_at=created_at if (is_pre_match_locked or is_fallback_locked) else None,
+        created_at=created_at,
+    ))
 
 
 def test_opponent_tier_boundaries():
@@ -594,3 +653,92 @@ def test_rebuild_uses_real_history_without_mock_when_recent_samples_are_sufficie
     assert brazil_profile.source_summary_json["date_end"] == "2026-06-19"
     assert qatar_profile.source_summary_json["mode"] == "historical_real"
     assert qatar_profile.source_summary_json["sources"] == ["historical_real"]
+
+
+def test_evaluate_profile_model_batches_queries_and_preserves_effect_counts(db_session):
+    _teams(db_session)
+    db_session.add_all([
+        Team(id="C", name="Charlie", short_name="Charlie", code="CHA", group_code="A"),
+        Team(id="D", name="Delta", short_name="Delta", code="DEL", group_code="A"),
+    ])
+    revision = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(revision)
+    db_session.flush()
+
+    kickoff_1 = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
+    kickoff_2 = datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+    db_session.add_all([
+        Match(id="profile_m1", group_code="A", home_team_id="A", away_team_id="B", kickoff=kickoff_1, status="final", source="test", home_score=1, away_score=1),
+        Match(id="profile_m2", group_code="A", home_team_id="C", away_team_id="D", kickoff=kickoff_2, status="final", source="test", home_score=1, away_score=0),
+    ])
+    db_session.add_all([
+        PredictionSnapshot(
+            match_id="profile_m1",
+            revision_id=revision.id,
+            kickoff=kickoff_1,
+            snapshotted_at=kickoff_1 - timedelta(hours=2),
+            home_win=0.6,
+            draw=0.2,
+            away_win=0.2,
+            home_xg=1.0,
+            away_xg=0.8,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.8,
+            confidence_label="High",
+            model_inputs={},
+            model_version="v1",
+        ),
+        PredictionSnapshot(
+            match_id="profile_m2",
+            revision_id=revision.id,
+            kickoff=kickoff_2,
+            snapshotted_at=kickoff_2 - timedelta(hours=2),
+            home_win=0.7,
+            draw=0.2,
+            away_win=0.1,
+            home_xg=1.4,
+            away_xg=0.7,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.8,
+            confidence_label="High",
+            model_inputs={},
+            model_version="v1",
+        ),
+    ])
+    _add_profile_prediction(
+        db_session,
+        revision_id=revision.id,
+        match_id="profile_m1",
+        kickoff=kickoff_1,
+        home_win=0.3,
+        draw=0.5,
+        away_win=0.2,
+        triggered_traits=["遇强韧性高"],
+        created_at=kickoff_1 - timedelta(minutes=30),
+        is_pre_match_locked=True,
+    )
+    _add_profile_prediction(
+        db_session,
+        revision_id=revision.id,
+        match_id="profile_m2",
+        kickoff=kickoff_2,
+        home_win=0.4,
+        draw=0.3,
+        away_win=0.3,
+        triggered_traits=["节奏均衡"],
+        created_at=kickoff_2 - timedelta(minutes=20),
+        is_fallback_locked=True,
+    )
+    db_session.flush()
+
+    result, select_count = _count_selects(db_session, lambda: evaluate_profile_model(db_session))
+
+    assert select_count <= 4
+    assert result["sample_count"] == 2
+    assert result["helped"] == 1
+    assert result["hurt"] == 1
+    assert result["neutral"] == 0
+    assert result["most_helpful_traits"] == [{"trait": "遇强韧性高", "count": 1}]
+    assert result["most_misleading_traits"] == [{"trait": "节奏均衡", "count": 1}]

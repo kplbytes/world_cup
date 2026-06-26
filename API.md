@@ -45,6 +45,9 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
     "database": "ok",
     "ai_providers": "available",
     "apscheduler": "running",
+    "scheduled_refresh": "disabled",
+    "snapshot_lock": "enabled",
+    "maintenance": "enabled",
     "last_successful_run": "2026-06-19T08:00:00+00:00"
   }
 }
@@ -53,6 +56,9 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `status`: `"ok"` 或 `"degraded"`
 - `database`: `"ok"` 或 `"no_revision"`
 - `ai_providers`: `"available"` 或 `"no_api_keys"`
+- `scheduled_refresh`: `"enabled"` 或 `"disabled"`
+- `snapshot_lock`: `"enabled"` 或 `"disabled"`
+- `maintenance`: `"enabled"` 或 `"disabled"`
 
 ### GET /api/dashboard
 
@@ -132,6 +138,11 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
   "revision_id": 5
 }
 ```
+
+说明：
+
+- 默认会跳过已有成功预测；如需人工重跑，传 `force=true`
+- 同一场比赛的成功 AI 预测在 1 小时内不会再次强制刷新，超过 1 小时可用 `force=true` 手动重跑
 
 ---
 
@@ -349,11 +360,19 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 ### GET /api/workflows/status
 
-获取当前工作流状态。
+获取当前工作流状态、按钮可用性、下一步建议和最近一次运行进度。
+
+关键字段包括：
+
+- `today_status`
+- `next_action`
+- `button_states.daily_open / ai_prediction / post_match / full`
+- `ai_status`
+- `last_run.progress`
 
 ### POST /api/workflows/daily-open
 
-触发每日打开工作流（前端加载时自动调用）。
+手动触发每日更新工作流。当前前端刷新页面不会自动调用该接口。
 
 **请求体（可选）：**
 
@@ -362,16 +381,21 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
   "hours": 48,
   "since_hours": 24,
   "limit": 10,
-  "with_ai": true,
+  "with_ai": false,
   "with_ensemble": true,
   "auto_lock": true,
   "only_missing": true
 }
 ```
 
+说明：
+
+- `with_ai` 默认 `false`，即“更新今日数据”不会顺带跑 AI
+- 如需跑 AI，请使用 `/api/workflows/pre-match` 或 `/api/workflows/full`
+
 ### POST /api/workflows/pre-match
 
-触发赛前预测工作流。需要认证。
+手动触发赛前预测工作流。首页“运行 AI 预测”按钮会调用此接口并传 `with_ai=true`。需要认证。
 
 **请求体（可选）：**
 
@@ -447,7 +471,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 ### GET /api/team-profiles
 
-获取所有球队的画像概览。当前球队画像仅用于展示，不参与 Baseline / AI / Ensemble 预测计算。
+获取所有球队的画像概览。球队画像会进入当前预测链路的 `MatchContext`，同时保留独立评估端点用于复盘画像效果。
 
 ### GET /api/team-profiles/{team_id}
 
@@ -503,7 +527,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 ### GET /api/team-profiles/evaluation
 
-历史保留端点。当前球队画像不参与预测，评估结果仅用于查看旧候选记录，不代表当前主链路使用画像。
+评估球队画像因子对赛后评分的帮助/损害情况。该端点仍用于单独审视画像效果，即使主预测链路已加载画像输入。
 
 ### POST /api/team-profiles/rebuild
 

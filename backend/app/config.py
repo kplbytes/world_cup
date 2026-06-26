@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     refresh_interval_minutes: int = 15
     live_refresh_interval_minutes: int = 2
     snapshot_lock_interval_minutes: int = 1
+    enable_scheduled_refresh: bool = False
     simulation_iterations: int = 50_000
     simulation_seed: int = 20260613
     enable_numerical_adjustments: bool = False

@@ -3,13 +3,10 @@ from __future__ import annotations
 from collections import Counter
 from math import log
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session, load_only
 
 from app.models import Match, PredictionSnapshot, TeamProfilePrediction
-from app.services.scoring import _select_scorable_snapshot
-
-
 def _brier(home: float, draw: float, away: float, actual: str) -> float:
     return sum((p - (1.0 if key == actual else 0.0)) ** 2 for key, p in (("home", home), ("draw", draw), ("away", away)))
 
@@ -25,12 +22,107 @@ def evaluate_profile_model(session: Session) -> dict:
     details = []
     trait_help = Counter()
     trait_hurt = Counter()
+    if not finals:
+        return {
+            "model_version": "elo-poisson-v1-team-profile", "sample_count": 0,
+            "baseline_brier": None,
+            "profile_brier": None,
+            "profile_logloss": None,
+            "helped": 0,
+            "hurt": 0,
+            "neutral": 0,
+            "most_helpful_traits": [],
+            "most_misleading_traits": [],
+            "matches": [],
+        }
+
+    match_ids = [match.id for match in finals]
+    baseline_ranked = (
+        select(
+            PredictionSnapshot.id.label("snapshot_id"),
+            func.row_number().over(
+                partition_by=PredictionSnapshot.match_id,
+                order_by=PredictionSnapshot.snapshotted_at.desc(),
+            ).label("rn"),
+        )
+        .join(Match, PredictionSnapshot.match_id == Match.id)
+        .where(
+            Match.status == "final",
+            PredictionSnapshot.match_id.in_(match_ids),
+            PredictionSnapshot.snapshotted_at < Match.kickoff,
+        )
+        .subquery()
+    )
+    baselines_by_match = {
+        snap.match_id: snap
+        for snap in session.scalars(
+            select(PredictionSnapshot)
+            .options(
+                load_only(
+                    PredictionSnapshot.match_id,
+                    PredictionSnapshot.home_win,
+                    PredictionSnapshot.draw,
+                    PredictionSnapshot.away_win,
+                )
+            )
+            .join(baseline_ranked, PredictionSnapshot.id == baseline_ranked.c.snapshot_id)
+            .where(baseline_ranked.c.rn == 1)
+        )
+    }
+
+    profile_priority = case(
+        (TeamProfilePrediction.is_pre_match_locked.is_(True), 0),
+        (TeamProfilePrediction.is_fallback_locked.is_(True), 1),
+        (
+            (TeamProfilePrediction.created_at < Match.kickoff)
+            & TeamProfilePrediction.real_time_only.is_(False),
+            2,
+        ),
+        else_=3,
+    )
+    profile_ranked = (
+        select(
+            TeamProfilePrediction.id.label("prediction_id"),
+            TeamProfilePrediction.match_id.label("match_id"),
+            profile_priority.label("priority"),
+            func.row_number().over(
+                partition_by=TeamProfilePrediction.match_id,
+                order_by=(profile_priority.asc(), TeamProfilePrediction.created_at.desc()),
+            ).label("rn"),
+        )
+        .join(Match, TeamProfilePrediction.match_id == Match.id)
+        .where(
+            Match.status == "final",
+            TeamProfilePrediction.match_id.in_(match_ids),
+        )
+        .subquery()
+    )
+    profiles_by_match = {
+        profile.match_id: profile
+        for profile in session.scalars(
+            select(TeamProfilePrediction)
+            .options(
+                load_only(
+                    TeamProfilePrediction.match_id,
+                    TeamProfilePrediction.home_win,
+                    TeamProfilePrediction.draw,
+                    TeamProfilePrediction.away_win,
+                    TeamProfilePrediction.triggered_traits_json,
+                    TeamProfilePrediction.risk_flags_json,
+                    TeamProfilePrediction.explanation,
+                )
+            )
+            .join(profile_ranked, TeamProfilePrediction.id == profile_ranked.c.prediction_id)
+            .where(
+                profile_ranked.c.rn == 1,
+                profile_ranked.c.priority < 3,
+            )
+        )
+    }
+
     for match in finals:
-        baseline = _select_scorable_snapshot(list(session.scalars(select(PredictionSnapshot).where(PredictionSnapshot.match_id == match.id))), match)
-        candidates = list(session.scalars(select(TeamProfilePrediction).where(TeamProfilePrediction.match_id == match.id).order_by(TeamProfilePrediction.created_at.desc())))
-        profile = next((p for p in candidates if p.is_pre_match_locked), None)
-        profile = profile or next((p for p in candidates if p.is_fallback_locked), None)
-        profile = profile or next((p for p in candidates if p.created_at < match.kickoff and not p.real_time_only), None)
+        baseline = baselines_by_match.get(match.id)
+        profile = profiles_by_match.get(match.id)
         if baseline is None or profile is None:
             continue
         actual = "home" if match.home_score > match.away_score else "draw" if match.home_score == match.away_score else "away"

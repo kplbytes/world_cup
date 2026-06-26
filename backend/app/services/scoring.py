@@ -10,8 +10,9 @@ import math
 from dataclasses import dataclass, field
 from datetime import timezone
 from typing import Any
+from collections import defaultdict
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.models import DashboardRevision, MarketSnapshot, Match, ModelScore, PredictionSnapshot
@@ -1036,10 +1037,56 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
     finished_matches = list(session.scalars(
         select(Match).where(Match.status == "final")
     ))
+    if not finished_matches:
+        return MatchCountBreakdown(
+            total_finished=0,
+            has_pre_match_prediction=0,
+            has_pre_kickoff_snapshot=0,
+            has_locked_snapshot=0,
+            has_fallback_snapshot=0,
+            actually_scored=0,
+            missing_snapshot=0,
+            details=[],
+        )
+    match_ids = [match.id for match in finished_matches]
 
-    # Scored match IDs (baseline only)
-    scored_rows = _scorable_snapshot_rows(session)
-    scored_match_ids = {snap.match_id for snap, _match in scored_rows}
+    prediction_match_ids = set(session.scalars(
+        select(MatchPrediction.match_id).where(MatchPrediction.match_id.in_(match_ids))
+    ))
+
+    snapshot_rows = session.execute(
+        select(
+            PredictionSnapshot.match_id,
+            func.count(PredictionSnapshot.id).label("snapshot_count"),
+            func.max(case((PredictionSnapshot.snapshotted_at < Match.kickoff, 1), else_=0)).label("has_pre_kickoff_snapshot"),
+            func.max(case((PredictionSnapshot.is_pre_match_locked.is_(True), 1), else_=0)).label("has_locked_snapshot"),
+            func.max(case((PredictionSnapshot.is_fallback_locked.is_(True), 1), else_=0)).label("has_fallback_snapshot"),
+        )
+        .join(Match, PredictionSnapshot.match_id == Match.id)
+        .where(PredictionSnapshot.match_id.in_(match_ids))
+        .group_by(PredictionSnapshot.match_id)
+    )
+    snapshot_state_by_match = {
+        row.match_id: {
+            "has_any_snapshot": bool(row.snapshot_count),
+            "has_pre_kickoff_snapshot": bool(row.has_pre_kickoff_snapshot),
+            "has_locked_snapshot": bool(row.has_locked_snapshot),
+            "has_fallback_snapshot": bool(row.has_fallback_snapshot),
+        }
+        for row in snapshot_rows
+    }
+
+    ai_match_ids = set(session.scalars(
+        select(AIPrediction.match_id).where(
+            AIPrediction.match_id.in_(match_ids),
+            AIPrediction.error_code.is_(None),
+            AIPrediction.parsed_home_win.is_not(None),
+        )
+    ))
+
+    ensemble_match_ids = set(session.scalars(
+        select(EnsemblePrediction.match_id).where(EnsemblePrediction.match_id.in_(match_ids))
+    ))
 
     details = []
     has_pre_match_prediction = 0
@@ -1050,42 +1097,19 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
     missing_snapshot = 0
 
     for match in finished_matches:
-        kickoff = _ensure_utc(match.kickoff)
-
         # Check for MatchPrediction
-        has_prediction = session.scalar(
-            select(MatchPrediction.match_id)
-            .where(MatchPrediction.match_id == match.id)
-            .limit(1)
-        ) is not None
+        has_prediction = match.id in prediction_match_ids
 
         # Check for pre-match prediction (created before kickoff)
-        has_pre_match_pred = session.scalar(
-            select(MatchPrediction.match_id)
-            .where(
-                MatchPrediction.match_id == match.id,
-            )
-            .limit(1)
-        ) is not None
+        has_pre_match_pred = has_prediction
 
         # Check for snapshots
-        snapshots = list(session.scalars(
-            select(PredictionSnapshot)
-            .where(PredictionSnapshot.match_id == match.id)
-            .order_by(PredictionSnapshot.snapshotted_at.desc())
-        ))
-
-        has_any_snap = len(snapshots) > 0
-        has_pre_kickoff_snap = any(
-            _ensure_utc(s.snapshotted_at) < kickoff for s in snapshots
-        )
-        has_locked_snap = any(
-            s.is_pre_match_locked for s in snapshots
-        )
-        has_fallback_snap = any(
-            s.is_fallback_locked for s in snapshots
-        )
-        is_scored = match.id in scored_match_ids
+        snapshot_state = snapshot_state_by_match.get(match.id, {})
+        has_any_snap = snapshot_state.get("has_any_snapshot", False)
+        has_pre_kickoff_snap = snapshot_state.get("has_pre_kickoff_snapshot", False)
+        has_locked_snap = snapshot_state.get("has_locked_snapshot", False)
+        has_fallback_snap = snapshot_state.get("has_fallback_snapshot", False)
+        is_scored = has_pre_kickoff_snap
 
         # Determine status - new rule: any pre-kickoff snapshot is scorable
         if match.home_score is None or match.away_score is None:
@@ -1108,21 +1132,8 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
             status_label = "其他原因"
 
         # Check AI and ensemble
-        has_ai = session.scalar(
-            select(AIPrediction.match_id)
-            .where(
-                AIPrediction.match_id == match.id,
-                AIPrediction.error_code.is_(None),
-                AIPrediction.parsed_home_win.is_not(None),
-            )
-            .limit(1)
-        ) is not None
-
-        has_ensemble = session.scalar(
-            select(EnsemblePrediction.match_id)
-            .where(EnsemblePrediction.match_id == match.id)
-            .limit(1)
-        ) is not None
+        has_ai = match.id in ai_match_ids
+        has_ensemble = match.id in ensemble_match_ids
 
         if has_pre_match_pred:
             has_pre_match_prediction += 1

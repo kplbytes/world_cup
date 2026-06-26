@@ -31,50 +31,29 @@ export default function App() {
   const group = dashboard.data.groups.find((item) => item.code === selectedGroup) ?? dashboard.data.groups[0];
   const team = group.teams.find((item) => item.id === selectedTeam) ?? null;
 
-  const isHome = view === "daily";
-
   return (
     <div className="app-shell">
       <AppHeader
-        mode={isHome ? "home" : "compact"}
-        brand={isHome ? "2026 世界杯预测工作台" : "世界杯预测"}
-        subtitle={isHome ? "赛前预测 · AI 辅助 · 赛后复盘" : undefined}
+        mode="home"
+        brand="2026 世界杯预测工作台"
+        subtitle="赛前预测 · AI 辅助 · 赛后复盘"
         version={String(dashboard.data.revision.id).padStart(3, "0")}
         modelVersion={dashboard.data.revision.model_version}
-        nav={
-          !isHome ? (
-            <div className="nav-tabs" role="tablist">
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.key}
-                  role="tab"
-                  aria-selected={view === item.key}
-                  className={view === item.key ? "active" : ""}
-                  onClick={() => setView(item.key)}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          ) : undefined
-        }
       />
 
-      {isHome && (
-        <div className="nav-tabs" style={{ marginTop: 0 }} role="tablist">
-          {NAV_ITEMS.map((item) => (
-            <button
-              key={item.key}
-              role="tab"
-              aria-selected={view === item.key}
-              className={view === item.key ? "active" : ""}
-              onClick={() => setView(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="nav-tabs" style={{ marginTop: 0 }} role="tablist">
+        {NAV_ITEMS.map((item) => (
+          <button
+            key={item.key}
+            role="tab"
+            aria-selected={view === item.key}
+            className={view === item.key ? "active" : ""}
+            onClick={() => setView(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
 
       {dashboard.data.revision.model_version === "elo-poisson-v1-intel-numeric" && (
         <div className="banner-warn">

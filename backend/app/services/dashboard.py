@@ -4,8 +4,8 @@ from zoneinfo import ZoneInfo
 import threading
 import time as _time
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session, load_only
 
 from app.config import settings
 from app.prediction.shadow import SHADOW_MODEL_VERSIONS
@@ -81,25 +81,43 @@ def _as_utc(value: datetime) -> datetime:
 def _display_snapshots(session: Session, matches: list[Match]) -> dict[str, PredictionSnapshot]:
     if not matches:
         return {}
-    matches_by_id = {match.id: match for match in matches}
-    grouped: dict[str, list[PredictionSnapshot]] = defaultdict(list)
-    for snapshot in session.scalars(
-        select(PredictionSnapshot)
-        .where(PredictionSnapshot.match_id.in_(matches_by_id))
-        .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
-    ):
-        grouped[snapshot.match_id].append(snapshot)
-
-    selected = {}
-    for match_id, snapshots in grouped.items():
-        kickoff = _as_utc(matches_by_id[match_id].kickoff)
-        pre_kickoff = [
-            snapshot
-            for snapshot in snapshots
-            if _as_utc(snapshot.snapshotted_at) < kickoff
-        ]
-        selected[match_id] = pre_kickoff[0] if pre_kickoff else snapshots[0]
-    return selected
+    match_ids = [match.id for match in matches]
+    ranked = (
+        select(
+            PredictionSnapshot.id.label("snapshot_id"),
+            func.row_number().over(
+                partition_by=PredictionSnapshot.match_id,
+                order_by=(
+                    case((PredictionSnapshot.snapshotted_at < Match.kickoff, 0), else_=1),
+                    PredictionSnapshot.snapshotted_at.desc(),
+                ),
+            ).label("rn"),
+        )
+        .join(Match, PredictionSnapshot.match_id == Match.id)
+        .where(PredictionSnapshot.match_id.in_(match_ids))
+        .subquery()
+    )
+    return {
+        snapshot.match_id: snapshot
+        for snapshot in session.scalars(
+            select(PredictionSnapshot)
+            .options(
+                load_only(
+                    PredictionSnapshot.match_id,
+                    PredictionSnapshot.snapshotted_at,
+                    PredictionSnapshot.is_fallback_locked,
+                    PredictionSnapshot.home_win,
+                    PredictionSnapshot.draw,
+                    PredictionSnapshot.away_win,
+                    PredictionSnapshot.base_home_win,
+                    PredictionSnapshot.base_draw,
+                    PredictionSnapshot.base_away_win,
+                )
+            )
+            .join(ranked, PredictionSnapshot.id == ranked.c.snapshot_id)
+            .where(ranked.c.rn == 1)
+        )
+    }
 
 
 def _snapshot_status(snapshot: PredictionSnapshot | None, match: Match) -> dict:
@@ -329,7 +347,24 @@ def build_dashboard(session: Session) -> dict:
     predictions = {
         row.match_id: row
         for row in session.scalars(
-            select(MatchPrediction).where(
+            select(MatchPrediction)
+            .options(
+                load_only(
+                    MatchPrediction.match_id,
+                    MatchPrediction.home_xg,
+                    MatchPrediction.away_xg,
+                    MatchPrediction.home_win,
+                    MatchPrediction.draw,
+                    MatchPrediction.away_win,
+                    MatchPrediction.confidence_label,
+                    MatchPrediction.model_confidence_label,
+                    MatchPrediction.has_auto_adjustments,
+                    MatchPrediction.base_home_win,
+                    MatchPrediction.base_draw,
+                    MatchPrediction.base_away_win,
+                )
+            )
+            .where(
                 MatchPrediction.revision_id == revision.id,
                 MatchPrediction.model_version.notin_(SHADOW_MODEL_VERSIONS),
             )
@@ -343,7 +378,18 @@ def build_dashboard(session: Session) -> dict:
     }
 
     intelligences_by_match = defaultdict(list)
-    for row in session.scalars(select(MatchIntelligence)):
+    for row in session.scalars(
+        select(MatchIntelligence).options(
+            load_only(
+                MatchIntelligence.match_id,
+                MatchIntelligence.provider,
+                MatchIntelligence.intelligence_type,
+                MatchIntelligence.source_confidence,
+                MatchIntelligence.fetched_at,
+                MatchIntelligence.normalized_payload,
+            )
+        )
+    ):
         intelligences_by_match[row.match_id].append(row)
 
     adjustments_by_match_auto = defaultdict(list)
@@ -361,6 +407,18 @@ def build_dashboard(session: Session) -> dict:
     ai_preds_by_match: dict[str, list[AIPrediction]] = defaultdict(list)
     for row in session.scalars(
         select(AIPrediction)
+        .options(
+            load_only(
+                AIPrediction.match_id,
+                AIPrediction.created_at,
+                AIPrediction.model_version,
+                AIPrediction.error_code,
+                AIPrediction.parsed_home_win,
+                AIPrediction.parsed_draw,
+                AIPrediction.parsed_away_win,
+                AIPrediction.recommended_label,
+            )
+        )
         .where(AIPrediction.match_id.in_(all_match_ids))
         .order_by(AIPrediction.created_at.desc())
     ):
@@ -370,6 +428,18 @@ def build_dashboard(session: Session) -> dict:
     ensemble_preds_by_match: dict[str, list[EnsemblePrediction]] = defaultdict(list)
     for row in session.scalars(
         select(EnsemblePrediction)
+        .options(
+            load_only(
+                EnsemblePrediction.match_id,
+                EnsemblePrediction.created_at,
+                EnsemblePrediction.model_version,
+                EnsemblePrediction.system_weight,
+                EnsemblePrediction.market_weight,
+                EnsemblePrediction.ensemble_home_win,
+                EnsemblePrediction.ensemble_draw,
+                EnsemblePrediction.ensemble_away_win,
+            )
+        )
         .where(EnsemblePrediction.match_id.in_(all_match_ids))
         .order_by(EnsemblePrediction.created_at.desc())
     ):
@@ -1257,7 +1327,17 @@ def build_decision(session: Session) -> dict:
             seen_auto_adjs_decision.add(sig)
             adjustments_by_match_auto[row.match_id].append(row)
 
-    intelligences = {row.id: row for row in session.scalars(select(MatchIntelligence))}
+    intelligences = {
+        row.id: row
+        for row in session.scalars(
+            select(MatchIntelligence).options(
+                load_only(
+                    MatchIntelligence.id,
+                    MatchIntelligence.provider,
+                )
+            )
+        )
+    }
 
     local_now = decision_now().astimezone(SHANGHAI)
     local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)

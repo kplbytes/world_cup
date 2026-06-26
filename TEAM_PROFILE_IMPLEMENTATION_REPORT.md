@@ -1,5 +1,7 @@
 # Team Profile Implementation Report
 
+> 注：这是 Team Profile 引入阶段的实现快照，不是 2026-06-26 当前运行态的最高真相源。当前行为请以 `AI_PROJECT_CONSTRAINTS.md`、`README.md`、`docs/team_profiles.md` 和实际代码为准。
+
 ## 1. Modified Files
 
 ### Backend (New)

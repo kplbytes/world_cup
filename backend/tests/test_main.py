@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+from fastapi.testclient import TestClient
+
 from app.main import _is_live_window
 from app.models import Match, Team
 
@@ -38,3 +40,32 @@ def test_recently_started_match_enables_live_refresh(db_session):
     _add_match(db_session, now - timedelta(hours=1))
 
     assert _is_live_window(db_session, now=now) is True
+
+
+def test_scheduler_skips_refresh_job_when_disabled(monkeypatch):
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod, "initialize_database", lambda: None)
+    monkeypatch.setattr(main_mod.BackgroundScheduler, "start", lambda self: None)
+    monkeypatch.setattr(main_mod.settings, "enable_scheduled_refresh", False)
+
+    app = main_mod.create_app(start_background=True)
+
+    with TestClient(app):
+        assert main_mod._scheduler is not None
+        assert main_mod._scheduler.get_job("world-cup-refresh") is None
+        assert main_mod._scheduler.get_job("world-cup-snapshot-lock") is not None
+
+
+def test_scheduler_adds_refresh_job_when_enabled(monkeypatch):
+    import app.main as main_mod
+
+    monkeypatch.setattr(main_mod, "initialize_database", lambda: None)
+    monkeypatch.setattr(main_mod.BackgroundScheduler, "start", lambda self: None)
+    monkeypatch.setattr(main_mod.settings, "enable_scheduled_refresh", True)
+
+    app = main_mod.create_app(start_background=True)
+
+    with TestClient(app):
+        assert main_mod._scheduler is not None
+        assert main_mod._scheduler.get_job("world-cup-refresh") is not None

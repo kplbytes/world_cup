@@ -172,6 +172,32 @@ def test_health_does_not_expose_api_token(tmp_path, monkeypatch):
     assert "top-secret-token" not in response.text
 
 
+def test_health_reports_manual_refresh_scheduler_state(tmp_path, monkeypatch):
+    class FakeScheduler:
+        running = True
+
+        def __init__(self):
+            self.jobs = {
+                "world-cup-snapshot-lock": object(),
+                "world-cup-maintenance": object(),
+            }
+
+        def get_job(self, job_id):
+            return self.jobs.get(job_id)
+
+    client = api_client(tmp_path)
+    monkeypatch.setattr("app.main._scheduler", FakeScheduler())
+
+    response = client.get("/api/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dependencies"]["apscheduler"] == "running"
+    assert data["dependencies"]["scheduled_refresh"] == "disabled"
+    assert data["dependencies"]["snapshot_lock"] == "enabled"
+    assert data["dependencies"]["maintenance"] == "enabled"
+
+
 def test_sync_runs_returns_list(tmp_path):
     client = api_client(tmp_path)
 

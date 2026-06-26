@@ -19,10 +19,12 @@ Key advantages over v1:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import math
 import threading
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -30,13 +32,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.ai.evaluation import (
-    _compute_brier,
-    _get_actual_result,
-    _get_predicted_direction,
-    _select_ai_prediction,
-    _select_system_prediction,
-)
+from app.ai.evaluation import _compute_brier, _get_actual_result, _pick_ai_prediction, _select_system_prediction
 from app.ai.model_registry import get_ensemble_defaults, list_enabled_models
 from app.models import AIPrediction, MarketSnapshot, Match, PredictionSnapshot
 
@@ -52,9 +48,30 @@ _TIME_DECAY_HALF_LIFE = 20    # Matches for weight to halve (exponential decay)
 _SIGNIFICANCE_LEVEL = 0.10    # p-value threshold for paired t-test (one-sided)
 _MAX_LOOKBACK = 60            # Maximum matches to consider
 
-_STATE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "adaptive_weights_state.json"
+_STATE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "adaptive_weights"
 
 _lock = threading.Lock()
+
+
+def _is_visible_ai_version(model_version: str | None) -> bool:
+    version = (model_version or "").lower()
+    return "xiaomi" not in version and "mimo" not in version
+
+
+def _get_database_identity(session: Session | None = None) -> str:
+    if session is not None:
+        bind = session.get_bind()
+        database = getattr(bind.url, "database", None)
+        if database:
+            return str(Path(database).expanduser().resolve())
+        return str(bind.url)
+    return str(Path(settings.database_path).expanduser().resolve())
+
+
+def _get_state_path(session: Session | None = None) -> Path:
+    database_identity = _get_database_identity(session)
+    digest = hashlib.sha1(database_identity.encode("utf-8")).hexdigest()[:12]
+    return _STATE_DIR / f"adaptive_weights_state_{digest}.json"
 
 
 # ── Public API ─────────────────────────────────────────────────────────
@@ -73,11 +90,11 @@ def compute_adaptive_weights(session: Session) -> dict[str, Any]:
     per_match_briers, time_weights = _collect_per_match_briers(session)
 
     # 2. Check minimum sample size
-    n_matches = len(per_match_briers)
-    if n_matches < _MIN_SAMPLE_SIZE:
+    system_sample_count = len(per_match_briers.get("system", {}))
+    if system_sample_count < _MIN_SAMPLE_SIZE:
         logger.info(
             "Adaptive weights: only %d matches (need %d), using defaults",
-            n_matches, _MIN_SAMPLE_SIZE,
+            system_sample_count, _MIN_SAMPLE_SIZE,
         )
         return _build_result(get_defaults_normalized(), _summarize_performance(per_match_briers, time_weights), is_adaptive=False, significance={})
 
@@ -99,14 +116,14 @@ def compute_adaptive_weights(session: Session) -> dict[str, Any]:
 
     # 8. Build result and persist
     result = _build_result(constrained, performance, is_adaptive=True, significance=significance)
-    _save_state(result)
+    _save_state(result, _get_state_path(session))
 
     logger.info(
         "Adaptive weights (BMA): system=%.3f market=%.3f ai_total=%.3f "
         "(n=%d, %d significant pairs)",
         constrained.get("system", 0), constrained.get("market", 0),
         sum(v for k, v in constrained.items() if k.startswith("ai_")),
-        n_matches,
+        system_sample_count,
         sum(1 for v in significance.values() if v.get("significant", False)),
     )
     return result
@@ -114,7 +131,7 @@ def compute_adaptive_weights(session: Session) -> dict[str, Any]:
 
 def get_current_adaptive_weights(session: Session | None = None) -> dict[str, Any]:
     """Get current adaptive weights (from cache or compute fresh)."""
-    state = _load_state()
+    state = _load_state(_get_state_path(session))
     if state and state.get("is_adaptive"):
         return state
 
@@ -136,12 +153,12 @@ def get_adaptive_weight_overrides(session: Session) -> dict[str, float] | None:
 
 def _collect_per_match_briers(
     session: Session,
-) -> tuple[dict[str, list[float]], list[float]]:
+) -> tuple[dict[str, dict[str, float]], dict[str, float]]:
     """Collect per-match Brier scores for each source, with exponential time-decay weights.
 
     Returns:
-        per_match_briers: {source: [brier_match_1, brier_match_2, ...]}
-        time_weights: [w_match_1, w_match_2, ...] (most recent = highest weight)
+        per_match_briers: {source: {match_id: brier_score}}
+        time_weights: {match_id: weight} (most recent = highest weight)
     """
     final_matches = list(session.scalars(
         select(Match)
@@ -151,7 +168,7 @@ def _collect_per_match_briers(
     ))
 
     if not final_matches:
-        return {}, []
+        return {}, {}
 
     # Exponential time-decay weights: most recent match gets weight 1.0,
     # older matches decay with half-life of _TIME_DECAY_HALF_LIFE matches
@@ -162,7 +179,8 @@ def _collect_per_match_briers(
     if total_tw > 0:
         time_weights = [w * n / total_tw for w in time_weights]
 
-    per_match_briers: dict[str, list[float]] = {}
+    match_weights = {match.id: time_weights[idx] for idx, match in enumerate(final_matches)}
+    per_match_briers: dict[str, dict[str, float]] = {}
 
     for match in final_matches:
         actual = _get_actual_result(match)
@@ -171,7 +189,7 @@ def _collect_per_match_briers(
         snap = _select_system_prediction(session, match)
         if snap:
             probs = {"home_win": snap.home_win, "draw": snap.draw, "away_win": snap.away_win}
-            per_match_briers.setdefault("system", []).append(_compute_brier(probs, actual))
+            per_match_briers.setdefault("system", {})[match.id] = _compute_brier(probs, actual)
 
         # Market
         market_snap = session.scalar(
@@ -183,7 +201,7 @@ def _collect_per_match_briers(
         )
         if market_snap:
             probs = {"home_win": market_snap.home_probability, "draw": market_snap.draw_probability, "away_win": market_snap.away_probability}
-            per_match_briers.setdefault("market", []).append(_compute_brier(probs, actual))
+            per_match_briers.setdefault("market", {})[match.id] = _compute_brier(probs, actual)
 
         # AI by version
         ai_preds = list(session.scalars(
@@ -191,36 +209,47 @@ def _collect_per_match_briers(
             .where(AIPrediction.match_id == match.id)
             .where(AIPrediction.error_code.is_(None))
             .where(AIPrediction.parsed_home_win.isnot(None))
+            .where(AIPrediction.parsed_draw.isnot(None))
+            .where(AIPrediction.parsed_away_win.isnot(None))
             .where(AIPrediction.real_time_only.is_(False))
+            .order_by(AIPrediction.model_version, AIPrediction.created_at.desc())
         ))
-        ai_by_version: dict[str, AIPrediction] = {}
+        ai_by_version: dict[str, list[AIPrediction]] = defaultdict(list)
         for pred in ai_preds:
-            if pred.model_version not in ai_by_version:
-                ai_by_version[pred.model_version] = pred
+            if not _is_visible_ai_version(pred.model_version):
+                continue
+            ai_by_version[pred.model_version].append(pred)
 
-        for version, pred in ai_by_version.items():
+        for version, predictions in ai_by_version.items():
+            pred = _pick_ai_prediction(predictions, match.kickoff)
+            if pred is None:
+                continue
             probs = {"home_win": pred.parsed_home_win, "draw": pred.parsed_draw, "away_win": pred.parsed_away_win}
-            per_match_briers.setdefault(f"ai_{version}", []).append(_compute_brier(probs, actual))
+            per_match_briers.setdefault(f"ai_{version}", {})[match.id] = _compute_brier(probs, actual)
 
-    return per_match_briers, time_weights
+    return per_match_briers, match_weights
 
 
 # ── Performance Summary ────────────────────────────────────────────────
 
 def _summarize_performance(
-    per_match_briers: dict[str, list[float]],
-    time_weights: list[float],
+    per_match_briers: dict[str, dict[str, float]],
+    time_weights: dict[str, float],
 ) -> dict[str, dict[str, Any]]:
     """Compute weighted Brier statistics and Bayesian posterior for each source."""
     performance: dict[str, dict[str, Any]] = {}
 
-    for source, briers in per_match_briers.items():
+    ordered_match_ids = list(time_weights.keys())
+
+    for source, briers_by_match in per_match_briers.items():
+        match_ids = [match_id for match_id in ordered_match_ids if match_id in briers_by_match]
+        briers = [briers_by_match[match_id] for match_id in match_ids]
         n = len(briers)
         if n == 0:
             continue
 
         # Weighted mean Brier
-        ws = time_weights[:n]  # Use first n weights (most recent)
+        ws = [time_weights[match_id] for match_id in match_ids]
         wsum = sum(ws)
         if wsum == 0:
             continue
@@ -279,8 +308,8 @@ def _summarize_performance(
 # ── Significance Testing ───────────────────────────────────────────────
 
 def _paired_significance_tests(
-    per_match_briers: dict[str, list[float]],
-    time_weights: list[float],
+    per_match_briers: dict[str, dict[str, float]],
+    time_weights: dict[str, float],
 ) -> dict[str, dict[str, Any]]:
     """Paired t-test on per-match Brier differences between sources.
 
@@ -292,6 +321,7 @@ def _paired_significance_tests(
         return {}
 
     results: dict[str, dict[str, Any]] = {}
+    ordered_match_ids = list(time_weights.keys())
 
     # Find common match indices (where both sources have data)
     for i in range(len(sources)):
@@ -300,14 +330,18 @@ def _paired_significance_tests(
             briers_a = per_match_briers[src_a]
             briers_b = per_match_briers[src_b]
 
-            # Pair up: use min length (both sources must have data for same matches)
-            n_pairs = min(len(briers_a), len(briers_b))
+            common_match_ids = [
+                match_id
+                for match_id in ordered_match_ids
+                if match_id in briers_a and match_id in briers_b
+            ]
+            n_pairs = len(common_match_ids)
             if n_pairs < _MIN_SAMPLE_SIZE:
                 continue
 
             # Paired differences: A - B (positive means A is worse)
-            diffs = [briers_a[k] - briers_b[k] for k in range(n_pairs)]
-            ws = time_weights[:n_pairs]
+            diffs = [briers_a[match_id] - briers_b[match_id] for match_id in common_match_ids]
+            ws = [time_weights[match_id] for match_id in common_match_ids]
             wsum = sum(ws)
 
             if wsum == 0:
@@ -506,7 +540,7 @@ def _build_result(
 
     ai_total = expanded.pop("ai_total", 0.0)
     if ai_total > 0:
-        enabled_models = list_enabled_models()
+        enabled_models = [model for model in list_enabled_models() if _is_visible_ai_version(model.model_version)]
         total_config_weight = sum(m.ensemble_weight for m in enabled_models)
         if total_config_weight > 0 and enabled_models:
             for model in enabled_models:
@@ -534,21 +568,21 @@ def _build_result(
     }
 
 
-def _save_state(state: dict[str, Any]) -> None:
+def _save_state(state: dict[str, Any], state_path: Path) -> None:
     """Persist adaptive weights state to JSON file."""
     with _lock:
-        _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(_STATE_PATH, "w") as f:
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(state_path, "w") as f:
             json.dump(state, f, indent=2, default=str)
 
 
-def _load_state() -> dict[str, Any] | None:
+def _load_state(state_path: Path) -> dict[str, Any] | None:
     """Load adaptive weights state from JSON file."""
     with _lock:
-        if not _STATE_PATH.exists():
+        if not state_path.exists():
             return None
         try:
-            with open(_STATE_PATH) as f:
+            with open(state_path) as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             return None

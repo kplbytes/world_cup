@@ -1,5 +1,7 @@
 # Team Profile 完整开发交接计划
 
+> 注：这是 Team Profile 引入阶段的交接计划快照，不是 2026-06-26 当前运行态的最高真相源。当前行为请以 `AI_PROJECT_CONSTRAINTS.md`、`README.md`、`docs/team_profiles.md` 和实际代码为准。
+
 ## 目标
 
 在现有 2026 世界杯预测系统中完成可审计、可时间切片、可关闭、可独立评分的 Team Profile 模块，并完成后端、AI Prompt、前端和真实运行验证。

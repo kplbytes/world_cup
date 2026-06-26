@@ -4,10 +4,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from sqlalchemy import event
 
-from app.models import Match, PredictionSnapshot
+from app.models import AIPrediction, DashboardRevision, EnsemblePrediction, Match, MatchPrediction, PredictionSnapshot, Team
 from app.ai.lock_status import compute_match_lock_status
-from app.services.scoring import ModelScoreReport, score_predictions
+from app.services.scoring import ModelScoreReport, get_match_count_breakdown, score_predictions
 
 
 # ---------------------------------------------------------------------------
@@ -836,3 +837,104 @@ class TestModelComparison:
         # sample_count=4 means available=True but sample_sufficient=False (need >=20)
         assert 4 > 0  # available should be True
         assert 4 < 20  # sample_sufficient should be False
+
+
+def _count_selects(session, fn):
+    engine = session.get_bind()
+    count = 0
+
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        nonlocal count
+        if statement.lstrip().upper().startswith("SELECT"):
+            count += 1
+
+    event.listen(engine, "before_cursor_execute", before_cursor_execute)
+    try:
+        result = fn()
+    finally:
+        event.remove(engine, "before_cursor_execute", before_cursor_execute)
+    return result, count
+
+
+def test_match_count_breakdown_batches_queries_and_preserves_statuses(db_session):
+    revision = DashboardRevision(active=True, model_version="v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(revision)
+    db_session.add_all([
+        Team(id="B1", name="B1", short_name="B1", code="B1A", group_code="A"),
+        Team(id="B2", name="B2", short_name="B2", code="B2A", group_code="A"),
+        Team(id="B3", name="B3", short_name="B3", code="B3A", group_code="A"),
+        Team(id="B4", name="B4", short_name="B4", code="B4A", group_code="A"),
+        Team(id="B5", name="B5", short_name="B5", code="B5A", group_code="A"),
+        Team(id="B6", name="B6", short_name="B6", code="B6A", group_code="A"),
+    ])
+    db_session.flush()
+    kickoff_1 = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
+    kickoff_2 = datetime(2026, 6, 21, 12, 0, tzinfo=timezone.utc)
+    kickoff_3 = datetime(2026, 6, 22, 12, 0, tzinfo=timezone.utc)
+    db_session.add_all([
+        Match(id="breakdown_scored", group_code="A", home_team_id="B1", away_team_id="B2", kickoff=kickoff_1, status="final", source="test", home_score=1, away_score=0),
+        Match(id="breakdown_after", group_code="A", home_team_id="B3", away_team_id="B4", kickoff=kickoff_2, status="final", source="test", home_score=0, away_score=1),
+        Match(id="breakdown_missing", group_code="A", home_team_id="B5", away_team_id="B6", kickoff=kickoff_3, status="final", source="test", home_score=2, away_score=2),
+    ])
+    db_session.flush()
+
+    db_session.add_all([
+        MatchPrediction(
+            revision_id=revision.id, match_id="breakdown_scored", home_win=0.55, draw=0.25, away_win=0.20,
+            home_xg=1.2, away_xg=0.8, confidence=0.8, confidence_label="High",
+            data_confidence=0.9, data_confidence_label="High",
+            model_confidence=0.85, model_confidence_label="High",
+            explanation="Test", model_inputs={}, model_version="v1", scorelines=[], score_matrix=[],
+        ),
+        MatchPrediction(
+            revision_id=revision.id, match_id="breakdown_after", home_win=0.30, draw=0.25, away_win=0.45,
+            home_xg=0.9, away_xg=1.1, confidence=0.8, confidence_label="High",
+            data_confidence=0.9, data_confidence_label="High",
+            model_confidence=0.85, model_confidence_label="High",
+            explanation="Test", model_inputs={}, model_version="v1", scorelines=[], score_matrix=[],
+        ),
+        PredictionSnapshot(
+            match_id="breakdown_scored", revision_id=revision.id, kickoff=kickoff_1,
+            snapshotted_at=kickoff_1 - timedelta(hours=2), home_win=0.55, draw=0.25, away_win=0.20,
+            home_xg=1.2, away_xg=0.8, scorelines=[], score_matrix=[], confidence=0.8,
+            confidence_label="High", model_inputs={}, model_version="v1", is_pre_match_locked=True,
+        ),
+        PredictionSnapshot(
+            match_id="breakdown_after", revision_id=revision.id, kickoff=kickoff_2,
+            snapshotted_at=kickoff_2 + timedelta(minutes=10), home_win=0.30, draw=0.25, away_win=0.45,
+            home_xg=0.9, away_xg=1.1, scorelines=[], score_matrix=[], confidence=0.8,
+            confidence_label="High", model_inputs={}, model_version="v1",
+        ),
+        AIPrediction(
+            match_id="breakdown_scored", provider="deepseek", model_id="test", model_version="ai-test-v1",
+            prompt_version="test", input_snapshot_json={}, raw_response_text="{}", raw_response_json={},
+            parsed_home_win=0.5, parsed_draw=0.3, parsed_away_win=0.2, confidence=0.7,
+            risk_flags_json=[], key_factors_json=[], reason="test", uncertainties_json=[],
+            disagreement_with_system=None, disagreement_with_market=None, recommended_label=None,
+            is_pre_match_locked=True, real_time_only=False, error_code=None, error_message=None,
+        ),
+        EnsemblePrediction(
+            match_id="breakdown_scored", model_version="ensemble-v1", system_model_version="v1",
+            system_weight=0.4, market_weight=0.3, ai_weights_json={"ai-test-v1": 0.3},
+            source_probabilities_json={}, ensemble_home_win=0.5, ensemble_draw=0.3, ensemble_away_win=0.2,
+            confidence=0.8, reason="test", is_pre_match_locked=True,
+        ),
+    ])
+    db_session.flush()
+
+    result, select_count = _count_selects(db_session, lambda: get_match_count_breakdown(db_session))
+    details = {item["match_id"]: item for item in result.details}
+
+    assert select_count <= 8
+    assert result.total_finished == 3
+    assert result.has_pre_match_prediction == 2
+    assert result.has_pre_kickoff_snapshot == 1
+    assert result.has_locked_snapshot == 1
+    assert result.has_fallback_snapshot == 0
+    assert result.actually_scored == 1
+    assert result.missing_snapshot == 2
+    assert details["breakdown_scored"]["status"] == "scored"
+    assert details["breakdown_scored"]["has_ai"] is True
+    assert details["breakdown_scored"]["has_ensemble"] is True
+    assert details["breakdown_after"]["status"] == "excluded_after_kickoff"
+    assert details["breakdown_missing"]["status"] == "no_pre_match_snapshot"

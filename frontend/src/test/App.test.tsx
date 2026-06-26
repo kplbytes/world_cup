@@ -266,32 +266,37 @@ function workflowStatus(overrides: Record<string, unknown> = {}) {
 function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflowStatus()) {
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
     const url = String(input);
-    if (url.includes("/api/model-score")) return { ok: true, json: async () => modelScore };
-    if (url.includes("/api/decision")) return { ok: true, json: async () => decision };
-    if (url.includes("/api/accuracy-command-center")) return { ok: true, json: async () => ({
+    const path = new URL(url, "http://localhost").pathname;
+    if (path === "/api/model-score/details") return { ok: true, json: async () => ({ details: [], exclusions: [] }) };
+    if (path === "/api/model-score/by-version") return { ok: true, json: async () => ({ versions: [] }) };
+    if (path === "/api/model-score") return { ok: true, json: async () => modelScore };
+    if (path === "/api/decision") return { ok: true, json: async () => decision };
+    if (path === "/api/accuracy-command-center") return { ok: true, json: async () => ({
       model_recommendation: null, version_scores: [], calibration: { buckets: [] },
       market_comparison: { market_sample_count: 0, model_brier: 0, market_brier: 0, blended_brier: 0, model_logloss: 0, market_logloss: 0, blended_logloss: 0, suggested_market_blend_weight: 0, market_helped_count: 0, market_hurt_count: 0, market_neutral_count: 0 },
       data_quality: null, ai_evaluation: { system: { sample_count: 0, brier: null, logloss: null, hit_rate: null }, ai_by_version: {}, ensemble: { sample_count: 0, brier: null, logloss: null, hit_rate: null, helped: 0, hurt: 0 }, ai_effect: {} },
       ai_models: { enabled: false, models: [] },
     }) };
-    if (url.includes("/api/workflows/status")) return { ok: true, json: async () => workflowStatusPayload };
-    if (url.includes("/api/workflows/runs")) return { ok: true, json: async () => ({ runs: [] }) };
-    if (url.includes("/api/adaptive-weights")) return { ok: true, json: async () => ({
+    if (path === "/api/workflows/status") return { ok: true, json: async () => workflowStatusPayload };
+    if (path === "/api/workflows/runs") return { ok: true, json: async () => ({ runs: [] }) };
+    if (path === "/api/adaptive-weights") return { ok: true, json: async () => ({
       weights: { system: 0.35, market: 0.30, "ai_ai-test-v1": 0.35 },
       performance: { system: { sample_count: 3, effective_n: 2.5, brier: 0.4, brier_var: 0.02, hit_rate: 0.8, posterior_mu: 0.42, posterior_se: 0.08, ci_95: [0.26, 0.58] }, market: { sample_count: 3, effective_n: 2.5, brier: 0.45, brier_var: 0.03, hit_rate: 0.7, posterior_mu: 0.44, posterior_se: 0.09, ci_95: [0.26, 0.62] } },
       is_adaptive: false, significance: {},
       last_updated: "2026-06-13T08:00:00Z",
       config: { algorithm: "bayesian_model_averaging_v2", min_sample_size: 10, max_weight_shift: 0.12, hedge_eta: 1.5, time_decay_half_life: 20, significance_level: 0.10, floor_weight: 0.05, max_lookback: 60 },
     }) };
-    if (url.includes("/api/tournament/projections")) return { ok: true, json: async () => ({ teams: [], source: "simulation" }) };
-    if (url.includes("/api/tournament/bracket")) return { ok: true, json: async () => ({ rounds: [] }) };
-    if (url.includes("/api/ai-models")) return { ok: true, json: async () => ({ enabled: false, models: [] }) };
-    if (url.includes("/api/ai-predictions")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
-    if (url.includes("/api/ensemble")) return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
-    if (url.includes("/api/ai-evaluation")) return { ok: true, json: async () => ({ system: { sample_count: 0 }, ai_by_version: {}, ensemble: { sample_count: 0, helped: 0, hurt: 0 }, ai_effect: {} }) };
-    if (url.includes("/api/team-profiles/evaluation")) return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
-    if (url.includes("/api/team-profiles/") && !url.includes("evaluation")) return { ok: true, json: async () => ({ profile: mockTeamProfile(), summary: "防守优先，大赛经验丰富" }) };
-    if (url.includes("/api/team-profiles")) return { ok: true, json: async () => ({ profiles: [], total: 0 }) };
+    if (path === "/api/tournament/projections") return { ok: true, json: async () => ({ teams: [], source: "simulation" }) };
+    if (path === "/api/tournament/bracket") return { ok: true, json: async () => ({ rounds: [] }) };
+    if (path === "/api/ai-models") return { ok: true, json: async () => ({ enabled: false, models: [] }) };
+    if (path === "/api/ai-predictions") return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
+    if (path === "/api/ensemble") return { ok: true, json: async () => ({ match_id: "", predictions: [] }) };
+    if (path === "/api/ai-evaluation") return { ok: true, json: async () => ({ system: { sample_count: 0 }, ai_by_version: {}, ensemble: { sample_count: 0, helped: 0, hurt: 0 }, ai_effect: {} }) };
+    if (path === "/api/team-profiles/evaluation") return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
+    if (path === "/api/match-count-breakdown") return { ok: true, json: async () => ({ total_finished: 0, has_pre_match_prediction: 0, has_pre_kickoff_snapshot: 0, has_locked_snapshot: 0, has_fallback_snapshot: 0, actually_scored: 0, missing_snapshot: 0, details: [], scoring_snapshot_rule: "latest_pre_match_snapshot_before_kickoff" }) };
+    if (path === "/api/error-attribution-summary") return { ok: true, json: async () => ({ draw_underestimated: 0, favorite_overestimated: 0, underdog_underestimated: 0, overconfident_wrong: 0, low_score_draw_missed: 0, market_missing: 0, ai_missing: 0, ensemble_helped: 0, ensemble_hurt: 0 }) };
+    if (path.startsWith("/api/team-profiles/") && path !== "/api/team-profiles/evaluation") return { ok: true, json: async () => ({ profile: mockTeamProfile(), summary: "防守优先，大赛经验丰富" }) };
+    if (path === "/api/team-profiles") return { ok: true, json: async () => ({ profiles: [], total: 0 }) };
     return { ok: true, json: async () => dashboardPayload };
   }));
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -417,6 +422,15 @@ it("navigates to model review center", async () => {
   expect(screen.getByRole("tab", { name: "模型复盘" })).toHaveClass("active");
 });
 
+it("keeps the main navigation outside the header after switching pages", async () => {
+  const { container } = renderApp();
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
+
+  expect(container.querySelector(".app-header .nav-tabs")).toBeNull();
+  expect(container.querySelectorAll(".nav-tabs[role='tablist']")).toHaveLength(1);
+});
+
 // Can navigate to tournament center
 it("navigates to tournament center", async () => {
   renderApp();
@@ -474,6 +488,35 @@ it("shows profile evaluation section in model review", async () => {
   await screen.findByRole("tab", { name: "模型复盘" });
   await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
   expect(await screen.findByText(/球队画像模型表现/)).toBeVisible();
+});
+
+it("renders model review even if the legacy model-score endpoint fails", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
+    const path = new URL(String(input), "http://localhost").pathname;
+    if (path === "/api/model-score") return { ok: false, status: 500, json: async () => ({}) };
+    if (path === "/api/model-score/details") return { ok: true, json: async () => ({ details: [], exclusions: [] }) };
+    if (path === "/api/model-score/by-version") return { ok: true, json: async () => ({ versions: [] }) };
+    if (path === "/api/accuracy-command-center") return { ok: true, json: async () => ({ sample_count: 0, version_scores: [], model_comparison: [], baseline_score: { available: false, sample_count: 0 }, model_recommendation: { recommended_model_version: "elo-poisson-v1" }, scoring_exclusions: [] }) };
+    if (path === "/api/ai-evaluation") return { ok: true, json: async () => ({ system: { sample_count: 0 }, ai_by_version: {}, ensemble: { sample_count: 0, helped: 0, hurt: 0 }, ai_effect: {} }) };
+    if (path === "/api/team-profiles/evaluation") return { ok: true, json: async () => ({ model_version: "elo-poisson-v1-team-profile", sample_count: 0, baseline_brier: null, profile_brier: null, helped: 0, hurt: 0, neutral: 0, most_helpful_traits: [], most_misleading_traits: [], matches: [] }) };
+    if (path === "/api/match-count-breakdown") return { ok: true, json: async () => ({ total_finished: 0, has_pre_match_prediction: 0, has_pre_kickoff_snapshot: 0, has_locked_snapshot: 0, has_fallback_snapshot: 0, actually_scored: 0, missing_snapshot: 0, details: [], scoring_snapshot_rule: "latest_pre_match_snapshot_before_kickoff" }) };
+    if (path === "/api/error-attribution-summary") return { ok: true, json: async () => ({ draw_underestimated: 0, favorite_overestimated: 0, underdog_underestimated: 0, overconfident_wrong: 0, low_score_draw_missed: 0, market_missing: 0, ai_missing: 0, ensemble_helped: 0, ensemble_hurt: 0 }) };
+    if (path === "/api/adaptive-weights") return { ok: true, json: async () => ({ weights: { system: 1 }, performance: {}, is_adaptive: false, significance: {}, last_updated: null, config: { algorithm: "bayesian_model_averaging_v2", min_sample_size: 10, max_weight_shift: 0.12, hedge_eta: 1.5, time_decay_half_life: 20, significance_level: 0.10, floor_weight: 0.05, max_lookback: 60 } }) };
+    if (path === "/api/workflows/status") return { ok: true, json: async () => workflowStatus() };
+    if (path === "/api/workflows/runs") return { ok: true, json: async () => ({ runs: [] }) };
+    if (path === "/api/dashboard") return { ok: true, json: async () => dashboard };
+    if (path.startsWith("/api/team-profiles/")) return { ok: true, json: async () => ({ profile: mockTeamProfile(), summary: "防守优先，大赛经验丰富" }) };
+    if (path === "/api/tournament/projections") return { ok: true, json: async () => ({ teams: [], source: "simulation" }) };
+    if (path === "/api/tournament/bracket") return { ok: true, json: async () => ({ rounds: [] }) };
+    return { ok: true, json: async () => ({}) };
+  }));
+
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><App /></QueryClientProvider>);
+
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
+  expect(await screen.findByText("核心结论")).toBeVisible();
 });
 
 // Team Profile: model review shows profile Brier metrics

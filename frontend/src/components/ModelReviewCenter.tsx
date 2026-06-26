@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getAccuracyCommandCenter, getAIEvaluation, getModelScore, getModelScoreDetails, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion, getAdaptiveWeights } from "../api";
+import { getAccuracyCommandCenter, getAIEvaluation, getModelScoreDetails, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion, getAdaptiveWeights } from "../api";
 import { formatChinaTimeShort } from "../utils/time";
 import { getTeamDisplayNameFromAny } from "../utils/teamNames";
 import { fmt, pct } from "../utils/format";
@@ -516,6 +516,11 @@ function HistoricalMatchReview({ perMatch }: { perMatch: MatchScoreDetailItem[] 
   );
 }
 
+function isVisibleAdaptiveSource(source: string): boolean {
+  const normalized = source.toLowerCase();
+  return !normalized.includes("xiaomi") && !normalized.includes("mimo");
+}
+
 // ─── Section: 影子模型观察区 ──────────────────────────────────────────
 function ShadowModelObservation({ rows }: { rows: ShadowModelRow[] }) {
   if (!rows.length) return null;
@@ -717,7 +722,6 @@ function PostMatchScoringComparison({ items, insufficientSample }: { items: Mode
 export default function ModelReviewCenter() {
   const cmd = useQuery({ queryKey: ["accuracy-command-center"], queryFn: getAccuracyCommandCenter });
   const aiEval = useQuery({ queryKey: ["ai-evaluation"], queryFn: getAIEvaluation });
-  const modelScore = useQuery({ queryKey: ["model-score"], queryFn: getModelScore });
   const modelScoreDetails = useQuery({ queryKey: ["model-score-details"], queryFn: getModelScoreDetails });
   const profileEval = useQuery({ queryKey: ["profile-evaluation"], queryFn: getProfileEvaluation });
   const matchCountBreakdownQuery = useQuery({ queryKey: ["match-count-breakdown"], queryFn: getMatchCountBreakdown });
@@ -726,7 +730,7 @@ export default function ModelReviewCenter() {
   const versionScoreData = useQuery({ queryKey: ["model-score-by-version"], queryFn: getModelScoreByVersion });
   const adaptiveWeightsQuery = useQuery({ queryKey: ["adaptive-weights"], queryFn: getAdaptiveWeights, staleTime: 60_000 });
 
-  if (cmd.isLoading || aiEval.isLoading || modelScore.isLoading) {
+  if (cmd.isLoading) {
     return <div className="empty">加载模型复盘数据...</div>;
   }
 
@@ -734,7 +738,6 @@ export default function ModelReviewCenter() {
   const queryErrors: { label: string; message: string }[] = [];
   if (cmd.isError) queryErrors.push({ label: "核心数据", message: cmd.error instanceof Error ? cmd.error.message : "未知错误" });
   if (aiEval.isError) queryErrors.push({ label: "AI 评估", message: aiEval.error instanceof Error ? aiEval.error.message : "未知错误" });
-  if (modelScore.isError) queryErrors.push({ label: "模型评分", message: modelScore.error instanceof Error ? modelScore.error.message : "未知错误" });
   if (modelScoreDetails.isError) queryErrors.push({ label: "评分详情", message: modelScoreDetails.error instanceof Error ? modelScoreDetails.error.message : "未知错误" });
   if (profileEval.isError) queryErrors.push({ label: "画像评估", message: profileEval.error instanceof Error ? profileEval.error.message : "未知错误" });
   if (matchCountBreakdownQuery.isError) queryErrors.push({ label: "比赛统计", message: matchCountBreakdownQuery.error instanceof Error ? matchCountBreakdownQuery.error.message : "未知错误" });
@@ -792,7 +795,7 @@ export default function ModelReviewCenter() {
 
     return {
       model_version: v.model_version,
-      label: isBaseline ? "Baseline (elo-poisson-v1)" : v.model_version,
+      label: isBaseline ? "Baseline (elo-poisson-v1)" : v.model_version.replace(/-shadow$/, ""),
       sample_count: v.sample_count,
       hit_rate: v.hit_rate,
       brier: v.brier,
@@ -839,9 +842,11 @@ export default function ModelReviewCenter() {
       <SectionCard title="自适应 Ensemble 权重" badge={adaptiveWeightsQuery.data?.is_adaptive ? "BMA 已启用" : "BMA 待激活"}>
         {adaptiveWeightsQuery.data ? (() => {
           const aw = adaptiveWeightsQuery.data;
+          const visiblePerformanceEntries = Object.entries(aw.performance ?? {}).filter(([src]) => isVisibleAdaptiveSource(src));
+          const visibleWeightEntries = Object.entries(aw.weights ?? {}).filter(([src]) => isVisibleAdaptiveSource(src));
           const sysW = aw.weights.system ?? 0;
           const mktW = aw.weights.market ?? 0;
-          const aiTotal = Object.entries(aw.weights).filter(([k]) => k.startsWith("ai_")).reduce((s, [, v]) => s + v, 0);
+          const aiTotal = visibleWeightEntries.filter(([k]) => k.startsWith("ai_")).reduce((s, [, v]) => s + v, 0);
           const sysPerf = aw.performance.system;
           const mktPerf = aw.performance.market;
           const minSample = aw.config.min_sample_size;
@@ -867,7 +872,7 @@ export default function ModelReviewCenter() {
                 <div style={{ marginTop: 10, fontSize: 11 }}>
                   <div style={{ color: "var(--muted)", marginBottom: 4 }}>贝叶斯后验 95% 可信区间</div>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {Object.entries(aw.performance).map(([src, perf]: [string, any]) => {
+                    {visiblePerformanceEntries.map(([src, perf]: [string, any]) => {
                       if (!perf.ci_95) return null;
                       const label = src === "system" ? "系统" : src === "market" ? "市场" : src.replace("ai_ai-", "").replace(/-v\d+$/, "");
                       return (
@@ -899,11 +904,11 @@ export default function ModelReviewCenter() {
                 </div>
               )}
               {/* Per-AI-model weights */}
-              {Object.entries(aw.weights).filter(([k]) => k.startsWith("ai_")).length > 0 && (
+              {visibleWeightEntries.filter(([k]) => k.startsWith("ai_")).length > 0 && (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 4 }}>AI 模型权重分布</div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    {Object.entries(aw.weights).filter(([k]) => k.startsWith("ai_")).map(([k, v]) => {
+                    {visibleWeightEntries.filter(([k]) => k.startsWith("ai_")).map(([k, v]) => {
                       const label = k.replace("ai_ai-", "").replace(/-v\d+$/, "");
                       const perf = aw.performance[k];
                       return (

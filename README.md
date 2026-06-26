@@ -10,7 +10,7 @@
 |------|------|
 | 后端 | FastAPI + SQLAlchemy + SQLite (WAL) + APScheduler |
 | 前端 | React 19 + Vite 6 + TypeScript 5.8 + TanStack Query |
-| AI | DeepSeek V4 Flash/Pro + 小米 MiMo V2/V2.5 Pro (OpenAI 兼容 API) |
+| AI | DeepSeek V4 Flash/Pro（含独立提示词 v2 变体） |
 | 数学 | Elo 评级 + Poisson 进球模型 + Monte Carlo 模拟 |
 | 数据 | OpenFootball + football-data.org + 体彩赔率 + WorldCup26 |
 
@@ -22,7 +22,7 @@
 
 # 2. 配置 API Key（可选，不配置也能运行）
 cp .env.example .env
-# 编辑 .env 填入 DEEPSEEK_API_KEY 和/或 XIAOMI_API_KEY
+# 编辑 .env 填入 DEEPSEEK_API_KEY
 
 # 3. 启动
 ./start.sh
@@ -35,19 +35,21 @@ cp .env.example .env
 
 > 详细步骤请参阅 [QUICK_START.md](QUICK_START.md)
 
+当前首页刷新只会拉取状态和展示数据，不会自动触发工作流。`更新今日数据`、`同步赛果`、`运行 AI 预测` 和 `一键更新全部` 都需要用户手动点击。
+
 ## 核心功能
 
 ### 预测流水线
 
 ```
-数据同步 → 基线预测 (Elo+Poisson) → AI 预测 → 集成融合 → 24h 锁定 → 开赛 → 评分
+数据同步 → 基线预测 (Elo+Poisson + 市场/画像增强) → AI 预测 → 集成融合 → 赛前决策快照锁定 → 开赛 → 评分
 ```
 
-1. **基线模型**：`elo-poisson-v1` 生成胜/平/负概率、xG 和比分矩阵。`elo-poisson-v3-profile` 在基线之上融合球队画像（攻防、状态、FIFA 排名）进行预测调整
+1. **基线模型**：`elo-poisson-v1*` 系列生成胜/平/负概率、xG 和比分矩阵；当前重算链路会在市场增强配置下加载球队画像修正、FIFA 排名和实验性数值调整
 2. **AI 预测**：多个 AI 模型独立生成预测（v2 提示词不含基线概率，避免锚定偏差）
 3. **集成融合**：基线 + 市场赔率 + AI 预测的加权融合，缺失来源自动权重重分配
-4. **24h 锁定**：赛前 24h 内生成快照，开赛时冻结，赛后数据不可覆盖赛前决策
-5. **评分**：赛后 Brier 分数、Log Loss、命中率评估
+4. **决策快照**：赛前窗口内写入并维护快照，赛后评分使用开赛前最后一份有效预测
+5. **评分**：赛后 Brier 分数、Log Loss、命中率评估，并明确未评分原因
 
 ### xG 校准与 Poisson 色散
 
@@ -65,9 +67,10 @@ cp .env.example .env
 
 ### AI 预测
 
-- **多模型**：DeepSeek V4 Flash/Pro、小米 MiMo V2/V2.5 Pro
+- **多模型**：DeepSeek V4 Flash、DeepSeek V4 Pro，以及独立提示词 `worldcup-ai-v2` 变体
 - **双提示词**：v1（含基线参考）+ v2（独立判断，无基线泄漏）
 - **去重**：跳过已有成功预测的模型（除非 force）
+- **单场冷却**：同一场比赛 1 小时内不重复刷新 AI 预测；超过 1 小时可用 `force=true` 手动重跑
 - **基线抄袭检测**：标记与系统预测完全一致的 AI 输出
 - **独立审计**：`/api/ai-independence` 检查 AI 与基线的偏差程度
 
@@ -145,7 +148,7 @@ cp .env.example .env
 | `API_FOOTBALL_TOKEN` | 空 | API-Football 令牌（可选） |
 | `SPORTMONKS_TOKEN` | 空 | SportMonks 令牌（可选） |
 
-### 模拟
+### 调度与模拟
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
@@ -153,6 +156,7 @@ cp .env.example .env
 | `SIMULATION_SEED` | `20260613` | 随机种子 |
 | `REFRESH_INTERVAL_MINUTES` | `15` | 常规刷新间隔 |
 | `LIVE_REFRESH_INTERVAL_MINUTES` | `2` | 比赛期间刷新间隔 |
+| `ENABLE_SCHEDULED_REFRESH` | `false` | 是否启用后台定时刷新赛果/赛程 |
 
 ### AI 预测
 
@@ -162,8 +166,6 @@ cp .env.example .env
 | `AI_RUN_MODE` | `manual` | 运行模式：`manual` / `auto` |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
-| `XIAOMI_API_KEY` | 空 | 小米 MiMo API 密钥 |
-| `XIAOMI_BASE_URL` | `https://api.xiaomimimo.com/v1` | 小米 MiMo API 地址 |
 | `AI_TEMPERATURE` | `0` | AI 采样温度 |
 | `AI_TIMEOUT_SECONDS` | `30` | 请求超时（秒） |
 | `AI_MAX_RETRIES` | `2` | 最大重试次数 |
@@ -181,24 +183,24 @@ cp .env.example .env
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `true` | 前端打开时自动运行每日工作流 |
-| `AUTO_RUN_AI_ON_OPEN` | `true` | 自动运行 AI 预测 |
-| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | 自动运行冷却时间（分钟） |
+| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 是否允许页面打开时自动触发每日工作流 |
+| `AUTO_RUN_AI_ON_OPEN` | `false` | 是否允许页面打开时自动触发 AI 预测 |
+| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流按钮的冷却时间（分钟） |
 
 ## 前端页面
 
 | 页面 | 功能 |
 |------|------|
-| **每日仪表盘** | 今日状态、昨夜复盘、即将开赛、工作流操作 |
+| **今日工作台** | 今日状态、下一步建议、工作流操作、未来 24/48 小时比赛 |
 | **比赛中心** | 按小组/今日/淘汰赛查看所有比赛 |
-| **模型复盘** | 模型对比、AI 评估、误差归因、校准分析 |
+| **模型复盘** | 核心结论、自适应 Ensemble 权重、AI 评估、误差归因、画像评估 |
 | **赛事中心** | 对阵表、晋级概率、球队路径、积分榜 |
 
 比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页。
 
 ### 界面预览
 
-**今日工作台** — 首屏展示今日运行状态、昨夜比赛复盘、即将开赛预测和工作流操作入口。
+**今日工作台** — 首屏展示今日运行状态、下一步建议、工作流操作入口和未来 24 小时比赛。
 
 ![今日工作台](docs/screenshots/daily-dashboard.png)
 
@@ -228,7 +230,7 @@ backend/app/
 │   └── accuracy_command.py  # 准确率指挥中心
 ├── ai/                  # AI 提供商、提示词、解析器、集成、评估
 ├── team_profiles/       # 数据加载、特征工程、画像服务
-├── workflows/           # 自动化工作流状态 & 执行
+├── workflows/           # 手动工作流状态、按钮状态 & 执行
 ├── tournament/          # 积分榜、对阵表、模拟
 ├── logging_config.py    # 结构化 JSON 日志（带轮转）
 └── middleware.py         # 请求 ID 追踪 & 访问日志
@@ -238,10 +240,10 @@ backend/app/
 
 | 分组 | 主要端点 |
 |------|---------|
-| 仪表盘 | `GET /api/dashboard`, `GET /api/matches/{id}`, `POST /api/refresh` |
+| 仪表盘 | `GET /api/dashboard`, `GET /api/matches/{id}`, `POST /api/refresh`, `GET /api/health` |
 | 评分 | `GET /api/model-score`, `GET /api/accuracy-command-center`, `GET /api/scoring-exclusions` |
 | AI | `GET /api/ai-models`, `POST /api/ai-predictions/run`, `POST /api/ensemble/run` |
-| 工作流 | `GET /api/workflows/status`, `POST /api/workflows/daily-open`, `POST /api/workflows/full` |
+| 工作流 | `GET /api/workflows/status`, `POST /api/workflows/daily-open`, `POST /api/workflows/pre-match`, `POST /api/workflows/full` |
 | 画像 | `GET /api/team-profiles`, `GET /api/team-profiles/{team_id}` |
 | 赛事 | `GET /api/tournament/bracket`, `GET /api/tournament/projections`, `POST /api/tournament/simulate` |
 
