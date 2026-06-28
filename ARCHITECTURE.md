@@ -212,6 +212,7 @@ App.tsx
 - **固定四个顶层入口**：今日工作台、比赛中心、模型复盘、冠军与赛程；导航位置在各入口间保持一致
 - **实时状态**：3 小时内开赛的比赛显示在"即将开赛"列表
 - **工作流进度可见**：今日工作台动作按钮和状态区共用同一组 workflow progress 数据
+- **运行摘要可读**：最近运行记录和顶部状态区会显示步骤级摘要，不只保留 run 级 success / failed 标签
 - **共享详情抽屉复用**：比赛中心和冠军与赛程的淘汰赛对阵卡都通过 `/api/matches/{id}` 复用同一个 `MatchDetailDrawer`
 - **模型复盘容错**：以 `/api/accuracy-command-center` 为主查询；分项接口失败时显示明确错误/空态，不允许整页长期卡在加载中
 
@@ -275,6 +276,10 @@ AI 预测 (ai/service) ── 多模型独立预测
 | 7 | `lock_predictions` | 锁定预测 |
 | 8 | `accuracy_command_update` | 准确率更新 |
 | 9 | `artifact_generation` | 产物生成 |
+
+- `ensemble_generation` 对尚未决出的淘汰赛占位赛会返回 `skipped_reasons.teams_tbd`
+- 已确定真实对阵但缺少基线快照时，`ensemble_generation` 会返回 `failed_reasons.missing_system_prediction`
+- `partial_success` 也属于终态步骤，必须记录 `finished_at` 和 `duration_seconds`
 
 ### 淘汰赛状态同步
 
@@ -368,8 +373,8 @@ providers:
 | `market_snapshots` | 市场赔率 | match_id, provider, home/draw/away_probability |
 | `model_scores` | 模型评分 | revision_id, brier_score, log_loss, outcome_hit_rate |
 | `team_profiles` | 球队画像展示 | team_id, profile_version, seven-module profile, data_quality, usage_scope |
-| `workflow_runs` | 工作流运行 | workflow_type, status, started_at, finished_at |
-| `workflow_steps` | 工作流步骤 | workflow_run_id, step_name, status |
+| `workflow_runs` | 工作流运行 | workflow_type, status, started_at, finished_at, summary_json |
+| `workflow_steps` | 工作流步骤 | workflow_run_id, step_name, status, started_at, finished_at, duration_seconds, summary_json |
 
 ### 表关系
 

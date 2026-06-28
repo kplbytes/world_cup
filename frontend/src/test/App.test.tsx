@@ -263,7 +263,7 @@ function workflowStatus(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflowStatus()) {
+function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflowStatus(), workflowRunsPayload: unknown[] = []) {
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
     const url = String(input);
     const path = new URL(url, "http://localhost").pathname;
@@ -278,7 +278,7 @@ function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflo
       ai_models: { enabled: false, models: [] },
     }) };
     if (path === "/api/workflows/status") return { ok: true, json: async () => workflowStatusPayload };
-    if (path === "/api/workflows/runs") return { ok: true, json: async () => ({ runs: [] }) };
+    if (path === "/api/workflows/runs") return { ok: true, json: async () => ({ runs: workflowRunsPayload }) };
     if (path === "/api/adaptive-weights") return { ok: true, json: async () => ({
       weights: { system: 0.35, market: 0.30, "ai_ai-test-v1": 0.35 },
       performance: { system: { sample_count: 3, effective_n: 2.5, brier: 0.4, brier_var: 0.02, hit_rate: 0.8, posterior_mu: 0.42, posterior_se: 0.08, ci_95: [0.26, 0.58] }, market: { sample_count: 3, effective_n: 2.5, brier: 0.45, brier_var: 0.03, hit_rate: 0.7, posterior_mu: 0.44, posterior_se: 0.09, ci_95: [0.26, 0.62] } },
@@ -386,6 +386,45 @@ it("shows workflow progress percent on the running daily action button", async (
 
   expect(await screen.findByRole("button", { name: "同步赛果 44%" })).toBeDisabled();
   expect(screen.getByRole("progressbar", { name: "同步赛果进度" })).toHaveAttribute("aria-valuenow", "44");
+});
+
+it("shows workflow step summaries for skipped placeholder knockout matches", async () => {
+  const runs = [
+    {
+      id: 28,
+      workflow_type: "pre_match",
+      trigger_source: "auto_scheduler",
+      status: "success",
+      started_at: "2026-06-28T12:00:00Z",
+      finished_at: "2026-06-28T12:01:00Z",
+      duration_seconds: 60,
+      summary: null,
+      error_message: null,
+      progress: { total_steps: 9, completed_steps: 9, percent: 100, running_step: null, failed_steps: [] },
+      steps: [
+        {
+          step_name: "ensemble_generation",
+          status: "success",
+          started_at: "2026-06-28T12:00:30Z",
+          finished_at: "2026-06-28T12:00:50Z",
+          duration_seconds: 20,
+          summary: { success: 16, failed: 0, skipped: 16, skipped_reasons: { teams_tbd: 16 }, failed_reasons: {} },
+          error_message: null,
+        },
+      ],
+    },
+  ];
+
+  renderApp(dashboard, workflowStatus(), runs);
+
+  const recentHeader = await screen.findByText("最近运行记录");
+  const sectionCard = recentHeader.closest(".section-card")!;
+  const expandBtn = within(sectionCard as HTMLElement).getByText("展开");
+  await userEvent.click(expandBtn);
+
+  expect(within(sectionCard as HTMLElement).getAllByText("完成").length).toBeGreaterThan(0);
+  expect(within(sectionCard as HTMLElement).queryByText("success")).toBeNull();
+  expect(await screen.findByText("成功 16 · 跳过 16 · 待定对阵 16")).toBeVisible();
 });
 
 it("sends with_ai when running AI predictions from daily dashboard", async () => {

@@ -293,12 +293,14 @@ sqlite3 data/world-cup.sqlite3 "VACUUM;"
 1. 检查 `workflow_runs` / `workflow_steps` 是否存在长时间未结束记录
 2. 检查最近一次服务是否发生异常中断
 3. 重启后重新查看 `/api/workflows/status`
+4. 查看 `/api/workflows/runs` 返回的 `steps[].summary`，确认是实际失败还是 `skipped / teams_tbd` 这类可预期跳过
 
 ### 淘汰赛路径为空或长期停留待定
 
 1. 启动时会自动写入官方 Match 73-104 占位赛程，可先检查 `/api/tournament/bracket`
 2. 小组赛未全部结束前，部分最佳第三名席位处于待定是正常行为
 3. 若已完赛淘汰赛未推进，检查对应比赛是否已写入比分，或是否带有 `home_advance` / `away_advance`
+4. 若 workflow 摘要里出现 `teams_tbd`，表示该场对阵尚未决出，当前被正确记为跳过而不是失败
 
 ### 内存占用过高
 

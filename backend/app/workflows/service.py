@@ -138,7 +138,7 @@ def _update_step(run_id: int, step_name: str, status: str, summary: dict | None 
             step.status = status
             if status == "running":
                 step.started_at = datetime.now(timezone.utc)
-            elif status in ("success", "failed", "skipped"):
+            elif status in TERMINAL_STEP_STATUSES:
                 step.finished_at = datetime.now(timezone.utc)
                 started = _ensure_utc(step.started_at)
                 if started:
@@ -940,10 +940,33 @@ def _run_ensemble_step(run_id: int):
                 .where(Match.kickoff >= now)
                 .order_by(Match.kickoff)
             ))
+            predicted_match_ids = set(
+                row[0]
+                for row in session.execute(
+                    select(PredictionSnapshot.match_id)
+                    .where(PredictionSnapshot.match_id.in_([m.id for m in matches]))
+                    .distinct()
+                )
+            ) if matches else set()
 
         success = 0
         failed = 0
+        skipped = 0
+        skipped_reasons = {"teams_tbd": 0}
+        failed_reasons = {"missing_system_prediction": 0, "ensemble_error": 0}
+
         for m in matches:
+            if m.home_team_id is None or m.away_team_id is None:
+                skipped += 1
+                skipped_reasons["teams_tbd"] += 1
+                continue
+
+            if m.id not in predicted_match_ids:
+                failed += 1
+                failed_reasons["missing_system_prediction"] += 1
+                logger.warning("Ensemble skipped real computation for %s: missing system prediction snapshot", m.id)
+                continue
+
             try:
                 with session_scope() as session:
                     result = compute_ensemble(session, m.id)
@@ -951,12 +974,31 @@ def _run_ensemble_step(run_id: int):
                     success += 1
                 else:
                     failed += 1
+                    failed_reasons["ensemble_error"] += 1
             except Exception as e:
                 failed += 1
+                failed_reasons["ensemble_error"] += 1
                 logger.error(f"Ensemble failed for {m.id}: {e}")
 
-        _update_step(run_id, "ensemble_generation", "success" if failed == 0 else "partial_success",
-                     {"success": success, "failed": failed})
+        summary = {
+            "success": success,
+            "failed": failed,
+            "skipped": skipped,
+            "skipped_reasons": {k: v for k, v in skipped_reasons.items() if v > 0},
+            "failed_reasons": {k: v for k, v in failed_reasons.items() if v > 0},
+        }
+
+        if failed > 0 and success > 0:
+            step_status = "partial_success"
+        elif failed > 0:
+            step_status = "failed"
+        elif success > 0:
+            step_status = "success"
+        else:
+            step_status = "skipped"
+            summary["reason"] = "没有可生成集成预测的已确定对阵"
+
+        _update_step(run_id, "ensemble_generation", step_status, summary)
     except Exception as e:
         logger.error(f"Ensemble step failed: {e}")
         _update_step(run_id, "ensemble_generation", "failed", error=str(e))

@@ -17,6 +17,9 @@
 - **画像进入淘汰赛重算链路**：淘汰赛重算会继续加载 Team Profile 调整项，而不是在 knockout 阶段静默禁用画像权重
 - **模型复盘与用户侧模型展示继续收敛**：停用、欠费或已下线模型不再出现在用户侧说明中
 - **模型复盘状态降级**：模型复盘页明确区分加载、部分失败和空数据状态，避免用户一直看到“加载中”
+- **工作流运行摘要增强**：`/api/workflows/runs` 现在返回 run / step 级 summary、started_at、finished_at，首页顶部状态和最近运行记录会展示步骤级摘要
+- **淘汰赛占位赛跳过修复**：`ensemble_generation` 遇到官方占位赛且对阵未决时记为 `skipped / teams_tbd`，不再把正常待定状态误报成失败
+- **部分成功终态补全**：`partial_success` 步骤现在会写入 `finished_at` 和 `duration_seconds`，避免历史记录长期显示为未结束
 
 ### 文档
 

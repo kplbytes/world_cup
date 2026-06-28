@@ -73,11 +73,13 @@
 真实逻辑：
 
 - 前端通过 `/api/workflows/status` 获取 `next_action`、`button_states` 和最近一次运行进度；
+- 前端最近运行记录和顶部状态区应同时消费 `/api/workflows/runs` / `last_run.steps` 的步骤级摘要，不要只显示 run 级状态；
 - 首页动作区的 `更新今日数据`、`同步赛果`、`运行 AI 预测`、`一键更新全部` 由用户手动点击后才会调用对应 POST 接口；
 - `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` 和 `AUTO_RUN_AI_ON_OPEN` 默认都是 `false`；
 - `AI_RUN_MODE=auto` 当前只表示后端调度器可定时尝试跑 `pre-match` workflow；它不等于“页面打开自动触发”，文档和页面仍必须继续按“手动工作流优先”描述；
 - `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` 当前主要用于 AI 预测按钮冷却，不适用于“更新今日数据”和“同步赛果”。
 - 顶部 Header 不再放重复的“同步赛果”入口，相关操作统一留在今日工作台动作区。
+- `ensemble_generation` 遇到官方淘汰赛占位赛且对阵尚未决出时，必须记为 `skipped / teams_tbd`，不得计入失败；只有真实对阵缺少基线快照时才记 `missing_system_prediction`。
 
 因此：
 

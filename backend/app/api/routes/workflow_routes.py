@@ -315,11 +315,15 @@ def workflow_runs(limit: int = 20):
                     {
                         "step_name": s.step_name,
                         "status": s.status,
+                        "started_at": s.started_at.isoformat() if s.started_at else None,
+                        "finished_at": s.finished_at.isoformat() if s.finished_at else None,
                         "duration_seconds": s.duration_seconds,
+                        "summary": s.summary_json,
                         "error_message": s.error_message,
                     }
                     for s in steps
                 ],
+                "summary": r.summary_json,
                 "error_message": r.error_message,
                 "progress": workflow_service.build_workflow_progress(steps),
             })

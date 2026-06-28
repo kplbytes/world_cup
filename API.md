@@ -376,12 +376,15 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `button_states.daily_open / ai_prediction / post_match / full / lock`
 - `ai_status`
 - `last_run.progress`
+- `last_run.summary`
+- `last_run.steps[].summary`
 
 补充说明：
 
 - `button_states.ai_prediction` 会反映 60 分钟冷却状态
 - `button_states.daily_open` 和 `button_states.post_match` 不受该冷却限制
 - `last_run.progress.percent` 为前端首页顶部状态条和动作按钮共用的百分比进度
+- `last_run.steps` 会返回步骤级 `started_at / finished_at / duration_seconds / summary / error_message`
 - `AI_RUN_MODE=auto` 时，后端调度器会定时尝试触发 `pre-match` workflow
 - `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` / `AUTO_RUN_AI_ON_OPEN` 仍不是当前默认前端入口；页面刷新不会自动触发 workflow
 
@@ -486,9 +489,17 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 |------|------|------|------|
 | `limit` | int | 否 | 返回条数（默认 20） |
 
+**响应要点：**
+
+- 每条 run 包含 `summary`、`progress`、`error_message`
+- `steps[]` 中会返回 `started_at`、`finished_at`、`duration_seconds`、`summary`
+- 前端“最近运行记录”和首页顶部状态条会消费这组数据展示步骤级摘要
+- `ensemble_generation` 的摘要会把淘汰赛待定占位对阵记为 `skipped_reasons.teams_tbd`，不会误报为失败
+- 如果真实比赛缺少基线快照，会记入 `failed_reasons.missing_system_prediction`
+
 ### GET /api/workflows/runs/{run_id}
 
-获取指定工作流运行的详情，包含每个步骤的状态和耗时。
+获取指定工作流运行的详情，包含 run 级 `summary`，以及每个步骤的状态、开始/结束时间、耗时和摘要。
 
 ---
 

@@ -211,6 +211,104 @@ def test_workflow_status_ignores_hidden_xiaomi_predictions_in_ai_ready(client):
     assert data["needs_ai"] == 1
 
 
+def test_ensemble_step_skips_placeholder_matches_without_false_failure(client):
+    now = datetime.now(timezone.utc)
+    kickoff = now + timedelta(hours=4)
+    run_id = -1
+    try:
+        with session_scope() as session:
+            real_match = seed_match(session, match_id="future-real-ensemble", kickoff=kickoff, status="scheduled")
+            session.add(
+                Match(
+                    id="future-placeholder-ensemble",
+                    group_code=None,
+                    home_team_id=None,
+                    away_team_id=None,
+                    kickoff=kickoff + timedelta(hours=2),
+                    status="scheduled",
+                    source="test",
+                    stage="round_of_16",
+                    round_name="16强",
+                    home_team_source="W73",
+                    away_team_source="W74",
+                    is_placeholder_match=True,
+                )
+            )
+            revision = DashboardRevision(active=True, model_version="elo-poisson-v1", simulation_iterations=1, simulation_seed=1)
+            session.add(revision)
+            session.flush()
+            session.add(
+                PredictionSnapshot(
+                    match_id=real_match.id,
+                    revision_id=revision.id,
+                    kickoff=kickoff,
+                    is_pre_match_locked=False,
+                    is_fallback_locked=False,
+                    home_win=0.48,
+                    draw=0.27,
+                    away_win=0.25,
+                    home_xg=1.3,
+                    away_xg=1.0,
+                    scorelines=[],
+                    score_matrix=[],
+                    confidence=0.72,
+                    confidence_label="Medium",
+                    model_inputs={},
+                    model_version="elo-poisson-v1",
+                    snapshotted_at=now,
+                )
+            )
+
+        run_id = workflow_service.start_workflow_run("pre_match", "test_case", {})
+        assert run_id > 0
+
+        workflow_service._run_ensemble_step(run_id)
+
+        with session_scope() as session:
+            step = session.scalar(
+                select(WorkflowStep)
+                .where(WorkflowStep.workflow_run_id == run_id)
+                .where(WorkflowStep.step_name == "ensemble_generation")
+            )
+            assert step is not None
+            assert step.status == "success"
+            assert step.finished_at is not None
+            assert step.duration_seconds is not None
+            assert step.summary_json["success"] == 1
+            assert step.summary_json["failed"] == 0
+            assert step.summary_json["skipped"] == 1
+            assert step.summary_json["skipped_reasons"] == {"teams_tbd": 1}
+    finally:
+        if run_id > 0:
+            workflow_service._finish_run(run_id, "success")
+
+
+def test_update_step_records_finish_time_for_partial_success(client):
+    run_id = workflow_service.start_workflow_run("pre_match", "test_case", {})
+    assert run_id > 0
+    try:
+        workflow_service._update_step(run_id, "ensemble_generation", "running")
+        workflow_service._update_step(
+            run_id,
+            "ensemble_generation",
+            "partial_success",
+            summary={"success": 1, "failed": 1},
+        )
+
+        with session_scope() as session:
+            step = session.scalar(
+                select(WorkflowStep)
+                .where(WorkflowStep.workflow_run_id == run_id)
+                .where(WorkflowStep.step_name == "ensemble_generation")
+            )
+            assert step is not None
+            assert step.status == "partial_success"
+            assert step.finished_at is not None
+            assert step.duration_seconds is not None
+    finally:
+        workflow_service._finish_run(run_id, "partial_success")
+
+
 # ---------------------------------------------------------------------------
 # 2. daily-open can be triggered
 # ---------------------------------------------------------------------------
@@ -455,6 +553,7 @@ def test_workflow_runs_can_be_queried(client):
     assert "workflow_type" in run
     assert "status" in run
     assert "steps" in run
+    assert "summary" in run
 
     # Query specific run detail
     run_id = run["id"]
@@ -464,6 +563,7 @@ def test_workflow_runs_can_be_queried(client):
     assert detail["id"] == run_id
     assert "steps" in detail
     assert len(detail["steps"]) > 0
+    assert "summary" in detail["steps"][0]
 
 
 def test_workflow_run_detail_404_for_missing(client):

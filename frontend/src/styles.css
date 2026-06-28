@@ -768,13 +768,81 @@ h3 { font-weight: 600; }
 }
 
 .run-log-entry {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  gap: 8px;
   padding: 10px 14px;
   background: var(--bg-tertiary);
   font-size: var(--text-sm);
   border-radius: var(--radius-sm);
+}
+
+.run-log-entry__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.workflow-step-summary-list {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-step-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.workflow-step-summary-item__status {
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.workflow-step-summary-item__status--success {
+  background: rgba(52, 199, 89, 0.12);
+  color: var(--accent-green);
+}
+
+.workflow-step-summary-item__status--partial_success {
+  background: rgba(255, 159, 10, 0.12);
+  color: var(--accent-yellow);
+}
+
+.workflow-step-summary-item__status--failed {
+  background: rgba(255, 59, 48, 0.12);
+  color: var(--accent-red);
+}
+
+.workflow-step-summary-item__status--running {
+  background: rgba(0, 122, 255, 0.12);
+  color: var(--accent-blue);
+}
+
+.workflow-step-summary-item__status--skipped {
+  background: rgba(142, 142, 147, 0.14);
+  color: var(--text-secondary);
+}
+
+.workflow-step-summary-item__label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.workflow-step-summary-item__text {
+  color: var(--text-secondary);
+}
+
+.workflow-step-summary-item__error {
+  color: var(--accent-red);
 }
 
 .key-match-highlight {

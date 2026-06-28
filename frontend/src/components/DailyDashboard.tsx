@@ -8,7 +8,7 @@ import type { Match, DecisionSnapshotStatus } from "../types";
 import { formatChinaTimeShort, isFinishedMatch, isUpcomingMatch, isWithinNextHoursChina, isLiveMatch } from "../utils/time";
 import { getTeamDisplayFromRef } from "../utils/teamNames";
 import { directionLabel } from "../utils/recommendation";
-import { statusDot, fmtDuration } from "../utils/workflow";
+import { statusDot, fmtDuration, workflowStepLabel, workflowStepStatusLabel, workflowStepSummaryText } from "../utils/workflow";
 import { useWorkflowActions } from "../hooks/useWorkflowActions";
 import ActionButton from "./ActionButton";
 import MatchSummaryCard from "./MatchSummaryCard";
@@ -51,6 +51,37 @@ function CollapsibleSection({ title, badge, defaultOpen = false, children }: {
 
 interface DailyDashboardProps {
   dashboardData: import("../types").Dashboard | undefined;
+}
+
+function WorkflowStepSummaryList({ steps, limit = 4 }: { steps: import("../types").WorkflowStepInfo[]; limit?: number }) {
+  const visibleSteps = steps.filter((step) => {
+    if (step.status === "pending") return false;
+    if (step.status === "skipped") return Boolean(workflowStepSummaryText(step) || step.error_message);
+    return true;
+  }).slice(0, limit);
+
+  if (visibleSteps.length === 0) return null;
+
+  return (
+    <div className="workflow-step-summary-list">
+      {visibleSteps.map((step) => {
+        const summaryText = workflowStepSummaryText(step);
+        return (
+          <div key={step.step_name} className="workflow-step-summary-item">
+            <span className={`workflow-step-summary-item__status workflow-step-summary-item__status--${step.status}`}>
+              {workflowStepStatusLabel(step.status)}
+            </span>
+            <span className="workflow-step-summary-item__label">{workflowStepLabel(step.step_name)}</span>
+            {summaryText ? <span className="workflow-step-summary-item__text">{summaryText}</span> : null}
+            {!summaryText && step.duration_seconds != null ? (
+              <span className="workflow-step-summary-item__text">{fmtDuration(step.duration_seconds)}</span>
+            ) : null}
+            {step.error_message ? <span className="workflow-step-summary-item__error">{step.error_message}</span> : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
@@ -340,6 +371,11 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
         {status?.last_run?.progress ? (
           <div style={{ marginTop: 12 }}>
             <WorkflowProgressBar progress={status.last_run.progress} status={status.last_run.status} />
+            {status.last_run.steps?.length ? (
+              <div style={{ marginTop: 10 }}>
+                <WorkflowStepSummaryList steps={status.last_run.steps} />
+              </div>
+            ) : null}
           </div>
         ) : null}
       </SectionCard>
@@ -626,20 +662,23 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {runs.slice(0, 3).map((run) => {
               const typeLabel: Record<string, string> = { daily_open: "每日开盘", pre_match: "赛前更新", post_match: "赛后复盘", lock: "赛前决策快照", full: "一键全流程" };
-              const statusColor: Record<string, string> = { completed: "var(--success-green)", running: "var(--accent-yellow)", failed: "var(--risk-red)", pending: "var(--text-secondary)", partial_success: "var(--accent-yellow)" };
-              const statusLabel: Record<string, string> = { completed: "完成", running: "运行中", failed: "失败", pending: "等待", partial_success: "部分完成" };
+              const statusColor: Record<string, string> = { success: "var(--success-green)", running: "var(--accent-yellow)", failed: "var(--risk-red)", pending: "var(--text-secondary)", partial_success: "var(--accent-yellow)" };
+              const statusLabel: Record<string, string> = { success: "完成", running: "运行中", failed: "失败", pending: "等待", partial_success: "部分完成" };
               return (
                 <div key={run.id} className="run-log-entry">
-                  {statusDot(statusColor[run.status] ?? "var(--text-secondary)")}
-                  <span style={{ fontWeight: 600 }}>{typeLabel[run.workflow_type] ?? run.workflow_type}</span>
-                  <span style={{ color: statusColor[run.status] }}>{statusLabel[run.status] ?? run.status}</span>
-                  <span style={{ color: "var(--text-secondary)" }}>{formatChinaTimeShort(run.started_at)}</span>
-                  {run.duration_seconds != null && (
-                    <span style={{ color: "var(--text-secondary)" }}>
-                      {run.duration_seconds < 60 ? `${run.duration_seconds.toFixed(0)}秒` : `${Math.floor(run.duration_seconds / 60)}分${Math.floor(run.duration_seconds % 60)}秒`}
-                    </span>
-                  )}
-                  {run.error_message && <span style={{ color: "var(--risk-red)", marginLeft: "auto", fontSize: 11 }}>{run.error_message}</span>}
+                  <div className="run-log-entry__header">
+                    {statusDot(statusColor[run.status] ?? "var(--text-secondary)")}
+                    <span style={{ fontWeight: 600 }}>{typeLabel[run.workflow_type] ?? run.workflow_type}</span>
+                    <span style={{ color: statusColor[run.status] }}>{statusLabel[run.status] ?? run.status}</span>
+                    <span style={{ color: "var(--text-secondary)" }}>{formatChinaTimeShort(run.started_at)}</span>
+                    {run.duration_seconds != null && (
+                      <span style={{ color: "var(--text-secondary)" }}>
+                        {run.duration_seconds < 60 ? `${run.duration_seconds.toFixed(0)}秒` : `${Math.floor(run.duration_seconds / 60)}分${Math.floor(run.duration_seconds % 60)}秒`}
+                      </span>
+                    )}
+                    {run.error_message && <span style={{ color: "var(--risk-red)", marginLeft: "auto", fontSize: 11 }}>{run.error_message}</span>}
+                  </div>
+                  {run.steps?.length ? <WorkflowStepSummaryList steps={run.steps} limit={3} /> : null}
                 </div>
               );
             })}

@@ -41,6 +41,7 @@ cp .env.example .env
 - `更新今日数据` 和 `同步赛果` 不受 60 分钟冷却限制
 - `运行 AI 预测` 受 `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` 控制，默认 60 分钟
 - 工作流运行中时，首页动作按钮和顶部状态条会显示百分比进度
+- 最近运行记录和顶部状态区会显示步骤级摘要，能直接看到成功/失败/跳过原因
 - `ENABLE_SCHEDULED_REFRESH=true` 只会后台定时同步赛果/赛程并触发重算，不会替代首页手动工作流按钮
 - `AI_RUN_MODE=auto` 现在支持后端定时触发 `pre-match` AI workflow；但标准前端入口仍按手动按钮触发，不对外承诺“页面打开自动跑 workflow”
 - `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 仍默认关闭，且不属于当前默认入口链路
@@ -93,6 +94,9 @@ cp .env.example .env
 | 无市场 | 50% | - | 50% |
 | 无 AI | 55% | 45% | - |
 | 仅系统 | 100% | - | - |
+
+- **淘汰赛占位赛不误报失败**：`ensemble_generation` 遇到官方 Match 73-104 中尚未决出的对阵时，会在工作流摘要中记为 `skipped / 待定对阵`，而不是错误地计入失败
+- **真实缺失继续暴露**：如果已确定真实对阵但缺少基线快照，工作流摘要会明确标记 `missing_system_prediction`
 
 ### 球队画像
 
@@ -264,7 +268,7 @@ backend/app/
 | 仪表盘 | `GET /api/dashboard`, `GET /api/matches/{id}`, `POST /api/refresh`, `GET /api/health` |
 | 评分 | `GET /api/model-score`, `GET /api/accuracy-command-center`, `GET /api/scoring-exclusions` |
 | AI | `GET /api/ai-models`, `POST /api/ai-predictions/run`, `POST /api/ensemble/run` |
-| 工作流 | `GET /api/workflows/status`, `POST /api/workflows/daily-open`, `POST /api/workflows/pre-match`, `POST /api/workflows/post-match`, `POST /api/workflows/lock`, `POST /api/workflows/full` |
+| 工作流 | `GET /api/workflows/status`, `GET /api/workflows/runs`, `GET /api/workflows/runs/{id}`, `POST /api/workflows/daily-open`, `POST /api/workflows/pre-match`, `POST /api/workflows/post-match`, `POST /api/workflows/lock`, `POST /api/workflows/full` |
 | 画像 | `GET /api/team-profiles`, `GET /api/team-profiles/{team_id}` |
 | 赛事 | `GET /api/tournament/bracket`, `GET /api/tournament/projections`, `POST /api/tournament/simulate` |
 
