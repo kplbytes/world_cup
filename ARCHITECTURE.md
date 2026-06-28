@@ -46,7 +46,7 @@
 1. **`create_app()`**：创建 FastAPI 实例，注册中间件和路由
 2. **`initialize_database()`**：建表、种子数据、首次重算、修复锁定、清理异常中断后遗留的 running workflow
 3. **淘汰赛同步**：启动时会写入官方 Match 73-104 淘汰赛占位赛程，并根据当前积分榜/已结束淘汰赛结果同步席位和晋级关系
-4. **调度器**：默认两个后台任务——快照锁定和维护；定时刷新赛果/赛程只有在 `ENABLE_SCHEDULED_REFRESH=true` 时才启用
+4. **调度器**：默认两个后台任务——快照锁定和维护；定时刷新赛果/赛程只有在 `ENABLE_SCHEDULED_REFRESH=true` 时才启用。页面打开自动触发 workflow 的配置当前不属于默认入口链路
 5. **关闭**：停止调度器，关闭 AI 提供商客户端
 
 ### 中间件栈（外→内）
@@ -83,7 +83,7 @@ backend/app/
 ├── services/            # 业务逻辑层
 │   ├── dashboard.py          # 仪表盘数据组装
 │   ├── refresh.py            # 数据刷新 & 结果同步
-│   ├── recompute.py          # 全量重算
+│   ├── recompute.py          # 全量重算（同一 revision 写入 group + knockout）
 │   ├── scoring.py            # 评分引擎
 │   ├── snapshots.py          # 快照锁定
 │   ├── market.py             # 市场赔率获取
@@ -141,7 +141,7 @@ backend/app/
 │
 ├── workflows/           # 工作流引擎
 │   ├── service.py            # 工作流执行
-│   ├── scheduler.py          # 自动调度
+│   ├── scheduler.py          # 保留的 auto-trigger 判定 / 冷却逻辑（默认关闭）
 │   ├── state.py              # 运行状态管理
 │   └── schemas.py            # 请求模型
 │
@@ -223,7 +223,8 @@ App.tsx
 数据同步 (refresh) ──── 外部数据源 (OpenFootball, football-data.org, 体彩)
     │
     ▼
-基线重算 (recompute) ── Elo 评级 + Poisson 进球模型
+基线重算 (recompute) ── sync_knockout_state + group/knockout same revision
+    │                      Elo 评级 + Poisson 进球模型
     │                      │
     │                      ├── 胜/平/负概率
     │                      ├── xG 期望进球
@@ -403,24 +404,28 @@ workflow_runs ──1:N──> workflow_steps
 
 ### 2. 版本化预测 (Revision-Based)
 
-每次重算生成新的 `DashboardRevision`，预测数据通过 `revision_id` 关联。活跃版本标记 `active=True`，历史版本完整保留。
+每次全量重算生成新的 `DashboardRevision`，预测数据通过 `revision_id` 关联。当前 `recompute_all()` 会先同步淘汰赛状态，再把小组赛和淘汰赛预测写入同一个活跃 revision，避免 knockout 预测落在孤立版本。历史版本完整保留。
 
-### 3. 赛前锁定 (Pre-Match Lock)
+### 3. 手动工作流优先 (Manual-First Workflow)
+
+标准前端入口默认依赖显式 POST 到 `/api/workflows/*`。`AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 和 `AI_RUN_MODE=auto` 目前只保留配置口径，不作为对用户承诺的默认链路。
+
+### 4. 赛前锁定 (Pre-Match Lock)
 
 预测快照在赛前 24h 内生成并锁定，开赛后冻结。这是系统的核心业务规则——赛后数据不得覆盖赛前决策。
 
-### 4. 声明式 AI 配置 (Declarative AI Config)
+### 5. 声明式 AI 配置 (Declarative AI Config)
 
 AI 模型通过 YAML 配置，无需代码修改即可添加/禁用模型。提供商实现 OpenAI 兼容接口，统一调用方式。
 
-### 5. 权重自适应 (Adaptive Weighting)
+### 6. 权重自适应 (Adaptive Weighting)
 
 集成融合的权重根据可用数据源自动调整。缺少市场赔率时 AI 权重增加，缺少 AI 时市场权重增加，仅系统可用时使用 100% 系统权重。
 
-### 6. 结构化日志 (Structured Logging)
+### 7. 结构化日志 (Structured Logging)
 
 所有日志使用 JSON 格式，包含请求 ID、时间戳、日志级别。支持按请求追踪、按错误过滤、慢请求分析。
 
-### 7. 限流与认证 (Rate Limiting & Auth)
+### 8. 限流与认证 (Rate Limiting & Auth)
 
 内置 IP 级滑动窗口限流和可选的 API Key 认证。写接口（POST/DELETE/PATCH）需要 `X-API-Key` 头，读接口开放。

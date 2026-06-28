@@ -142,6 +142,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 说明：
 
 - 这是底层刷新接口，主要负责外部数据同步和重算
+- 调用时会先同步官方淘汰赛占位/晋级状态，再在同一个 active revision 中重算当前可预测比赛
 - 首页动作区通常走 `/api/workflows/*` 接口，而不是直接调用这个端点
 - `ENABLE_SCHEDULED_REFRESH=false` 时，不会后台自动周期性调用该接口
 
@@ -153,7 +154,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 列出所有已配置的 AI 模型及其状态。
 
-当前默认配置只包含 DeepSeek 系列模型；停用或欠费后不再对用户侧暴露的模型不会出现在工作台展示说明中。
+当前用户侧默认只展示可见的 DeepSeek 系列模型；停用、欠费或已下线后不再对用户侧暴露的模型不会出现在工作台展示说明中。
 
 **响应示例：**
 
@@ -166,10 +167,11 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
       "display_name": "DeepSeek V4 Flash",
       "provider": "deepseek",
       "enabled": true,
-      "api_key_configured": true,
+      "has_api_key": true,
       "cost_tier": "low",
       "latency_tier": "fast",
-      "prompt_version": "worldcup-ai-v1"
+      "prompt_version": "worldcup-ai-v1",
+      "status": "ready"
     }
   ]
 }
@@ -378,6 +380,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `button_states.ai_prediction` 会反映 60 分钟冷却状态
 - `button_states.daily_open` 和 `button_states.post_match` 不受该冷却限制
 - `last_run.progress.percent` 为前端首页顶部状态条和动作按钮共用的百分比进度
+- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` / `AUTO_RUN_AI_ON_OPEN` 目前只是保留配置；当前 API 契约仍以显式 POST 触发工作流为准
 
 ### POST /api/workflows/daily-open
 

@@ -25,6 +25,7 @@ from app.prediction.poisson import MODEL_VERSION, MatchContext, predict_match
 from app.prediction.shadow import compute_shadow_predictions
 from app.services.localization import localized_team_names
 from app.services.manual_adjustments import build_adjustment_context, serialize_adjustment
+from app.tournament.knockout import sync_knockout_state
 from app.simulation.qualification import (
     SimulatedMatch,
     SimulationTournament,
@@ -114,6 +115,8 @@ def recompute_knockout_stage(
     session: Session,
     iterations: int = 50_000,
     seed: int = 20260613,
+    revision: DashboardRevision | None = None,
+    activate_revision: bool = True,
 ) -> DashboardRevision | None:
     """Recompute knockout stage predictions using Elo strengths.
 
@@ -123,6 +126,7 @@ def recompute_knockout_stage(
     import time
     start = time.monotonic()
     logger.info("recompute_knockout_stage started")
+    sync_knockout_state(session)
 
     knockout_matches = list(session.scalars(
         select(Match).where(Match.stage != "group").order_by(Match.kickoff, Match.id)
@@ -156,14 +160,25 @@ def recompute_knockout_stage(
 
     with session.begin_nested():
         from app.config import settings
-        revision = DashboardRevision(
-            model_version="elo-poisson-v1-intel-numeric" if settings.enable_numerical_adjustments else MODEL_VERSION,
-            simulation_iterations=iterations,
-            simulation_seed=seed,
-            active=False,
-        )
-        session.add(revision)
-        session.flush()
+        if revision is None:
+            revision = DashboardRevision(
+                model_version="elo-poisson-v1-intel-numeric" if settings.enable_numerical_adjustments else MODEL_VERSION,
+                simulation_iterations=iterations,
+                simulation_seed=seed,
+                active=False,
+            )
+            session.add(revision)
+            session.flush()
+
+        knockout_match_ids = {m.id for m in knockout_matches}
+        if knockout_match_ids:
+            session.execute(
+                delete(MatchPrediction).where(
+                    MatchPrediction.revision_id == revision.id,
+                    MatchPrediction.match_id.in_(knockout_match_ids),
+                )
+            )
+            session.flush()
 
         # Clear auto adjustments only for non-final knockout matches
         non_final_match_ids = {m.id for m in predictable}
@@ -369,9 +384,10 @@ def recompute_knockout_stage(
                 )
                 session.add(shadow_pred)
 
-        session.execute(update(DashboardRevision).values(active=False))
-        revision.active = True
-        session.flush()
+        if activate_revision:
+            session.execute(update(DashboardRevision).values(active=False))
+            revision.active = True
+            session.flush()
 
         t30_start = time.monotonic()
         write_snapshots(session, revision)
@@ -470,11 +486,19 @@ def recompute_all(
     start = time.monotonic()
     logger.info("recompute_all started")
     try:
+        sync_knockout_state(session)
+
         # Step 1: Group stage
         revision = recompute_group_stage(session, iterations=iterations, seed=seed)
 
-        # Step 2: Knockout stage (may return None if no knockout matches yet)
-        recompute_knockout_stage(session, iterations=iterations, seed=seed)
+        # Step 2: Knockout stage predictions are written into the same active revision
+        recompute_knockout_stage(
+            session,
+            iterations=iterations,
+            seed=seed,
+            revision=revision,
+            activate_revision=False,
+        )
 
         # Step 3: Tournament projection
         recompute_tournament_projection(session, iterations=iterations, seed=seed)

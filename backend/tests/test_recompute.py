@@ -40,7 +40,17 @@ def test_recompute_publishes_one_complete_revision(db_session):
 
     assert db_session.scalar(
         select(func.count(MatchPrediction.id)).where(MatchPrediction.revision_id == revision.id)
-    ) == 490
+    ) > 490
+    assert db_session.scalar(
+        select(func.count(MatchPrediction.id))
+        .join(Match, MatchPrediction.match_id == Match.id)
+        .where(MatchPrediction.revision_id == revision.id, Match.stage == "group")
+    ) > 0
+    assert db_session.scalar(
+        select(func.count(MatchPrediction.id))
+        .join(Match, MatchPrediction.match_id == Match.id)
+        .where(MatchPrediction.revision_id == revision.id, Match.stage != "group")
+    ) > 0
     assert db_session.scalar(
         select(func.count(QualificationPrediction.id)).where(
             QualificationPrediction.revision_id == revision.id

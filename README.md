@@ -41,6 +41,8 @@ cp .env.example .env
 - `更新今日数据` 和 `同步赛果` 不受 60 分钟冷却限制
 - `运行 AI 预测` 受 `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` 控制，默认 60 分钟
 - 工作流运行中时，首页动作按钮和顶部状态条会显示百分比进度
+- `ENABLE_SCHEDULED_REFRESH=true` 只会后台定时同步赛果/赛程并触发重算，不会替代首页手动工作流按钮
+- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 与 `AI_RUN_MODE=auto` 当前只保留配置/枚举口径；标准前端入口仍按手动按钮触发，不对外承诺“页面打开自动跑 workflow”
 
 ## 核心功能
 
@@ -51,10 +53,11 @@ cp .env.example .env
 ```
 
 1. **基线模型**：`elo-poisson-v1*` 系列生成胜/平/负概率、xG 和比分矩阵；当前重算链路会在市场增强配置下加载球队画像修正、FIFA 排名和实验性数值调整
-2. **AI 预测**：多个 AI 模型独立生成预测（v2 提示词不含基线概率，避免锚定偏差）
-3. **集成融合**：基线 + 市场赔率 + AI 预测的加权融合，缺失来源自动权重重分配
-4. **决策快照**：赛前窗口内写入并维护快照，赛后评分使用开赛前最后一份有效预测
-5. **评分**：赛后 Brier 分数、Log Loss、命中率评估，并明确未评分原因
+2. **全量重算**：`recompute_all()` 会先同步官方淘汰赛占位/晋级状态，再把小组赛与淘汰赛预测写入同一个 active revision，避免 knockout 预测落到孤立版本
+3. **AI 预测**：多个 AI 模型独立生成预测（v2 提示词不含基线概率，避免锚定偏差）
+4. **集成融合**：基线 + 市场赔率 + AI 预测的加权融合，缺失来源自动权重重分配
+5. **决策快照**：赛前窗口内写入并维护快照，赛后评分使用开赛前最后一份有效预测
+6. **评分**：赛后 Brier 分数、Log Loss、命中率评估，并明确未评分原因
 
 ### xG 校准与 Poisson 色散
 
@@ -78,6 +81,7 @@ cp .env.example .env
 - **单场冷却**：同一场比赛 1 小时内不重复刷新 AI 预测；超过 1 小时可用 `force=true` 手动重跑
 - **基线抄袭检测**：标记与系统预测完全一致的 AI 输出
 - **独立审计**：`/api/ai-independence` 检查 AI 与基线的偏差程度
+- **画像边界**：Team Profile 当前会进入 baseline / numerical 重算，但 AI prompt 仍把画像视为 `disabled_display_only`，不直接注入结构化画像调整
 - **展示约束**：停用或欠费的 provider/model 不在用户侧首页和模型复盘页展示
 
 ### 集成融合
@@ -171,7 +175,7 @@ cp .env.example .env
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ENABLE_AI_PREDICTION` | `true` | 是否启用 AI 预测 |
-| `AI_RUN_MODE` | `manual` | 运行模式：`manual` / `auto` |
+| `AI_RUN_MODE` | `manual` | 当前发布版本按 `manual` 使用；`auto` 仅保留枚举口径，不作为默认首页触发路径 |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
 | `AI_TEMPERATURE` | `0` | AI 采样温度 |
@@ -199,8 +203,8 @@ cp .env.example .env
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
-| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 是否允许页面打开时自动触发每日工作流 |
-| `AUTO_RUN_AI_ON_OPEN` | `false` | 是否允许页面打开时自动触发 AI 预测 |
+| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 保留开关，默认关闭；当前标准前端入口不依赖页面打开自动触发 |
+| `AUTO_RUN_AI_ON_OPEN` | `false` | 保留开关，默认关闭；当前标准前端入口不依赖页面打开自动触发 AI |
 | `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流按钮的冷却时间（分钟，仅作用于“运行 AI 预测”） |
 
 ## 前端页面

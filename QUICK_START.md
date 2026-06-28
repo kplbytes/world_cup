@@ -64,11 +64,18 @@ DATABASE_PATH=data/world-cup.sqlite3
 
 ```env
 ENABLE_AI_PREDICTION=true
+AI_RUN_MODE=manual
 
 # DeepSeek
 DEEPSEEK_API_KEY=sk-your-deepseek-key
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 ```
+
+补充说明：
+
+- 当前发布版本默认按手动工作流运行，`AI_RUN_MODE=manual` 即可；
+- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 作为保留开关默认应保持 `false`；
+- `ENABLE_SCHEDULED_REFRESH=true` 只影响后台定时刷新，不会把首页刷新变成自动跑 workflow。
 
 > **获取 API Key：**
 > - DeepSeek：访问 https://platform.deepseek.com 注册并创建 API Key
@@ -153,6 +160,7 @@ curl http://127.0.0.1:8000/api/health
 - `status: "ok"` — 系统正常运行
 - `status: "degraded"` — 数据库未初始化或调度器未运行
 - `scheduled_refresh: "disabled"` — 默认不启用后台自动刷新，需手动点击工作台按钮
+- 即使把 `scheduled_refresh` 打开，当前首页也仍然只会手动触发 workflow POST 接口
 
 ### 2. 查看仪表盘
 
@@ -172,7 +180,7 @@ curl http://127.0.0.1:8000/api/matches | python3 -m json.tool | head -20
 curl http://127.0.0.1:8000/api/tournament/bracket | python3 -m json.tool | head -40
 ```
 
-系统启动时会自动写入官方 Match 73-104 淘汰赛占位赛程；小组赛未全部结束前，未决出的席位会显示为待定。
+系统启动时会自动写入官方 Match 73-104 淘汰赛占位赛程；小组赛未全部结束前，未决出的席位会显示为待定。当前全量重算会先同步这些占位/晋级状态，再把小组赛和淘汰赛预测写入同一个 active revision。
 
 ## 首次 AI 预测运行
 
@@ -232,6 +240,7 @@ curl -X POST "http://127.0.0.1:8000/api/workflows/post-match" \
 - `运行 AI 预测`：手动触发，默认 60 分钟冷却
 - `一键更新全部`：手动触发，包含 AI 步骤，会消耗外部 API
 - 工作流运行期间，首页按钮和状态条会展示百分比进度
+- `AI_RUN_MODE=auto`、`AUTO_RUN_*` 当前只保留配置口径；如果没有额外接入自定义触发链路，默认行为仍是上述手动按钮
 
 ## 常见问题
 

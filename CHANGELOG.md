@@ -11,13 +11,14 @@
 
 ### 预测与复盘
 
+- **同版重算修复**：`recompute_all()` 现在会先同步淘汰赛占位/晋级状态，再在同一个 active revision 中补齐小组赛与淘汰赛预测，避免 knockout 预测缺失或落到孤立 revision
 - **画像进入淘汰赛重算链路**：淘汰赛重算会继续加载 Team Profile 调整项，而不是在 knockout 阶段静默禁用画像权重
 - **模型复盘与用户侧模型展示继续收敛**：停用、欠费或已下线模型不再出现在用户侧说明中
 
 ### 文档
 
 - **README / QUICK_START / API / ARCHITECTURE / DEPLOY** 已同步到当前淘汰赛实现
-- **AI_PROJECT_CONSTRAINTS / FRONTEND_UI_RULES / docs/team_profiles.md** 已补充官方淘汰赛、手动工作流与当前画像链路约束
+- **AI_PROJECT_CONSTRAINTS / FRONTEND_UI_RULES / docs/team_profiles.md** 已补充官方淘汰赛、手动工作流、保留型 auto 开关边界，以及当前画像进入 baseline 但不直接进入 AI prompt 的约束
 
 ## [2026-06-26] - 工作流与文档对齐
 

@@ -32,7 +32,7 @@
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ENABLE_AI_PREDICTION` | `true` | 启用 AI 预测 |
-| `AI_RUN_MODE` | `manual` | `manual`（手动触发）/ `auto`（自动运行） |
+| `AI_RUN_MODE` | `manual` | 当前发布版本按 `manual` 使用；`auto` 仅保留枚举口径，不作为默认前端入口行为 |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
 | `AI_TEMPERATURE` | `0` | AI 采样温度 |
@@ -66,8 +66,8 @@
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `APP_MODE` | `local` | 运行模式：`local` / `test` / `production` |
-| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 前端打开时是否自动运行每日工作流 |
-| `AUTO_RUN_AI_ON_OPEN` | `false` | 前端打开时是否自动运行 AI 预测 |
+| `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 保留开关，默认关闭；当前标准前端入口不依赖页面打开自动运行每日工作流 |
+| `AUTO_RUN_AI_ON_OPEN` | `false` | 保留开关，默认关闭；当前标准前端入口不依赖页面打开自动运行 AI |
 | `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流冷却时间（仅影响“运行 AI 预测”按钮） |
 | `WORKFLOW_DEFAULT_HOURS` | `48` | 默认前瞻小时数 |
 | `WORKFLOW_DEFAULT_SINCE_HOURS` | `24` | 默认回溯小时数 |
@@ -81,6 +81,7 @@
 - [ ] **环境变量**：复制 `.env.example` 到 `.env`，填写所有必需配置
 - [ ] **API Key**：配置至少一个 AI 提供商的 API Key
 - [ ] **定时刷新策略**：明确是否需要把 `ENABLE_SCHEDULED_REFRESH` 打开；默认保持手动刷新
+- [ ] **自动触发开关**：默认保持 `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN=false`、`AUTO_RUN_AI_ON_OPEN=false`；当前发布版仍是手动工作流优先
 - [ ] **ADMIN_API_KEY**：设置强密码，启用写接口认证
 - [ ] **CORS_ALLOWED_ORIGINS**：设置为实际前端域名，不使用 `*`
 - [ ] **APP_MODE**：设置为 `production`
@@ -283,6 +284,7 @@ sqlite3 data/world-cup.sqlite3 "VACUUM;"
 2. **数据源不可达**：检查网络和 API 令牌
 3. **后台自动刷新默认关闭是正常行为**：`ENABLE_SCHEDULED_REFRESH=false` 时只保留快照锁定和维护任务
 4. **手动刷新**：通过首页按钮或 `curl -X POST http://127.0.0.1:8000/api/workflows/daily-open`
+5. **即使开启 scheduled refresh，也不会让首页刷新自动跑 workflow**：当前默认入口仍是显式 POST
 
 ### 工作流卡住在 running
 
