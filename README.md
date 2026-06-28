@@ -42,7 +42,8 @@ cp .env.example .env
 - `运行 AI 预测` 受 `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` 控制，默认 60 分钟
 - 工作流运行中时，首页动作按钮和顶部状态条会显示百分比进度
 - `ENABLE_SCHEDULED_REFRESH=true` 只会后台定时同步赛果/赛程并触发重算，不会替代首页手动工作流按钮
-- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 与 `AI_RUN_MODE=auto` 当前只保留配置/枚举口径；标准前端入口仍按手动按钮触发，不对外承诺“页面打开自动跑 workflow”
+- `AI_RUN_MODE=auto` 现在支持后端定时触发 `pre-match` AI workflow；但标准前端入口仍按手动按钮触发，不对外承诺“页面打开自动跑 workflow”
+- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 仍默认关闭，且不属于当前默认入口链路
 
 ## 核心功能
 
@@ -175,7 +176,7 @@ cp .env.example .env
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ENABLE_AI_PREDICTION` | `true` | 是否启用 AI 预测 |
-| `AI_RUN_MODE` | `manual` | 当前发布版本按 `manual` 使用；`auto` 仅保留枚举口径，不作为默认首页触发路径 |
+| `AI_RUN_MODE` | `manual` | `manual`=纯手动；`auto`=后端调度器按间隔尝试补跑 AI/Ensemble，不改变首页手动按钮语义 |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
 | `AI_TEMPERATURE` | `0` | AI 采样温度 |
@@ -214,9 +215,9 @@ cp .env.example .env
 | **今日工作台** | 今日状态、下一步建议、工作流操作、未来 24/48 小时比赛 |
 | **比赛中心** | 按小组/今日/淘汰赛查看所有比赛 |
 | **模型复盘** | 核心结论、自适应 Ensemble 权重、AI 评估、误差归因、画像评估 |
-| **冠军与赛程** | 冠军概率、晋级概率、官方淘汰赛路径 |
+| **冠军与赛程** | 冠军概率、晋级概率、官方淘汰赛路径、点击对阵卡查看比赛详情 |
 
-比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页。
+比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页；比赛中心和冠军与赛程中的淘汰赛对阵卡都复用这套详情抽屉。
 
 ### 界面预览
 
@@ -228,11 +229,11 @@ cp .env.example .env
 
 ![比赛中心](docs/screenshots/match-center.png)
 
-**模型复盘** — 模型版本对比、AI 独立性评估、误差归因分析和校准曲线。
+**模型复盘** — 模型版本对比、AI 独立性评估、误差归因分析和校准曲线；当分项接口失败时会显示明确错误，而不是一直停留在加载中。
 
 ![模型复盘](docs/screenshots/model-review.png)
 
-**冠军与赛程** — 官方淘汰赛对阵表、球队晋级概率投影和小组积分榜；已结束淘汰赛会自动写入下一轮席位。
+**冠军与赛程** — 官方淘汰赛对阵表、球队晋级概率投影和小组积分榜；已结束淘汰赛会自动写入下一轮席位，点击对阵卡可打开共享比赛详情。
 
 ![冠军与赛程](docs/screenshots/tournament-center.png)
 

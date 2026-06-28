@@ -370,10 +370,21 @@ class TestEnsemble:
         from app.ai.ensemble import compute_ensemble
         result = compute_ensemble(session, "M_ENS5")
         assert result["status"] == "success"
-        # Only Pro should be in the AI pool
+        # Only the successful Pro prediction should be treated as an active AI source.
         source_probs = result["source_probabilities"]
         ai_keys = [k for k in source_probs if k.startswith("ai_")]
-        assert len(ai_keys) >= 1
+        assert ai_keys == ["ai_ai-deepseek-v4-pro-v1"]
+        weight_keys = [k for k in result["weights"] if k.startswith("ai_")]
+        assert weight_keys == ai_keys
+
+        ens_row = session.scalar(
+            select(EnsemblePrediction)
+            .where(EnsemblePrediction.match_id == "M_ENS5")
+            .order_by(EnsemblePrediction.id.desc())
+            .limit(1)
+        )
+        assert ens_row is not None
+        assert list((ens_row.ai_weights_json or {}).keys()) == ai_keys
 
     def test_ensemble_real_time_only_excluded(self, session):
         """real_time_only AI predictions should be excluded from ensemble."""

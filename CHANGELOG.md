@@ -7,13 +7,16 @@
 - **官方淘汰赛赛程入库**：新增 `data/seed/world-cup-2026-knockout.json`，按官方 Match 73-104 生成 32 场淘汰赛占位赛程
 - **最佳第三名官方组合表**：新增 `data/seed/world-cup-2026-third-place-combinations.json`，替换旧的简化第三名分配口径
 - **自动晋级推进**：已结束淘汰赛会按比分或 `home_advance` / `away_advance` 自动写入下一轮；支持加时/点球标记
+- **淘汰赛详情复用**：冠军与赛程页中的对阵卡现在会复用共享 `MatchDetailDrawer`，点击即可查看同一套比赛详情
 - **启动自修复**：服务启动时会同步淘汰赛占位状态，并修复异常中断后残留的 running workflow
 
 ### 预测与复盘
 
+- **后端自动 AI workflow**：`AI_RUN_MODE=auto` 时会注册 `world-cup-auto-ai` 调度任务，按刷新间隔定时尝试触发 `pre-match`，并复用现有工作流锁、冷却和按钮可用性判断
 - **同版重算修复**：`recompute_all()` 现在会先同步淘汰赛占位/晋级状态，再在同一个 active revision 中补齐小组赛与淘汰赛预测，避免 knockout 预测缺失或落到孤立 revision
 - **画像进入淘汰赛重算链路**：淘汰赛重算会继续加载 Team Profile 调整项，而不是在 knockout 阶段静默禁用画像权重
 - **模型复盘与用户侧模型展示继续收敛**：停用、欠费或已下线模型不再出现在用户侧说明中
+- **模型复盘状态降级**：模型复盘页明确区分加载、部分失败和空数据状态，避免用户一直看到“加载中”
 
 ### 文档
 

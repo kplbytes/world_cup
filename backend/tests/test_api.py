@@ -196,6 +196,7 @@ def test_health_reports_manual_refresh_scheduler_state(tmp_path, monkeypatch):
             self.jobs = {
                 "world-cup-snapshot-lock": object(),
                 "world-cup-maintenance": object(),
+                "world-cup-auto-ai": object(),
             }
 
         def get_job(self, job_id):
@@ -210,6 +211,7 @@ def test_health_reports_manual_refresh_scheduler_state(tmp_path, monkeypatch):
     data = response.json()
     assert data["dependencies"]["apscheduler"] == "running"
     assert data["dependencies"]["scheduled_refresh"] == "disabled"
+    assert data["dependencies"]["auto_ai_workflow"] == "enabled"
     assert data["dependencies"]["snapshot_lock"] == "enabled"
     assert data["dependencies"]["maintenance"] == "enabled"
 

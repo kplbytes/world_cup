@@ -46,7 +46,7 @@
 1. **`create_app()`**：创建 FastAPI 实例，注册中间件和路由
 2. **`initialize_database()`**：建表、种子数据、首次重算、修复锁定、清理异常中断后遗留的 running workflow
 3. **淘汰赛同步**：启动时会写入官方 Match 73-104 淘汰赛占位赛程，并根据当前积分榜/已结束淘汰赛结果同步席位和晋级关系
-4. **调度器**：默认两个后台任务——快照锁定和维护；定时刷新赛果/赛程只有在 `ENABLE_SCHEDULED_REFRESH=true` 时才启用。页面打开自动触发 workflow 的配置当前不属于默认入口链路
+4. **调度器**：默认后台任务为快照锁定和维护；`ENABLE_SCHEDULED_REFRESH=true` 时增加定时刷新赛果/赛程；`AI_RUN_MODE=auto` 时增加定时 `pre-match` AI workflow。页面打开自动触发 workflow 的配置仍不属于默认入口链路
 5. **关闭**：停止调度器，关闭 AI 提供商客户端
 
 ### 中间件栈（外→内）
@@ -196,7 +196,8 @@ App.tsx
 ├── TournamentCenter        # 冠军与赛程
 │   ├── 冠军概率
 │   ├── 晋级概率
-│   └── 淘汰赛路径
+│   ├── BracketView
+│   └── MatchDetailDrawer
 └── TeamDetail              # 球队详情抽屉
 ```
 
@@ -211,6 +212,8 @@ App.tsx
 - **固定四个顶层入口**：今日工作台、比赛中心、模型复盘、冠军与赛程；导航位置在各入口间保持一致
 - **实时状态**：3 小时内开赛的比赛显示在"即将开赛"列表
 - **工作流进度可见**：今日工作台动作按钮和状态区共用同一组 workflow progress 数据
+- **共享详情抽屉复用**：比赛中心和冠军与赛程的淘汰赛对阵卡都通过 `/api/matches/{id}` 复用同一个 `MatchDetailDrawer`
+- **模型复盘容错**：以 `/api/accuracy-command-center` 为主查询；分项接口失败时显示明确错误/空态，不允许整页长期卡在加载中
 
 ## 数据流
 
@@ -408,7 +411,7 @@ workflow_runs ──1:N──> workflow_steps
 
 ### 3. 手动工作流优先 (Manual-First Workflow)
 
-标准前端入口默认依赖显式 POST 到 `/api/workflows/*`。`AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 和 `AI_RUN_MODE=auto` 目前只保留配置口径，不作为对用户承诺的默认链路。
+标准前端入口默认依赖显式 POST 到 `/api/workflows/*`。`AI_RUN_MODE=auto` 现在只影响后端调度器，不改变首页手动按钮语义；`AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 仍不作为对用户承诺的默认链路。
 
 ### 4. 赛前锁定 (Pre-Match Lock)
 

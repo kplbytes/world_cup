@@ -32,7 +32,7 @@
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `ENABLE_AI_PREDICTION` | `true` | 启用 AI 预测 |
-| `AI_RUN_MODE` | `manual` | 当前发布版本按 `manual` 使用；`auto` 仅保留枚举口径，不作为默认前端入口行为 |
+| `AI_RUN_MODE` | `manual` | `manual`=纯手动；`auto`=后端调度器按间隔尝试补跑 `pre-match` AI workflow，不改变首页手动按钮语义 |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API 密钥 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 地址 |
 | `AI_TEMPERATURE` | `0` | AI 采样温度 |
@@ -81,7 +81,7 @@
 - [ ] **环境变量**：复制 `.env.example` 到 `.env`，填写所有必需配置
 - [ ] **API Key**：配置至少一个 AI 提供商的 API Key
 - [ ] **定时刷新策略**：明确是否需要把 `ENABLE_SCHEDULED_REFRESH` 打开；默认保持手动刷新
-- [ ] **自动触发开关**：默认保持 `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN=false`、`AUTO_RUN_AI_ON_OPEN=false`；当前发布版仍是手动工作流优先
+- [ ] **自动触发开关**：默认保持 `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN=false`、`AUTO_RUN_AI_ON_OPEN=false`；如需后端自动补跑 AI，再单独设置 `AI_RUN_MODE=auto`
 - [ ] **ADMIN_API_KEY**：设置强密码，启用写接口认证
 - [ ] **CORS_ALLOWED_ORIGINS**：设置为实际前端域名，不使用 `*`
 - [ ] **APP_MODE**：设置为 `production`

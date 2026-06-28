@@ -13,6 +13,7 @@ import SectionCard from "../components/ui/SectionCard";
 import StatusStrip from "../components/ui/StatusStrip";
 import WorkflowProgressBar from "../components/ui/WorkflowProgressBar";
 import ActionButton from "../components/ActionButton";
+import BracketView from "../components/BracketView";
 import GroupNav from "../components/GroupNav";
 import { workflowRunsRefetchInterval, workflowStatusRefetchInterval } from "../hooks/useWorkflowActions";
 import type { Match } from "../types";
@@ -309,5 +310,68 @@ describe("GroupNav", () => {
     render(<GroupNav selected="A" onSelect={onSelect} />);
     await userEvent.click(screen.getByText("D"));
     expect(onSelect).toHaveBeenCalledWith("D");
+  });
+});
+
+// ── BracketView ─────────────────────────────────────────────────────
+
+describe("BracketView", () => {
+  it("renders knockout match status, time and score details", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url === "/api/tournament/bracket") {
+        return {
+          ok: true,
+          json: async () => ({
+            round_of_32: [
+              {
+                id: "2026-KO-073",
+                match_number: 73,
+                match_position: 1,
+                stage: "round_of_32",
+                round_name: "32强",
+                status: "final",
+                kickoff: "2026-06-28T11:00:00Z",
+                venue: "墨西哥城",
+                home_source: "A1",
+                away_source: "B3",
+                home_team: { team_id: "BRA", team_name: "Brazil" },
+                away_team: { team_id: "ARG", team_name: "Argentina" },
+                home_score: 2,
+                away_score: 1,
+                home_advance: true,
+                away_advance: false,
+                went_to_extra_time: true,
+                went_to_penalties: false,
+                winner_to_match_id: "2026-KO-090",
+                loser_to_match_id: null,
+                is_placeholder_match: false,
+              },
+            ],
+            round_of_16: [],
+            quarter_final: [],
+            semi_final: [],
+            third_place: [],
+            final: [],
+          }),
+        } as Response;
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }));
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={client}><BracketView /></QueryClientProvider>);
+
+    const matchLabel = await screen.findByText("Match 73");
+    expect(matchLabel).toBeVisible();
+    expect(screen.getByText("已结束")).toBeVisible();
+    expect(screen.getByText("巴西")).toBeVisible();
+    expect(screen.getByText("阿根廷")).toBeVisible();
+    expect(screen.getByText("加时 · 墨西哥城")).toBeVisible();
+    expect(screen.getByText("晋级")).toBeVisible();
+    const card = matchLabel.closest(".bracket-card");
+    expect(card).not.toBeNull();
+    expect(card).toHaveTextContent("2");
+    expect(card).toHaveTextContent("1");
   });
 });

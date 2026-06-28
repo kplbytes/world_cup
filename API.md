@@ -46,6 +46,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
     "ai_providers": "available",
     "apscheduler": "running",
     "scheduled_refresh": "disabled",
+    "auto_ai_workflow": "disabled",
     "snapshot_lock": "enabled",
     "maintenance": "enabled",
     "last_successful_run": "2026-06-19T08:00:00+00:00"
@@ -57,6 +58,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `database`: `"ok"` 或 `"no_revision"`
 - `ai_providers`: `"available"` 或 `"no_api_keys"`
 - `scheduled_refresh`: `"enabled"` 或 `"disabled"`
+- `auto_ai_workflow`: `"enabled"` 或 `"disabled"`；表示后端是否已注册 `world-cup-auto-ai` 调度任务
 - `snapshot_lock`: `"enabled"` 或 `"disabled"`
 - `maintenance`: `"enabled"` 或 `"disabled"`
 
@@ -380,7 +382,8 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `button_states.ai_prediction` 会反映 60 分钟冷却状态
 - `button_states.daily_open` 和 `button_states.post_match` 不受该冷却限制
 - `last_run.progress.percent` 为前端首页顶部状态条和动作按钮共用的百分比进度
-- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` / `AUTO_RUN_AI_ON_OPEN` 目前只是保留配置；当前 API 契约仍以显式 POST 触发工作流为准
+- `AI_RUN_MODE=auto` 时，后端调度器会定时尝试触发 `pre-match` workflow
+- `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` / `AUTO_RUN_AI_ON_OPEN` 仍不是当前默认前端入口；页面刷新不会自动触发 workflow
 
 ### POST /api/workflows/daily-open
 
@@ -582,6 +585,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 **响应字段（单场比赛）常见包括：**
 
+- `id`（可继续用于请求 `/api/matches/{id}` 获取共享详情抽屉数据）
 - `match_number`
 - `stage`
 - `round_name`
@@ -592,6 +596,8 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `went_to_extra_time` / `went_to_penalties`
 - `winner_to_match_id` / `loser_to_match_id`
 - `is_placeholder_match`
+
+前端“冠军与赛程”页会先拉取该接口，再在用户点击具体对阵卡时，使用其中的 `id` 调用 `/api/matches/{id}` 展示与比赛中心一致的详情抽屉。
 
 ### GET /api/tournament/projections
 

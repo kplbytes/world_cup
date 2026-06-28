@@ -353,8 +353,25 @@ export type TeamProjection = {
 };
 
 export type BracketMatchup = {
-  match_position: number; stage: string;
-  home_source: string; away_source: string;
+  id?: string;
+  match_number?: number;
+  match_position: number;
+  stage: string;
+  round_name?: string | null;
+  status?: string | null;
+  kickoff?: string | null;
+  venue?: string | null;
+  home_source: string;
+  away_source: string;
+  home_score?: number | null;
+  away_score?: number | null;
+  home_advance?: boolean | null;
+  away_advance?: boolean | null;
+  went_to_extra_time?: boolean | null;
+  went_to_penalties?: boolean | null;
+  winner_to_match_id?: string | null;
+  loser_to_match_id?: string | null;
+  is_placeholder_match?: boolean | null;
   home_team: { team_id: string; team_name: string } | null;
   away_team: { team_id: string; team_name: string } | null;
 };

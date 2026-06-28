@@ -54,6 +54,7 @@ def health():
     # APScheduler running status
     scheduler_running = _scheduler is not None and _scheduler.running
     scheduled_refresh_enabled = _scheduler is not None and _scheduler.get_job("world-cup-refresh") is not None
+    auto_ai_enabled = _scheduler is not None and _scheduler.get_job("world-cup-auto-ai") is not None
     snapshot_lock_enabled = _scheduler is not None and _scheduler.get_job("world-cup-snapshot-lock") is not None
     maintenance_enabled = _scheduler is not None and _scheduler.get_job("world-cup-maintenance") is not None
 
@@ -76,6 +77,7 @@ def health():
         "ai_providers": "available" if ai_available else "no_api_keys",
         "apscheduler": "running" if scheduler_running else "stopped",
         "scheduled_refresh": "enabled" if scheduled_refresh_enabled else "disabled",
+        "auto_ai_workflow": "enabled" if auto_ai_enabled else "disabled",
         "snapshot_lock": "enabled" if snapshot_lock_enabled else "disabled",
         "maintenance": "enabled" if maintenance_enabled else "disabled",
         "last_successful_run": last_successful_run,

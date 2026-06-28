@@ -112,7 +112,18 @@ def compute_ensemble(
             "match_id": match_id,
         }
 
-    weights = _compute_weights(has_market, has_ai, len(ai_probs_list), defaults, system_weight, market_weight, ai_weights_override, session if use_adaptive else None)
+    active_ai_versions = [version for version, _, _ in ai_probs_list]
+    weights = _compute_weights(
+        has_market,
+        has_ai,
+        len(ai_probs_list),
+        defaults,
+        system_weight,
+        market_weight,
+        ai_weights_override,
+        session if use_adaptive else None,
+        ai_versions=active_ai_versions,
+    )
 
     # 5. Compute ensemble probabilities
     ensemble_probs = {"home_win": 0.0, "draw": 0.0, "away_win": 0.0}
@@ -301,6 +312,7 @@ def _compute_weights(
     market_weight_override: float | None = None,
     ai_weights_override: dict[str, float] | None = None,
     session: Session | None = None,
+    ai_versions: list[str] | None = None,
 ) -> dict[str, float]:
     """Compute normalized weights for all sources.
 
@@ -313,11 +325,16 @@ def _compute_weights(
         from app.services.adaptive_weights import get_adaptive_weight_overrides
         adaptive_overrides = get_adaptive_weight_overrides(session)
 
+    active_ai_versions = [version for version in (ai_versions or []) if version]
+
     if has_market and has_ai:
         if adaptive_overrides:
             sys_w = adaptive_overrides.get("system", defaults.get("system_weight", 0.50))
             mkt_w = adaptive_overrides.get("market", defaults.get("market_weight", 0.20))
-            total_ai_w = sum(v for k, v in adaptive_overrides.items() if k.startswith("ai_"))
+            if active_ai_versions:
+                total_ai_w = sum(adaptive_overrides.get(f"ai_{version}", 0.0) for version in active_ai_versions)
+            else:
+                total_ai_w = sum(v for k, v in adaptive_overrides.items() if k.startswith("ai_"))
             if total_ai_w == 0:
                 total_ai_w = defaults.get("total_ai_weight", 0.30)
         else:
@@ -344,27 +361,40 @@ def _compute_weights(
     # Distribute AI weight across models
     if has_ai and total_ai_w > 0:
         enabled_models = list_enabled_models()
+        if not active_ai_versions:
+            if ai_weights_override:
+                active_ai_versions = [version for version in ai_weights_override if version]
+            else:
+                active_ai_versions = [model.model_version for model in enabled_models[: max(num_ai, 0)]]
+
         if ai_weights_override:
             # Use explicit overrides
-            total_explicit = sum(ai_weights_override.values())
+            filtered_overrides = {
+                version: weight
+                for version, weight in ai_weights_override.items()
+                if version in active_ai_versions
+            }
+            total_explicit = sum(filtered_overrides.values())
             if total_explicit > 0:
-                for version, w in ai_weights_override.items():
+                for version, w in filtered_overrides.items():
                     weights[f"ai_{version}"] = total_ai_w * (w / total_explicit)
-            else:
+            elif active_ai_versions:
                 # Equal distribution
-                for version in ai_weights_override:
-                    weights[f"ai_{version}"] = total_ai_w / len(ai_weights_override)
+                for version in active_ai_versions:
+                    weights[f"ai_{version}"] = total_ai_w / len(active_ai_versions)
         else:
             # Use ensemble_weight from model configs
-            total_config_weight = sum(m.ensemble_weight for m in enabled_models)
-            if total_config_weight > 0:
-                for model in enabled_models:
+            models_by_version = {model.model_version: model for model in enabled_models}
+            active_models = [models_by_version[version] for version in active_ai_versions if version in models_by_version]
+            total_config_weight = sum(model.ensemble_weight for model in active_models)
+            if total_config_weight > 0 and active_models:
+                for model in active_models:
                     w = total_ai_w * (model.ensemble_weight / total_config_weight)
                     weights[f"ai_{model.model_version}"] = w
-            else:
+            elif active_ai_versions:
                 # Equal distribution
-                for model in enabled_models:
-                    weights[f"ai_{model.model_version}"] = total_ai_w / len(enabled_models)
+                for version in active_ai_versions:
+                    weights[f"ai_{version}"] = total_ai_w / len(active_ai_versions)
 
     # Normalize all weights
     total = sum(weights.values())

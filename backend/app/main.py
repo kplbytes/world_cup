@@ -224,6 +224,32 @@ def create_app(start_background: bool = True) -> FastAPI:
         with session_scope() as session:
             lock_due_predictions(session)
 
+    def scheduled_auto_ai() -> None:
+        """Optionally run pre-match AI workflow from the backend scheduler."""
+        if settings.ai_run_mode != "auto" or not settings.enable_ai_prediction:
+            return
+
+        from app.workflows import service as workflow_service
+
+        status = workflow_service.get_workflow_status()
+        ai_button = (status.get("button_states") or {}).get("ai_prediction") or {}
+        if not ai_button.get("enabled"):
+            logger.info("scheduled_auto_ai skipped: %s", ai_button.get("reason", "disabled"))
+            return
+
+        run_id = workflow_service.run_pre_match_workflow(
+            hours=settings.workflow_default_hours,
+            limit=settings.workflow_default_limit,
+            with_ai=True,
+            with_ensemble=True,
+            only_missing=True,
+            trigger_source="auto_scheduler",
+        )
+        if run_id > 0:
+            logger.info("scheduled_auto_ai started pre_match workflow run_id=%s", run_id)
+        else:
+            logger.info("scheduled_auto_ai skipped: workflow lock unavailable")
+
     def scheduled_maintenance() -> None:
         """Periodically clean up old non-revision-bound data."""
         from datetime import timedelta
@@ -259,6 +285,17 @@ def create_app(start_background: bool = True) -> FastAPI:
                     id="world-cup-refresh",
                     max_instances=1,
                     coalesce=True,
+                )
+            if settings.ai_run_mode == "auto" and settings.enable_ai_prediction:
+                auto_ai_offset = max(1, settings.refresh_interval_minutes // 2)
+                scheduler.add_job(
+                    scheduled_auto_ai,
+                    "interval",
+                    minutes=settings.refresh_interval_minutes,
+                    id="world-cup-auto-ai",
+                    max_instances=1,
+                    coalesce=True,
+                    next_run_time=datetime.now(timezone.utc) + timedelta(minutes=auto_ai_offset),
                 )
             scheduler.add_job(
                 scheduled_snapshot_lock,
