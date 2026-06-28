@@ -111,6 +111,7 @@ def matches(status: str | None = None):
     with session_scope() as session:
         data = build_dashboard(session)
         rows = [match for group in data["groups"] for match in group["matches"]]
+        rows.extend(data.get("knockout_matches", []))
         return [match for match in rows if status is None or match["status"] == status]
 
 

@@ -87,7 +87,7 @@ def compute_adaptive_weights(session: Session) -> dict[str, Any]:
         - last_updated: timestamp of last computation
     """
     # 1. Collect per-match Brier scores with time-decay weights
-    per_match_briers, time_weights = _collect_per_match_briers(session)
+    per_match_briers, time_weights, match_stage = _collect_per_match_briers(session)
 
     # 2. Check minimum sample size
     system_sample_count = len(per_match_briers.get("system", {}))
@@ -96,10 +96,10 @@ def compute_adaptive_weights(session: Session) -> dict[str, Any]:
             "Adaptive weights: only %d matches (need %d), using defaults",
             system_sample_count, _MIN_SAMPLE_SIZE,
         )
-        return _build_result(get_defaults_normalized(), _summarize_performance(per_match_briers, time_weights), is_adaptive=False, significance={})
+        return _build_result(get_defaults_normalized(), _summarize_performance(per_match_briers, time_weights, match_stage), is_adaptive=False, significance={})
 
     # 3. Compute weighted Brier means and Bayesian posteriors
-    performance = _summarize_performance(per_match_briers, time_weights)
+    performance = _summarize_performance(per_match_briers, time_weights, match_stage)
 
     # 4. Significance testing: paired t-test on Brier differences
     significance = _paired_significance_tests(per_match_briers, time_weights)
@@ -153,12 +153,16 @@ def get_adaptive_weight_overrides(session: Session) -> dict[str, float] | None:
 
 def _collect_per_match_briers(
     session: Session,
-) -> tuple[dict[str, dict[str, float]], dict[str, float]]:
+) -> tuple[dict[str, dict[str, float]], dict[str, float], dict[str, str]]:
     """Collect per-match Brier scores for each source, with exponential time-decay weights.
 
     Returns:
         per_match_briers: {source: {match_id: brier_score}}
         time_weights: {match_id: weight} (most recent = highest weight)
+        match_stage: {match_id: "group" | "knockout"} — used by callers to
+            bucket Brier statistics by stage. Knockout matches are scored
+            using the advance result (home/away) so level-score ET/penalty
+            games do not pollute the "draw" bucket.
     """
     final_matches = list(session.scalars(
         select(Match)
@@ -168,7 +172,7 @@ def _collect_per_match_briers(
     ))
 
     if not final_matches:
-        return {}, {}
+        return {}, {}, {}
 
     # Exponential time-decay weights: most recent match gets weight 1.0,
     # older matches decay with half-life of _TIME_DECAY_HALF_LIFE matches
@@ -180,9 +184,12 @@ def _collect_per_match_briers(
         time_weights = [w * n / total_tw for w in time_weights]
 
     match_weights = {match.id: time_weights[idx] for idx, match in enumerate(final_matches)}
+    match_stage: dict[str, str] = {}
     per_match_briers: dict[str, dict[str, float]] = {}
 
     for match in final_matches:
+        is_knockout = bool(match.stage and match.stage != "group")
+        match_stage[match.id] = "knockout" if is_knockout else "group"
         actual = _get_actual_result(match)
 
         # System
@@ -227,7 +234,7 @@ def _collect_per_match_briers(
             probs = {"home_win": pred.parsed_home_win, "draw": pred.parsed_draw, "away_win": pred.parsed_away_win}
             per_match_briers.setdefault(f"ai_{version}", {})[match.id] = _compute_brier(probs, actual)
 
-    return per_match_briers, match_weights
+    return per_match_briers, match_weights, match_stage
 
 
 # ── Performance Summary ────────────────────────────────────────────────
@@ -235,11 +242,33 @@ def _collect_per_match_briers(
 def _summarize_performance(
     per_match_briers: dict[str, dict[str, float]],
     time_weights: dict[str, float],
+    match_stage: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Compute weighted Brier statistics and Bayesian posterior for each source."""
+    """Compute weighted Brier statistics and Bayesian posterior for each source.
+
+    When `match_stage` is provided, also produces a per-stage breakdown so
+    callers can independently inspect group-stage vs knockout calibration.
+    Knockout samples are usually scarce (≤7 games per tournament) and were
+    previously mixed into the group-stage aggregate, masking any
+    stage-specific bias. The breakdown does not change the headline Brier
+    or the resulting weights — those remain pooled across all matches —
+    it only adds a `stage_breakdown` field for diagnostics.
+    """
     performance: dict[str, dict[str, Any]] = {}
 
     ordered_match_ids = list(time_weights.keys())
+
+    def _weighted_stats(match_ids: list[str], briers_by_match: dict[str, float]) -> dict[str, Any]:
+        briers = [briers_by_match[mid] for mid in match_ids]
+        n = len(briers)
+        if n == 0:
+            return {"sample_count": 0, "brier": None}
+        ws = [time_weights[mid] for mid in match_ids]
+        wsum = sum(ws)
+        if wsum == 0:
+            return {"sample_count": n, "brier": None}
+        weighted_mean = sum(b * w for b, w in zip(briers, ws)) / wsum
+        return {"sample_count": n, "brier": round(weighted_mean, 4)}
 
     for source, briers_by_match in per_match_briers.items():
         match_ids = [match_id for match_id in ordered_match_ids if match_id in briers_by_match]
@@ -262,6 +291,13 @@ def _summarize_performance(
             weighted_var = weighted_var * n / (n - 1) if n > 1 else 0
         else:
             weighted_var = 0
+
+        # Per-stage breakdown: group vs knockout Brier computed independently.
+        stage_breakdown: dict[str, Any] = {}
+        if match_stage:
+            for stage_key in ("group", "knockout"):
+                stage_match_ids = [mid for mid in match_ids if match_stage.get(mid) == stage_key]
+                stage_breakdown[stage_key] = _weighted_stats(stage_match_ids, briers_by_match)
 
         # Hit rate
         # We need to recompute hit rate separately (not from Brier)
@@ -300,6 +336,9 @@ def _summarize_performance(
             "posterior_mu": round(posterior_mu, 4),
             "posterior_se": round(posterior_se, 4),
             "ci_95": [round(ci_lower, 4), round(ci_upper, 4)],
+            # Independent Brier per stage so knockout calibration is visible
+            # even when pooled sample size is dominated by group stage.
+            "stage_breakdown": stage_breakdown,
         }
 
     return performance

@@ -127,6 +127,8 @@ def refresh_tournament(
                         stored.away_advance = incoming.away_score > incoming.home_score
                     stored.went_to_extra_time = incoming.went_to_extra_time
                     stored.went_to_penalties = incoming.went_to_penalties
+                    stored.home_penalty_score = incoming.home_penalty_score
+                    stored.away_penalty_score = incoming.away_penalty_score
                     if incoming.home_score == incoming.away_score and not (stored.home_advance or stored.away_advance):
                         warnings.append(f"knockout winner unresolved: {incoming.id}")
                 stored.source = payload.source.provider

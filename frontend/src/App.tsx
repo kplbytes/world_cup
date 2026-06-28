@@ -24,7 +24,25 @@ export default function App() {
   const [selectedGroup, setSelectedGroup] = useState("A");
   const [view, setView] = useState<ViewType>("daily");
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
-  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, staleTime: 30_000 });
+  const dashboard = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: getDashboard,
+    staleTime: 30_000,
+    // Auto-refresh: 30s when matches are live, 120s otherwise.
+    // This keeps scores / predictions fresh during the game without
+    // requiring manual browser refresh.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 120_000;
+      const hasLive = data.groups.some((g) =>
+        g.matches.some((m) => m.status === "live")
+      );
+      const hasLiveKnockout = (data.knockout_matches ?? []).some(
+        (m) => m.status === "live"
+      );
+      return hasLive || hasLiveKnockout ? 30_000 : 120_000;
+    },
+  });
 
   if (dashboard.isLoading) return <div className="state-screen"><span>正在加载赛事数据</span></div>;
   if (dashboard.isError || !dashboard.data) return <div className="state-screen error"><span>无法读取本地赛事数据</span><button onClick={() => dashboard.refetch()}>重试</button></div>;
@@ -64,7 +82,7 @@ export default function App() {
       <PageShell wide={view === "matches" || view === "tournament"}>
         <Suspense fallback={<div className="loading-placeholder">加载页面中...</div>}>
           {view === "daily" ? <DailyDashboard dashboardData={dashboard.data} />
-           : view === "matches" ? <MatchCenter groups={dashboard.data.groups} onTeamSelect={setSelectedTeam} />
+           : view === "matches" ? <MatchCenter groups={dashboard.data.groups} knockoutMatches={dashboard.data.knockout_matches ?? []} onTeamSelect={setSelectedTeam} />
            : view === "models" ? <ModelReviewCenter />
            : <TournamentCenter />
           }

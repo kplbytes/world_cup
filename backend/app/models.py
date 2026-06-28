@@ -62,6 +62,11 @@ class Match(Base):
     away_advance: Mapped[bool | None] = mapped_column(Boolean)
     went_to_extra_time: Mapped[bool | None] = mapped_column(Boolean)
     went_to_penalties: Mapped[bool | None] = mapped_column(Boolean)
+    # Penalty shootout score (only set when went_to_penalties is True).
+    # Stored separately from home_score/away_score which always reflect the
+    # 90-minute (or 120-minute) result, so the UI can render "2-2（点球 4-3）".
+    home_penalty_score: Mapped[int | None] = mapped_column(Integer)
+    away_penalty_score: Mapped[int | None] = mapped_column(Integer)
 
 
 class TeamRating(Base):

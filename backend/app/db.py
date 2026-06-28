@@ -117,6 +117,10 @@ def _upgrade_schema(engine: Engine) -> None:
                         conn.execute(text("ALTER TABLE matches ADD COLUMN went_to_extra_time BOOLEAN"))
                     if "went_to_penalties" not in cols:
                         conn.execute(text("ALTER TABLE matches ADD COLUMN went_to_penalties BOOLEAN"))
+                    if "home_penalty_score" not in cols:
+                        conn.execute(text("ALTER TABLE matches ADD COLUMN home_penalty_score INTEGER"))
+                    if "away_penalty_score" not in cols:
+                        conn.execute(text("ALTER TABLE matches ADD COLUMN away_penalty_score INTEGER"))
 
                     # Create index on stage
                     try:
@@ -324,6 +328,40 @@ def _upgrade_schema(engine: Engine) -> None:
                         ON prediction_snapshots(match_id, snapshotted_at DESC)
                     """))
                 conn.execute(text("PRAGMA user_version = 7"))
+
+            if version < 8:
+                logger.info("Upgrading database schema to version 8 (penalty shootout score columns)...")
+                # P1-8: home_penalty_score / away_penalty_score on matches.
+                # Placed after v7 so migration order is strictly increasing.
+                # v2 block already adds these columns for fresh DBs; this block
+                # ensures existing DBs that ran v2 before P1-8 also get the columns.
+                matches_info = conn.execute(text("PRAGMA table_info(matches)")).mappings().all()
+                if matches_info:
+                    cols = {row["name"] for row in matches_info}
+                    if "home_penalty_score" not in cols:
+                        conn.execute(text("ALTER TABLE matches ADD COLUMN home_penalty_score INTEGER"))
+                    if "away_penalty_score" not in cols:
+                        conn.execute(text("ALTER TABLE matches ADD COLUMN away_penalty_score INTEGER"))
+                conn.execute(text("PRAGMA user_version = 8"))
+
+            if version < 9:
+                logger.info("Upgrading database schema to version 9 (composite indexes for dashboard performance)...")
+                # Add composite indexes to speed up dashboard queries that filter
+                # by revision_id + model_version, match_id + created_at, etc.
+                # These are safe to CREATE IF NOT EXISTS.
+                for idx_sql in [
+                    "CREATE INDEX IF NOT EXISTS ix_match_predictions_revision_model ON match_predictions(revision_id, model_version)",
+                    "CREATE INDEX IF NOT EXISTS ix_match_predictions_match_id ON match_predictions(match_id)",
+                    "CREATE INDEX IF NOT EXISTS ix_market_snapshots_provider_match ON market_snapshots(provider, match_id)",
+                    "CREATE INDEX IF NOT EXISTS ix_ai_predictions_match_created ON ai_predictions(match_id, created_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS ix_ensemble_predictions_match_created ON ensemble_predictions(match_id, created_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS ix_auto_adjustments_match_id ON auto_adjustments(match_id)",
+                ]:
+                    try:
+                        conn.execute(text(idx_sql))
+                    except Exception as e:
+                        logger.warning(f"Index creation skipped: {e}")
+                conn.execute(text("PRAGMA user_version = 9"))
 
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")

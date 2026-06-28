@@ -454,6 +454,10 @@ def build_dashboard(session: Session) -> dict:
     }
     teams_by_group = defaultdict(list)
     matches_by_group = defaultdict(list)
+    # Knockout matches have group_code = None and stage != "group".
+    # Collect them separately so the dashboard exposes upcoming/finished
+    # knockout fixtures (otherwise the "future 24h matches" panel reports 0).
+    knockout_matches: list[dict] = []
     for team in teams:
         standing = standings.get(team.id)
         qualification = qualifications.get(team.id)
@@ -510,86 +514,115 @@ def build_dashboard(session: Session) -> dict:
 
         home_team = teams_by_id.get(match.home_team_id)
         away_team = teams_by_id.get(match.away_team_id)
-        if home_team is None or away_team is None:
-            continue
-        matches_by_group[match.group_code].append(
-            {
-                **_china_time_fields(match.kickoff),
-                "id": match.id,
-                "group_code": match.group_code,
-                "kickoff": match.kickoff.isoformat(),
-                "venue": match.venue,
-                "status": match.status,
-                "home_team": _team_ref(home_team, display_names),
-                "away_team": _team_ref(away_team, display_names),
-                "home_score": match.home_score,
-                "away_score": match.away_score,
-                "manual_adjustments": manual_adjustments.get(match.id, []),
-                "intelligence": [
-                    {
-                        "type": intel.intelligence_type,
-                        "provider": intel.provider,
-                        "confidence": intel.source_confidence,
-                        "fetched_at": intel.fetched_at.isoformat(),
-                        "payload": intel.normalized_payload,
-                    }
-                    for intel in intelligences_by_match[match.id]
-                ],
-                "auto_adjustments": [
-                    {
-                        "type": adj.adjustment_type,
-                        "affected_team_id": adj.affected_team_id,
-                        "confidence_penalty": adj.confidence,
-                        "reason": adj.reason,
-                        "source_intelligence_ids": adj.source_intelligence_ids,
-                    }
-                    for adj in adjustments_by_match_auto[match.id]
-                    if adj.adjustment_type != "numerical_roster_adjustment"
-                ],
-                "numerical_adjustments": [
-                    {
-                        "type": adj.adjustment_type,
-                        "affected_team_id": adj.affected_team_id,
-                        "attack_delta": adj.attack_delta,
-                        "defense_delta": adj.defense_delta,
-                        "reason": adj.reason,
-                    }
-                    for adj in adjustments_by_match_auto[match.id]
-                    if adj.adjustment_type == "numerical_roster_adjustment"
-                ],
-                "numerical_delta_summary": {
-                    "home_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
-                    "home_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
-                    "away_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
-                    "away_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
-                },
-                "numerical_enabled": getattr(revision, 'model_version', '') == 'elo-poisson-v1-intel-numeric',
-                "model_version": getattr(revision, 'model_version', ''),
-                "risk_flags": list(set(adj.adjustment_type for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type != "numerical_roster_adjustment")),
-                "snapshot_status": snapshot_status,
-                "prediction": _prediction_dict(prediction) if prediction else None,
-                "market": market_data,
-                "source": match.source,
-                "source_updated_at": (
-                    match.source_updated_at.isoformat() if match.source_updated_at else None
-                ),
-                # P0-4: Result sync metadata for finished matches
-                "result_source": match.source if match.status == "final" else None,
-                "result_synced_at": (
-                    match.source_updated_at.isoformat() if match.source_updated_at and match.status == "final" else None
-                ),
-                "revision_id": revision.id,
-                # AI prediction summary (for MatchCard / P0-3 fix)
-                "ai_prediction": _ai_prediction_summary(ai_preds_by_match[match.id]),
-                # Ensemble prediction summary (for MatchCard / P0-3 fix)
-                "ensemble_prediction": _ensemble_prediction_summary(ensemble_preds_by_match[match.id]),
-                # Per-match review data for finished matches (P0-2)
-                "match_review": _compute_match_review(
-                    match, snap, ai_preds_by_match[match.id],
-                    ensemble_preds_by_match[match.id], market_snap,
-                ),
-            }
-        )
+        is_knockout = bool(match.stage and match.stage != "group")
+        # For group stage we require both teams resolved. Knockout matches
+        # are included when resolved (have both teams) OR when finished (so
+        # historical knockout scores remain visible). Pure placeholders
+        # without teams and without a result are skipped.
+        if not is_knockout:
+            if home_team is None or away_team is None:
+                continue
+        else:
+            if home_team is None and away_team is None and match.status != "final":
+                continue
+        match_payload = {
+            **_china_time_fields(match.kickoff),
+            "id": match.id,
+            "group_code": match.group_code,
+            "stage": match.stage,
+            "round_name": match.round_name,
+            "kickoff": match.kickoff.isoformat() if match.kickoff else None,
+            "venue": match.venue,
+            "status": match.status,
+            "home_team": _team_ref(home_team, display_names) if home_team else None,
+            "away_team": _team_ref(away_team, display_names) if away_team else None,
+            "home_score": match.home_score,
+            "away_score": match.away_score,
+            "manual_adjustments": manual_adjustments.get(match.id, []),
+            "intelligence": [
+                {
+                    "type": intel.intelligence_type,
+                    "provider": intel.provider,
+                    "confidence": intel.source_confidence,
+                    "fetched_at": intel.fetched_at.isoformat(),
+                    "payload": intel.normalized_payload,
+                }
+                for intel in intelligences_by_match[match.id]
+            ],
+            "auto_adjustments": [
+                {
+                    "type": adj.adjustment_type,
+                    "affected_team_id": adj.affected_team_id,
+                    "confidence_penalty": adj.confidence,
+                    "reason": adj.reason,
+                    "source_intelligence_ids": adj.source_intelligence_ids,
+                }
+                for adj in adjustments_by_match_auto[match.id]
+                if adj.adjustment_type != "numerical_roster_adjustment"
+            ],
+            "numerical_adjustments": [
+                {
+                    "type": adj.adjustment_type,
+                    "affected_team_id": adj.affected_team_id,
+                    "attack_delta": adj.attack_delta,
+                    "defense_delta": adj.defense_delta,
+                    "reason": adj.reason,
+                }
+                for adj in adjustments_by_match_auto[match.id]
+                if adj.adjustment_type == "numerical_roster_adjustment"
+            ],
+            "numerical_delta_summary": {
+                "home_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
+                "home_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.home_team_id),
+                "away_attack_delta": sum(adj.attack_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
+                "away_defense_delta": sum(adj.defense_delta for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type == "numerical_roster_adjustment" and adj.affected_team_id == match.away_team_id),
+            },
+            "numerical_enabled": getattr(revision, 'model_version', '') == 'elo-poisson-v1-intel-numeric',
+            "model_version": getattr(revision, 'model_version', ''),
+            "risk_flags": list(set(adj.adjustment_type for adj in adjustments_by_match_auto[match.id] if adj.adjustment_type != "numerical_roster_adjustment")),
+            "snapshot_status": snapshot_status,
+            "prediction": _prediction_dict(prediction) if prediction else None,
+            "market": market_data,
+            "source": match.source,
+            "source_updated_at": (
+                match.source_updated_at.isoformat() if match.source_updated_at else None
+            ),
+            # P0-4: Result sync metadata for finished matches
+            "result_source": match.source if match.status == "final" else None,
+            "result_synced_at": (
+                match.source_updated_at.isoformat() if match.source_updated_at and match.status == "final" else None
+            ),
+            "revision_id": revision.id,
+            # AI prediction summary (for MatchCard / P0-3 fix)
+            "ai_prediction": _ai_prediction_summary(ai_preds_by_match[match.id]),
+            # Ensemble prediction summary (for MatchCard / P0-3 fix)
+            "ensemble_prediction": _ensemble_prediction_summary(ensemble_preds_by_match[match.id]),
+            # Per-match review data for finished matches (P0-2)
+            "match_review": _compute_match_review(
+                match, snap, ai_preds_by_match[match.id],
+                ensemble_preds_by_match[match.id], market_snap,
+            ),
+            # Knockout-specific fields (None for group stage).
+            # Allows the frontend to render extra-time / penalties / bracket
+            # progression markers on the same Match type.
+            "home_advance": getattr(match, "home_advance", None),
+            "away_advance": getattr(match, "away_advance", None),
+            "went_to_extra_time": getattr(match, "went_to_extra_time", None),
+            "went_to_penalties": getattr(match, "went_to_penalties", None),
+            "home_penalty_score": getattr(match, "home_penalty_score", None),
+            "away_penalty_score": getattr(match, "away_penalty_score", None),
+            "home_team_source": getattr(match, "home_team_source", None),
+            "away_team_source": getattr(match, "away_team_source", None),
+            "winner_to_match_id": getattr(match, "winner_to_match_id", None),
+            "loser_to_match_id": getattr(match, "loser_to_match_id", None),
+            "is_placeholder_match": getattr(match, "is_placeholder_match", None),
+        }
+        if is_knockout:
+            knockout_matches.append(match_payload)
+        else:
+            matches_by_group[match.group_code].append(match_payload)
+
+    knockout_matches.sort(key=lambda m: (m.get("kickoff") or "", m.get("id") or ""))
 
     result = {
         "revision": {
@@ -610,6 +643,11 @@ def build_dashboard(session: Session) -> dict:
             }
             for group in "ABCDEFGHIJKL"
         ],
+        # All knockout-stage matches (stage != "group"), sorted by kickoff.
+        # Exposed separately so the dashboard can surface upcoming/finished
+        # knockout fixtures alongside group-stage matches. Without this the
+        # "未来 24 小时比赛" panel reports 0 once the group stage ends.
+        "knockout_matches": knockout_matches,
         "data_sources": list_data_sources(session) + list_intelligence_providers(session),
     }
     with _dashboard_cache_lock:
@@ -781,33 +819,46 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
             "home": {"profile": profile_payload(home_profile), "summary": explain_team_profile(home_profile)} if home_profile else None,
             "away": {"profile": profile_payload(away_profile), "summary": explain_team_profile(away_profile)} if away_profile else None,
         },
+        # Matchup style analysis (P1-G4): uses existing TeamProfile tactical
+        # tags + rhythm metrics to predict how the two teams' styles interact.
+        # Pure rule-based, does NOT modify Poisson probabilities.
+        "matchup_analysis": _safe_matchup_analysis(home_profile, away_profile),
         "profile_prediction": None,
         # AI/Ensemble prediction summaries (P0-3 fix)
-        "ai_prediction": _ai_prediction_summary(list(session.scalars(
-            select(AIPrediction)
-            .where(AIPrediction.match_id == match_id)
-            .order_by(AIPrediction.created_at.desc())
-        ))),
-        "ensemble_prediction": _ensemble_prediction_summary(list(session.scalars(
-            select(EnsemblePrediction)
-            .where(EnsemblePrediction.match_id == match_id)
-            .order_by(EnsemblePrediction.created_at.desc())
-        ))),
-        # Per-match review data (P0-2)
-        "match_review": _compute_match_review(
-            match, snap,
-            list(session.scalars(
+        # Load AI and ensemble predictions once and reuse for both the summary
+        # and the match_review computation (was 4 queries, now 2).
+        "ai_prediction": _ai_prediction_summary(
+            ai_preds := list(session.scalars(
                 select(AIPrediction)
                 .where(AIPrediction.match_id == match_id)
                 .order_by(AIPrediction.created_at.desc())
-            )),
-            list(session.scalars(
+            ))
+        ),
+        "ensemble_prediction": _ensemble_prediction_summary(
+            ensemble_preds := list(session.scalars(
                 select(EnsemblePrediction)
                 .where(EnsemblePrediction.match_id == match_id)
                 .order_by(EnsemblePrediction.created_at.desc())
-            )),
-            market_snap,
+            ))
         ),
+        # Per-match review data (P0-2) — reuse the same lists loaded above
+        "match_review": _compute_match_review(
+            match, snap, ai_preds, ensemble_preds, market_snap,
+        ),
+        # Knockout-specific fields (P1-8: penalty shootout score)
+        "stage": getattr(match, "stage", None),
+        "round_name": getattr(match, "round_name", None),
+        "home_advance": getattr(match, "home_advance", None),
+        "away_advance": getattr(match, "away_advance", None),
+        "went_to_extra_time": getattr(match, "went_to_extra_time", None),
+        "went_to_penalties": getattr(match, "went_to_penalties", None),
+        "home_penalty_score": getattr(match, "home_penalty_score", None),
+        "away_penalty_score": getattr(match, "away_penalty_score", None),
+        "home_team_source": getattr(match, "home_team_source", None),
+        "away_team_source": getattr(match, "away_team_source", None),
+        "winner_to_match_id": getattr(match, "winner_to_match_id", None),
+        "loser_to_match_id": getattr(match, "loser_to_match_id", None),
+        "is_placeholder_match": getattr(match, "is_placeholder_match", None),
     }
 
 
@@ -1192,6 +1243,17 @@ def _prediction_dict(row: MatchPrediction) -> dict:
         d["base_draw"] = row.base_draw
         d["base_away_win"] = row.base_away_win
     return d
+
+
+def _safe_matchup_analysis(home_profile, away_profile) -> dict | None:
+    """Compute matchup style analysis, returning None on any error."""
+    if home_profile is None and away_profile is None:
+        return None
+    try:
+        from app.prediction.matchup_analyzer import analyze_matchup
+        return analyze_matchup(home_profile, away_profile)
+    except Exception:
+        return None
 
 
 def _ai_prediction_summary(ai_preds: list[AIPrediction]) -> dict | None:

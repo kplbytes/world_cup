@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -21,6 +22,8 @@ KNOCKOUT_SEED_PATH = ROOT / "data" / "seed" / "world-cup-2026-knockout.json"
 _TIME_PATTERN = re.compile(r"^(\d{2}):(\d{2}) UTC([+-]\d{1,2})$")
 _BRACKET_RESULT_REF = re.compile(r"^[WL]\d{2,3}$")
 _NON_GROUP_STAGES = tuple(stage for stage in STAGE_ORDER if stage != "group")
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -154,6 +157,25 @@ def propagate_knockout_advancement(session: Session) -> int:
     for match in knockout_matches:
         winner_id, loser_id = resolve_knockout_outcome(match)
         if winner_id is None and loser_id is None:
+            # Distinguish "not yet played" (expected) from "played but
+            # unresolved" (a data-quality bug — typically a level score
+            # where neither home_advance nor away_advance was synced).
+            # The latter used to silently block bracket progression; we
+            # now log a warning so operators can repair the source data.
+            if (
+                match.status == "final"
+                and match.home_team_id is not None
+                and match.away_team_id is not None
+                and match.home_score is not None
+                and match.away_score is not None
+            ):
+                _logger.warning(
+                    "knockout match %s finished but outcome unresolved: "
+                    "score=%s-%s, home_advance=%s, away_advance=%s — "
+                    "downstream bracket cannot progress until advance flag is set",
+                    match.id, match.home_score, match.away_score,
+                    match.home_advance, match.away_advance,
+                )
             continue
 
         if match.winner_to_match_id:
@@ -201,6 +223,8 @@ def get_knockout_bracket_payload(session: Session) -> dict[str, list[dict[str, A
             "away_advance": match.away_advance,
             "went_to_extra_time": match.went_to_extra_time,
             "went_to_penalties": match.went_to_penalties,
+            "home_penalty_score": match.home_penalty_score,
+            "away_penalty_score": match.away_penalty_score,
             "winner_to_match_id": match.winner_to_match_id,
             "loser_to_match_id": match.loser_to_match_id,
             "is_placeholder_match": match.is_placeholder_match,
@@ -220,10 +244,22 @@ def resolve_knockout_outcome(match: Match) -> tuple[str | None, str | None]:
         return match.home_team_id, match.away_team_id
     if match.away_score > match.home_score:
         return match.away_team_id, match.home_team_id
+    # Scores are level — knockout matches must still produce a winner via
+    # extra time / penalties, encoded in home_advance / away_advance.
     if match.home_advance is True and match.away_advance is not True:
         return match.home_team_id, match.away_team_id
     if match.away_advance is True and match.home_advance is not True:
         return match.away_team_id, match.home_team_id
+    if match.home_advance is True and match.away_advance is True:
+        # Conflicting flags — should never happen but log so the source
+        # data can be repaired. Default to home_advance to keep bracket
+        # progressing rather than silently stalling.
+        _logger.error(
+            "knockout match %s has both home_advance and away_advance set "
+            "with level score %s-%s; defaulting to home_advance",
+            match.id, match.home_score, match.away_score,
+        )
+        return match.home_team_id, match.away_team_id
     return None, None
 
 

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getWorkflowStatus,
@@ -12,7 +13,10 @@ import type { WorkflowStatus, WorkflowRunInfo, ButtonState } from "../types";
 interface UseWorkflowActionsOptions {
   /** Number of recent workflow runs to fetch (default 5) */
   runsLimit?: number;
-  /** Additional query keys to invalidate after mutations */
+  /** Additional query keys to invalidate after workflow completion (not on trigger).
+   * These are invalidated when the workflow transitions from running → success,
+   * not immediately on mutation success — this avoids refetching stale data
+   * while the background workflow is still executing. */
   extraInvalidateKeys?: string[][];
 }
 
@@ -32,6 +36,9 @@ export function workflowRunsRefetchInterval(query: { state: { data?: { runs?: Wo
 export function useWorkflowActions(options: UseWorkflowActionsOptions = {}) {
   const { runsLimit = 5, extraInvalidateKeys = [] } = options;
   const queryClient = useQueryClient();
+  // Track the previous workflow status so we can detect the running → success
+  // transition and invalidate dashboard / projections only at that point.
+  const prevStatusRef = useRef<string | undefined>(undefined);
 
   const statusQuery = useQuery({
     queryKey: ["workflow-status"],
@@ -47,32 +54,48 @@ export function useWorkflowActions(options: UseWorkflowActionsOptions = {}) {
     refetchInterval: workflowRunsRefetchInterval,
   });
 
-  const invalidateAll = () => {
+  // Watch for workflow completion: when the last_run status transitions from
+  // "running" to "success" or "failed", invalidate the extra keys (dashboard,
+  // projections, etc.) so the UI shows fresh data.
+  useEffect(() => {
+    const currentStatus = statusQuery.data?.last_run?.status;
+    const prevStatus = prevStatusRef.current;
+    prevStatusRef.current = currentStatus;
+
+    if (prevStatus === "running" && currentStatus && currentStatus !== "running") {
+      // Workflow just finished — invalidate all registered keys.
+      for (const key of extraInvalidateKeys) {
+        queryClient.invalidateQueries({ queryKey: key });
+      }
+    }
+  }, [statusQuery.data?.last_run?.status, extraInvalidateKeys, queryClient]);
+
+  // Only invalidate workflow queries immediately on mutation success.
+  // Dashboard/projections are invalidated by the useEffect above when the
+  // workflow actually completes.
+  const invalidateWorkflowOnly = () => {
     queryClient.invalidateQueries({ queryKey: ["workflow-status"] });
     queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
-    for (const key of extraInvalidateKeys) {
-      queryClient.invalidateQueries({ queryKey: key });
-    }
   };
 
   const dailyOpenMutation = useMutation({
     mutationFn: triggerDailyOpen,
-    onSuccess: invalidateAll,
+    onSuccess: invalidateWorkflowOnly,
   });
 
   const preMatchMutation = useMutation({
     mutationFn: triggerPreMatch,
-    onSuccess: invalidateAll,
+    onSuccess: invalidateWorkflowOnly,
   });
 
   const postMatchMutation = useMutation({
     mutationFn: triggerPostMatch,
-    onSuccess: invalidateAll,
+    onSuccess: invalidateWorkflowOnly,
   });
 
   const fullMutation = useMutation({
     mutationFn: triggerFullWorkflow,
-    onSuccess: invalidateAll,
+    onSuccess: invalidateWorkflowOnly,
   });
 
   const status = statusQuery.data as WorkflowStatus | undefined;

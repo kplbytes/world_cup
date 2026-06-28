@@ -458,6 +458,24 @@ h3 { font-weight: 600; }
 .risk-badge.medium { background: rgba(255, 149, 0, 0.12); color: var(--accent-orange); }
 .risk-badge.high { background: rgba(255, 59, 48, 0.12); color: var(--accent-red); }
 
+/* Matchup style analysis */
+.matchup-label-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: var(--text-sm);
+  font-weight: 700;
+  background: rgba(0, 122, 255, 0.12);
+  color: var(--accent-blue, #007aff);
+  margin-bottom: 8px;
+}
+.matchup-narrative {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
 /* ═══════════════════════════════════════════════════════
    Probability Bars
    ═══════════════════════════════════════════════════════ */
@@ -1801,6 +1819,37 @@ h3 { font-weight: 600; }
   font-size: 11px;
   font-weight: 700;
   color: var(--success-green);
+}
+.bracket-card__penalty {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-weight: 400;
+  margin-left: 2px;
+}
+.bracket-card__prob-bar {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.bracket-card__prob-track {
+  display: flex;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.06);
+}
+.bracket-card__prob-track > span {
+  display: block;
+  height: 100%;
+  transition: width 0.3s;
+}
+.bracket-card__prob-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
 }
 .bracket-card__vs { text-align: center; font-size: var(--text-xs); color: var(--text-secondary); padding: 2px 0; }
 .bracket-card__footer { font-size: var(--text-xs); color: var(--text-secondary); line-height: 1.5; }

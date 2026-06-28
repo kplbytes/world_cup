@@ -591,14 +591,28 @@ def _compute_ai_effect(
 
 
 def _get_actual_result(match: Match) -> str:
-    """Get the actual match result as 'home', 'draw', or 'away'."""
+    """Get the actual match result as 'home', 'draw', or 'away'.
+
+    For knockout matches that ended level after extra time and were decided
+    by penalties (or by the `home_advance`/`away_advance` flag), the actual
+    outcome is the advancing team — a "draw" never survives in knockout
+    play. Falling back to "draw" here would penalise models that correctly
+    picked the eventual winner.
+    """
     h = match.home_score or 0
     a = match.away_score or 0
     if h > a:
         return "home"
-    elif h == a:
-        return "draw"
-    return "away"
+    if h < a:
+        return "away"
+    # Level scores — only valid as a "draw" for group stage.
+    is_knockout = bool(getattr(match, "stage", None) and match.stage != "group")
+    if is_knockout:
+        if getattr(match, "home_advance", None) is True:
+            return "home"
+        if getattr(match, "away_advance", None) is True:
+            return "away"
+    return "draw"
 
 
 def _compute_brier(probs: dict[str, float], actual: str) -> float:

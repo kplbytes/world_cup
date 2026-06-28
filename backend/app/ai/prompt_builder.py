@@ -107,6 +107,7 @@ def build_prediction_prompt(request: AIPredictionRequest, prompt_version: str = 
         "profile_factors": ["profile-supported factors used in the decision"],
         "profile_risk_flags": ["profile-derived risk flags"],
     }
+    knockout_rules = _knockout_rules(request, output_format)
     sections.append(
         f"## Required Output Format\n"
         f"Return ONLY a JSON object with these fields:\n"
@@ -119,6 +120,7 @@ def build_prediction_prompt(request: AIPredictionRequest, prompt_version: str = 
         f"- Do NOT output betting advice\n"
         f"- Explicitly state uncertainties\n"
         f"- Team profiles are disabled for prediction in the current phase; do not infer profile-based probability adjustments\n"
+        f"{knockout_rules}"
         f"- prompt_version: {prompt_version}"
     )
 
@@ -270,6 +272,7 @@ def build_prediction_prompt_v2(request: AIPredictionRequest, prompt_version: str
         "profile_risk_flags": ["profile-derived risk flags"],
         "independence_note": "explain whether your prediction is independent of the strength assessment, or if you relied on it heavily",
     }
+    knockout_rules = _knockout_rules(request, output_format)
     sections.append(
         f"## Required Output Format\n"
         f"Return ONLY a JSON object with these fields:\n"
@@ -288,10 +291,32 @@ def build_prediction_prompt_v2(request: AIPredictionRequest, prompt_version: str
         f"- Explicitly state uncertainties\n"
         f"- Team profiles are disabled for prediction in the current phase; do not infer profile-based probability adjustments\n"
         f"- independence_note is REQUIRED: explain whether and how you diverged from the strength assessment\n"
+        f"{knockout_rules}"
         f"- prompt_version: {prompt_version}"
     )
 
     return "\n\n".join(sections)
+
+
+def _knockout_rules(request: AIPredictionRequest, output_format: dict[str, Any]) -> str:
+    """Build knockout-specific output rules to append to the prompt.
+
+    Returns an empty string for group-stage matches. For knockout matches
+    we extend the output schema with ``home_advance`` / ``away_advance``
+    (advance probabilities after extra time + penalties) and instruct the
+    model to keep ``draw`` realistic for the 90-minute window (knockout
+    90-min draw rate is ~25%, vs ~30%+ in group stage).
+    """
+    if not request.knockout_context:
+        return ""
+    output_format["home_advance"] = "float 0-1, probability home team advances (after extra time + penalties if needed). Only for knockout."
+    output_format["away_advance"] = "float 0-1, probability away team advances. home_advance + away_advance MUST equal 1.0."
+    return (
+        "- This is a KNOCKOUT match: a winner MUST emerge (extra time + penalties if level after 90 min)\n"
+        "- home_win/draw/away_win describe the 90-MINUTE result (draw is valid at 90 min; keep draw ≈ 0.20-0.28, NOT 0.30+)\n"
+        "- home_advance + away_advance MUST equal 1.0 — they describe who progresses, accounting for ET + penalties\n"
+        "- If you predict a 90-min draw, allocate advance probabilities by who is more likely to win ET/penalties\n"
+    )
 
 
 def build_prompt(request: AIPredictionRequest, prompt_version: str = "worldcup-ai-v1") -> str:

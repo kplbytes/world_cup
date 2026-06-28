@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getMatchDetail, getTournamentBracket } from "../api";
+import { getDashboard, getMatchDetail, getTournamentBracket } from "../api";
 import { getTeamDisplayNameFromAny } from "../utils/teamNames";
 import { formatChinaTimeShort } from "../utils/time";
 import MatchDetailDrawer from "./MatchDetailDrawer";
 import SectionCard from "./ui/SectionCard";
-import type { BracketMatchup, Match } from "../types";
+import type { BracketMatchup, EnsemblePredictionSummary, Match } from "../types";
 
 const STAGE_LABELS: Record<string, string> = {
   round_of_32: "32强", round_of_16: "16强", quarter_final: "四分之一决赛",
@@ -13,6 +13,11 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 const STAGE_ORDER = ["round_of_32", "round_of_16", "quarter_final", "semi_final", "third_place", "final"] as const;
+
+// Auto-refresh interval for the bracket view. Live knockout matches
+// update every 30s so users see goal / advancement updates without
+// manual refresh.
+const BRACKET_REFETCH_INTERVAL_MS = 30_000;
 
 function getTeamLabel(team: BracketMatchup["home_team"], source: string | null | undefined): string {
   if (team) return getTeamDisplayNameFromAny(team.team_id || team.team_name);
@@ -36,8 +41,54 @@ function getFooterNote(match: BracketMatchup): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
+function fmtPct(value: number | null | undefined): string {
+  if (value == null) return "-";
+  if (value < 0.001) return "<0.1%";
+  return (value * 100).toFixed(1) + "%";
+}
+
+// Compact probability bar for the bracket card. Shows the three-way
+// distribution (home / draw / away) plus the advance probabilities
+// for knockout matches (where a draw at 90' still produces a winner).
+function ProbabilityBar({ ens, isFinished }: { ens: EnsemblePredictionSummary | null; isFinished: boolean }) {
+  if (!ens || isFinished) return null;
+  const home = Math.max(0, Math.min(1, ens.home_win));
+  const draw = Math.max(0, Math.min(1, ens.draw));
+  const away = Math.max(0, Math.min(1, ens.away_win));
+  const total = home + draw + away;
+  if (total <= 0) return null;
+  const hPct = (home / total) * 100;
+  const dPct = (draw / total) * 100;
+  const aPct = (away / total) * 100;
+  return (
+    <div className="bracket-card__prob-bar">
+      <div className="bracket-card__prob-track" title={`主胜 ${fmtPct(home)} · 平 ${fmtPct(draw)} · 客胜 ${fmtPct(away)}`}>
+        <span style={{ width: `${hPct}%`, background: "var(--success-green)" }} />
+        <span style={{ width: `${dPct}%`, background: "var(--text-secondary)" }} />
+        <span style={{ width: `${aPct}%`, background: "var(--accent-yellow)" }} />
+      </div>
+      <div className="bracket-card__prob-labels">
+        <span style={{ color: "var(--success-green)" }}>{fmtPct(home)}</span>
+        <span style={{ color: "var(--text-secondary)" }}>{fmtPct(draw)}</span>
+        <span style={{ color: "var(--accent-yellow)" }}>{fmtPct(away)}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function BracketView() {
-  const bracket = useQuery({ queryKey: ["bracket"], queryFn: getTournamentBracket });
+  // Bracket structure + auto-refresh (live knockout matches stream
+  // goal / advance updates every 30s without manual refresh).
+  const bracket = useQuery({
+    queryKey: ["bracket"],
+    queryFn: getTournamentBracket,
+    refetchInterval: BRACKET_REFETCH_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+  });
+  // Dashboard lookup for ensemble predictions on bracket cards.
+  // Lightweight: dashboard already has a 30s client-side staleTime, so
+  // this does not add extra requests beyond what other views already do.
+  const dashboard = useQuery({ queryKey: ["dashboard"], queryFn: getDashboard, staleTime: 30_000 });
   const [activeStage, setActiveStage] = useState<string | null>(null);
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
   const [loadingMatchId, setLoadingMatchId] = useState<string | null>(null);
@@ -46,6 +97,15 @@ export default function BracketView() {
   if (bracket.isError || !bracket.data) return <div className="loading-placeholder">淘汰赛数据暂不可用</div>;
 
   const data = bracket.data;
+  // Map match_id -> ensemble prediction summary from dashboard knockout_matches.
+  // Falls back to an empty map when dashboard is still loading; bracket cards
+  // simply render without probability bars in that case.
+  const ensembleByMatchId = new Map<string, EnsemblePredictionSummary>();
+  for (const m of dashboard.data?.knockout_matches ?? []) {
+    if (m.ensemble_prediction) {
+      ensembleByMatchId.set(m.id, m.ensemble_prediction);
+    }
+  }
 
   const availableStages = STAGE_ORDER.filter(s => {
     const matchups = data[s as keyof typeof data];
@@ -107,6 +167,10 @@ export default function BracketView() {
                   const footerNote = getFooterNote(m);
                   const canOpen = Boolean(m.id);
                   const isLoading = loadingMatchId === m.id;
+                  const isFinished = badge.tone === "final";
+                  const ensemble = m.id ? ensembleByMatchId.get(m.id) ?? null : null;
+                  const hasPenalties = Boolean(m.went_to_penalties && m.home_penalty_score != null && m.away_penalty_score != null);
+                  const penaltyLabel = hasPenalties ? `点球 ${m.home_penalty_score}-${m.away_penalty_score}` : null;
                   return (
                     <button
                       key={m.id ?? m.match_position ?? i}
@@ -128,6 +192,9 @@ export default function BracketView() {
                         <span className="bracket-card__team-side">
                           {m.home_advance ? <span className="bracket-card__advance">晋级</span> : null}
                           {m.home_score != null ? <strong className="bracket-card__score">{m.home_score}</strong> : null}
+                          {hasPenalties && m.home_penalty_score != null ? (
+                            <span className="bracket-card__penalty">（{m.home_penalty_score}）</span>
+                          ) : null}
                         </span>
                       </div>
                       <div className="bracket-card__vs">vs</div>
@@ -136,10 +203,14 @@ export default function BracketView() {
                         <span className="bracket-card__team-side">
                           {m.away_advance ? <span className="bracket-card__advance">晋级</span> : null}
                           {m.away_score != null ? <strong className="bracket-card__score">{m.away_score}</strong> : null}
+                          {hasPenalties && m.away_penalty_score != null ? (
+                            <span className="bracket-card__penalty">（{m.away_penalty_score}）</span>
+                          ) : null}
                         </span>
                       </div>
+                      <ProbabilityBar ens={ensemble} isFinished={isFinished} />
                       <div className="bracket-card__footer">
-                        {footerNote ?? "点击查看比赛详情"}
+                        {penaltyLabel ?? footerNote ?? "点击查看比赛详情"}
                         {isLoading ? " · 加载中..." : ""}
                       </div>
                     </button>

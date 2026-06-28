@@ -36,6 +36,12 @@ class MatchContext:
     fifa_rank_delta: float = 0.0        # FIFA ranking difference (home - away), negative = home ranked higher
     is_group_stage: bool = True          # Group stage has higher draw rate
     elo_closeness: float = 0.0           # 1 - |home_strength - away_strength|, higher = closer match
+    # Knockout stage flag. When True the model knows the match MUST produce
+    # a winner (extra time + penalties if level after 90 min). The 90-minute
+    # probabilities are still emitted on home_win/draw/away_win (draw is a
+    # valid 90-minute outcome), but advance probabilities are also computed
+    # on MatchPredictionResult.home_advance / away_advance.
+    is_knockout: bool = False
     # --- Profile-enhanced fields ---
     profile_home_attack: float = 0.0     # match: profile-derived home attack adjustment
     profile_home_defense: float = 0.0    # match: profile-derived home defense adjustment
@@ -72,6 +78,10 @@ class MatchPredictionResult:
     model_confidence_label: str
     explanation: str
     model_version: str
+    # Advance probabilities (who progresses) — only set for knockout matches.
+    # For group-stage matches these stay None.
+    home_advance: float | None = None
+    away_advance: float | None = None
 
 
 def predict_match(
@@ -206,8 +216,11 @@ def predict_match(
         if context.is_group_stage:
             extra_draw += 0.015  # 1.5% extra for group stage
 
-        # Cap total extra draw boost at 8 percentage points
-        extra_draw = min(extra_draw, 0.08)
+        # Cap total extra draw boost. Group stage caps at 15pp (WC group stage
+        # draw rate ~37.5% vs model baseline ~20%); knockout caps at 5pp
+        # because knockout 90-min draw rate is materially lower (~25%).
+        draw_cap = 0.05 if context.is_knockout else 0.15
+        extra_draw = min(extra_draw, draw_cap)
 
         if extra_draw > 0:
             draw += extra_draw
@@ -282,7 +295,7 @@ def predict_match(
                 context.market_probs.get("away_win", 0),
             ])
             if model_dir != market_dir:
-                adaptive_weight = min(market_blend_weight * 1.5, 0.50)
+                adaptive_weight = min(market_blend_weight * 1.5, 0.40)
 
         blended = blend_with_market(
             {"home_win": home_win, "draw": draw, "away_win": away_win},
@@ -316,6 +329,35 @@ def predict_match(
     if config is not None:
         model_ver = getattr(config, 'name', MODEL_VERSION)
 
+    # Knockout advance probabilities: combine 90-minute result with a
+    # two-stage extra-time + penalties model.
+    #   - 90-min winner advances directly.
+    #   - 90-min draw → 30 min extra time. Empirically ~50% of drawn knockout
+    #     matches are decided in ET; the stronger side (by Elo strength_delta)
+    #     wins ET more often. Modelled as
+    #     P(home wins ET | draw) = 0.5 + 0.50 * tanh(strength_delta).
+    #   - If still level after ET → penalties, modelled as a coin flip with a
+    #     small Elo bias (penalty shootouts are ~50/50 long-run).
+    # The result sums to 1.0 and is only attached to knockout predictions.
+    home_advance: float | None = None
+    away_advance: float | None = None
+    if context.is_knockout:
+        # ET win probability: stronger team wins ET more often.
+        # Coefficient 0.50 (was 0.10) ensures strength_delta in [0,1]
+        # produces meaningful ET win swing (up to tanh(0.5)≈0.23 → 73%/27%).
+        et_home_win = 0.5 + 0.50 * float(np.tanh(strength_delta))
+        et_away_win = 1.0 - et_home_win
+        p_decided_in_et = 0.50  # 50% of drawn games end in ET
+        pen_home_win = 0.5 + 0.04 * float(np.tanh(strength_delta))  # small elo bias
+        pen_away_win = 1.0 - pen_home_win
+        # P(home advances | 90-min draw)
+        p_home_advance_given_draw = (
+            p_decided_in_et * et_home_win
+            + (1.0 - p_decided_in_et) * pen_home_win
+        )
+        home_advance = home_win + draw * p_home_advance_given_draw
+        away_advance = 1.0 - home_advance
+
     return MatchPredictionResult(
         home_xg=home_xg,
         away_xg=away_xg,
@@ -340,6 +382,8 @@ def predict_match(
             risk_flags=context.profile_risk_flags,
         ),
         model_version=model_ver,
+        home_advance=home_advance,
+        away_advance=away_advance,
     )
 
 

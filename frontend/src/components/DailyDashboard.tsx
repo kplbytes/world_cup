@@ -102,7 +102,7 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
     fullBtn,
   } = useWorkflowActions({
     runsLimit: 5,
-    extraInvalidateKeys: [["dashboard"]],
+    extraInvalidateKeys: [["dashboard"], ["projections"], ["bracket"]],
   });
   const activeRun = status?.last_run?.status === "running" ? status.last_run : null;
   const activePercent = activeRun?.progress?.percent ?? null;
@@ -146,6 +146,12 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
         }
       }
     }
+    // Include knockout matches — they are not part of any group.
+    for (const match of dashboardData.knockout_matches ?? []) {
+      if (isUpcomingMatch(match, now) && isWithinNextHoursChina(match.kickoff, 24, now)) {
+        allMatches.push(match);
+      }
+    }
     allMatches.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
     return allMatches;
   }, [dashboardData]);
@@ -159,6 +165,11 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
         if (isUpcomingMatch(match, now) && isWithinNextHoursChina(match.kickoff, 48, now)) {
           allMatches.push(match);
         }
+      }
+    }
+    for (const match of dashboardData.knockout_matches ?? []) {
+      if (isUpcomingMatch(match, now) && isWithinNextHoursChina(match.kickoff, 48, now)) {
+        allMatches.push(match);
       }
     }
     allMatches.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
@@ -175,6 +186,11 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
         }
       }
     }
+    for (const match of dashboardData.knockout_matches ?? []) {
+      if (isFinishedMatch(match)) {
+        allMatches.push(match);
+      }
+    }
     allMatches.sort((a, b) => new Date(b.kickoff).getTime() - new Date(a.kickoff).getTime());
     return allMatches;
   }, [dashboardData]);
@@ -188,6 +204,11 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
         if (isLiveMatch(match, now)) {
           allMatches.push(match);
         }
+      }
+    }
+    for (const match of dashboardData.knockout_matches ?? []) {
+      if (isLiveMatch(match, now)) {
+        allMatches.push(match);
       }
     }
     allMatches.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());

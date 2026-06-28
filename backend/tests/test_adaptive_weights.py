@@ -180,7 +180,7 @@ def test_collect_per_match_briers_uses_pre_match_ai_prediction(db_session):
     )
     db_session.flush()
 
-    per_match_briers, _ = _collect_per_match_briers(db_session)
+    per_match_briers, _, _ = _collect_per_match_briers(db_session)
 
     assert per_match_briers["ai_ai-deepseek-v4-flash-v1"]["m_locked_selection"] == pytest.approx(0.24)
 

@@ -153,8 +153,15 @@ def recompute_knockout_stage(
 
     ratings = _latest_ratings(session, teams)
     elo_map = {tid: r.elo for tid, r in ratings.items()}
-    minimum = min(elo_map.values())
-    maximum = max(elo_map.values())
+    # Use full tournament (all 48 teams) Elo min/max for normalization so
+    # strength_delta is consistent between group and knockout stages. If we
+    # only used knockout teams (typically 16), the narrower Elo range would
+    # inflate strength_delta and over-amplify xG differences.
+    all_teams = list(session.scalars(select(Team)))
+    all_ratings = _latest_ratings(session, all_teams)
+    all_elo = [r.elo for r in all_ratings.values()]
+    minimum = min(all_elo) if all_elo else min(elo_map.values())
+    maximum = max(all_elo) if all_elo else max(elo_map.values())
     spread = maximum - minimum or 1.0
     strengths = {team_id: (elo - minimum) / spread for team_id, elo in elo_map.items()}
 
@@ -207,12 +214,19 @@ def recompute_knockout_stage(
         for mid in market_by_match_ko:
             market_by_match_ko[mid].pop("_fetched_at", None)
 
-        # Research-enhanced config for knockout matches
+        # Research-enhanced config for knockout matches.
+        # Knockout matches have lower base goals (~2.4 vs ~2.9 in group stage),
+        # benefit from Poisson over-dispersion (more low-scoring games), and
+        # need favorite_dampening to avoid overconfidence in tight knockout games.
         _ko_config = type("Config", (), {
             "market_blend_weight": 0.20,
             "smart_market_blend": True,
             "dynamic_draw_boost": True,
             "profile_weight": 0.15,
+            "favorite_dampening": 0.05,
+            "poisson_dispersion": 1.10,
+            "base_goal_mean_home": 1.40,
+            "base_goal_mean_away": 1.20,
         })()
 
         from app.team_profiles.service import get_team_profile
@@ -232,7 +246,22 @@ def recompute_knockout_stage(
             elo_closeness = 1.0 - abs(home_str - away_str)
             is_group = False  # knockout stage
             match_market = market_by_match_ko.get(match.id)
-            match_config = _ko_config
+            # Third-place play-offs are notoriously lower-intensity: teams
+            # are typically mentally fatigued after a semi-final loss and
+            # rotation/rest is common. Apply a fatigue/xg-attenuation tweak
+            # by overriding a couple of config knobs for the third-place
+            # match specifically (rather than a new config class).
+            is_third_place = match.stage == "third_place"
+            if is_third_place:
+                match_config = type("Config", (), {
+                    "market_blend_weight": 0.15,        # less market trust (rotations)
+                    "smart_market_blend": True,
+                    "dynamic_draw_boost": True,
+                    "profile_weight": 0.10,            # less profile weight
+                    "favorite_dampening": 0.05,        # small dampening (upsets common)
+                })()
+            else:
+                match_config = _ko_config
 
             # FIFA rank delta
             fifa_rank_delta = 0.0
@@ -274,6 +303,7 @@ def recompute_knockout_stage(
                 profile_draw_adjustment=prof.get("profile_draw_adjustment", 0.0),
                 profile_available=prof.get("profile_available", False),
                 profile_risk_flags=prof.get("profile_risk_flags"),
+                is_knockout=True,
             )
             prediction = predict_match(
                 strengths[match.home_team_id],
@@ -318,6 +348,12 @@ def recompute_knockout_stage(
                         "fifa_rank_delta": fifa_rank_delta,
                         "elo_closeness": elo_closeness,
                         "is_group_stage": is_group,
+                        "is_knockout": True,
+                        # Two-stage advance probabilities (extra-time + penalties).
+                        # Stored inside model_inputs so the schema stays unchanged
+                        # but downstream scoring / dashboards can still read them.
+                        "home_advance": prediction.home_advance,
+                        "away_advance": prediction.away_advance,
                         "fifa_rank_adjustment": -fifa_rank_delta / 40.0 * 0.2 * 0.15 if fifa_rank_delta else 0.0,
                         "profile_adjustments": {
                             "home_attack": prof.get("profile_home_attack", 0.0),
@@ -506,10 +542,18 @@ def recompute_all(
         logger.info("recompute_all completed in %.2fs, revision_id=%s", time.monotonic() - start, revision.id)
 
         # Invalidate dashboard cache so next request sees fresh data
-        from app.services.dashboard import _dashboard_cache, _dashboard_cache_ts
         import app.services.dashboard as _dash_mod
         _dash_mod._dashboard_cache = None
         _dash_mod._dashboard_cache_ts = 0.0
+
+        # Also invalidate the tournament projections cache (300s TTL) so
+        # users see updated champion probabilities immediately after recompute.
+        try:
+            import app.api.routes.tournament_routes as _tour_mod
+            _tour_mod._projections_cache = None
+            _tour_mod._projections_cache_ts = 0.0
+        except Exception:
+            pass
 
         # Clean up old revisions to prevent unbounded database growth.
         # Keep at most 5 revisions total (including the one just created).
@@ -615,6 +659,7 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
         "strength_coeff_away": 1.00,
         "poisson_dispersion": 1.10,
         "max_xg": 4.50,
+        "favorite_dampening": 0.05,
     })()
 
     # Load team profiles for profile-enhanced predictions

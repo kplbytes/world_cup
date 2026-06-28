@@ -12,6 +12,7 @@ import EmptyState from "./ui/EmptyState";
 
 interface MatchCenterProps {
   groups: Group[];
+  knockoutMatches?: Match[];
   onTeamSelect: (teamId: string) => void;
 }
 
@@ -168,7 +169,7 @@ function AllMatchesTab({
   );
 }
 
-export default function MatchCenter({ groups, onTeamSelect }: MatchCenterProps) {
+export default function MatchCenter({ groups, knockoutMatches = [], onTeamSelect }: MatchCenterProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("future24");
   const [selectedGroup, setSelectedGroup] = useState("A");
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
@@ -177,11 +178,15 @@ export default function MatchCenter({ groups, onTeamSelect }: MatchCenterProps) 
 
   const future24hMatches = useMemo(() => {
     const now = new Date();
-    return groups
+    const groupMatches = groups
       .flatMap((g) => g.matches)
-      .filter((m) => isUpcomingMatch(m, now) && isWithinNextHoursChina(m.kickoff, 24, now))
+      .filter((m) => isUpcomingMatch(m, now) && isWithinNextHoursChina(m.kickoff, 24, now));
+    const knockoutUpcoming = knockoutMatches.filter(
+      (m) => isUpcomingMatch(m, now) && isWithinNextHoursChina(m.kickoff, 24, now)
+    );
+    return [...groupMatches, ...knockoutUpcoming]
       .sort((a: Match, b: Match) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
-  }, [groups]);
+  }, [groups, knockoutMatches]);
 
   return (
     <div>

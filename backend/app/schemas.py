@@ -37,6 +37,8 @@ class TournamentMatch(BaseModel):
     away_advance: bool | None = None
     went_to_extra_time: bool | None = None
     went_to_penalties: bool | None = None
+    home_penalty_score: int | None = Field(default=None, ge=0)
+    away_penalty_score: int | None = Field(default=None, ge=0)
     source_match_id: str | None = None
 
     @model_validator(mode="after")

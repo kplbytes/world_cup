@@ -296,13 +296,20 @@ def workflow_runs(limit: int = 20):
             .order_by(WorkflowRun.started_at.desc())
             .limit(limit)
         ))
+        # Batch-load all steps for these runs in a single query to avoid N+1.
+        run_ids = [r.id for r in runs]
+        all_steps = list(session.scalars(
+            select(WorkflowStep)
+            .where(WorkflowStep.workflow_run_id.in_(run_ids))
+            .order_by(WorkflowStep.workflow_run_id, WorkflowStep.id)
+        )) if run_ids else []
+        steps_by_run: dict[int, list] = {}
+        for s in all_steps:
+            steps_by_run.setdefault(s.workflow_run_id, []).append(s)
+
         result = []
         for r in runs:
-            steps = list(session.scalars(
-                select(WorkflowStep)
-                .where(WorkflowStep.workflow_run_id == r.id)
-                .order_by(WorkflowStep.id)
-            ))
+            steps = steps_by_run.get(r.id, [])
             result.append({
                 "id": r.id,
                 "workflow_type": r.workflow_type,

@@ -124,6 +124,8 @@ class OpenFootballProvider:
             away_advance=away_advance,
             went_to_extra_time=bool(extra_time_score) if final_score else None,
             went_to_penalties=bool(penalties_score) if final_score else None,
+            home_penalty_score=penalties_score[0] if penalties_score else None,
+            away_penalty_score=penalties_score[1] if penalties_score else None,
             source_match_id=match_id,
         )
 

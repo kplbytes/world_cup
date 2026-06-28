@@ -121,9 +121,27 @@ export type Match = {
   revision_id?: number;
   team_profiles?: MatchTeamProfiles;
   profile_prediction?: ProfilePrediction | null;
+  matchup_analysis?: MatchupAnalysis | null;
   match_review?: MatchReview | null;
   ai_prediction?: AIPredictionSummary | null;
   ensemble_prediction?: EnsemblePredictionSummary | null;
+  // Knockout-specific fields (absent / null for group-stage matches).
+  stage?: string | null;
+  round_name?: string | null;
+  home_advance?: boolean | null;
+  away_advance?: boolean | null;
+  went_to_extra_time?: boolean | null;
+  went_to_penalties?: boolean | null;
+  // Penalty shootout score (only set when went_to_penalties is true).
+  // home_score/away_score always reflect the 90- or 120-minute result;
+  // UI renders "2-2（点球 4-3）" using these two fields.
+  home_penalty_score?: number | null;
+  away_penalty_score?: number | null;
+  home_team_source?: string | null;
+  away_team_source?: string | null;
+  winner_to_match_id?: string | null;
+  loser_to_match_id?: string | null;
+  is_placeholder_match?: boolean | null;
 };
 
 export type TeamProfile = {
@@ -152,6 +170,21 @@ export type TeamProfile = {
 
 export type TeamProfileEnvelope = { profile: TeamProfile; summary: string };
 export type MatchTeamProfiles = { home: TeamProfileEnvelope | null; away: TeamProfileEnvelope | null };
+
+export type MatchupAnalysis = {
+  matchup_label: string;
+  archetype: string;
+  pace_label: string;
+  expected_total_goals: "low" | "moderate" | "high";
+  btts_probability: number;
+  draw_tendency: number;
+  over_2_5_tendency: number;
+  under_2_5_tendency: number;
+  key_factors: string[];
+  narrative: string;
+  home_tags: string[];
+  away_tags: string[];
+};
 export type ProfilePrediction = {
   model_version: string; profile_version: string; profile_as_of: string;
   home_win: number; draw: number; away_win: number; home_xg: number; away_xg: number;
@@ -178,6 +211,11 @@ export type DataSource = {
 export type Dashboard = {
   revision: { id: number; created_at: string; model_version: string; simulation_iterations: number; simulation_seed: number };
   groups: Group[];
+  // All knockout-stage matches (resolved or finished), sorted by kickoff.
+  // Backfill for the historical bug where the dashboard only exposed
+  // group-stage matches, causing the "未来 24 小时比赛" panel to report 0
+  // once the group stage ended.
+  knockout_matches?: Match[];
   data_sources: DataSource[];
 };
 
@@ -369,6 +407,8 @@ export type BracketMatchup = {
   away_advance?: boolean | null;
   went_to_extra_time?: boolean | null;
   went_to_penalties?: boolean | null;
+  home_penalty_score?: number | null;
+  away_penalty_score?: number | null;
   winner_to_match_id?: string | null;
   loser_to_match_id?: string | null;
   is_placeholder_match?: boolean | null;

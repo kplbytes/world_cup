@@ -161,6 +161,18 @@ def decision_snapshot_status():
             .order_by(Match.kickoff)
         ))
 
+        # Batch-load all snapshots for the matching matches in a single query
+        # to avoid N+1 (was: 1 query per match inside the loop below).
+        match_ids = [m.id for m in matches]
+        all_snapshots = list(session.scalars(
+            select(PredictionSnapshot)
+            .where(PredictionSnapshot.match_id.in_(match_ids))
+            .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
+        )) if match_ids else []
+        snapshots_by_match: dict[str, list[PredictionSnapshot]] = {}
+        for snap in all_snapshots:
+            snapshots_by_match.setdefault(snap.match_id, []).append(snap)
+
         result = []
         matches_total = len(matches)
         snapshots_ready = 0
@@ -168,12 +180,7 @@ def decision_snapshot_status():
         last_snapshot_at = None
 
         for match in matches:
-            snapshots = list(session.scalars(
-                select(PredictionSnapshot)
-                .where(PredictionSnapshot.match_id == match.id)
-                .order_by(PredictionSnapshot.snapshotted_at.desc())
-            ))
-
+            snapshots = snapshots_by_match.get(match.id, [])
             status = compute_decision_snapshot_status(match, snapshots, now)
 
             if status.has_decision_snapshot:

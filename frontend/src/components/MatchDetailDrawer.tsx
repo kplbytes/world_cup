@@ -429,6 +429,39 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
           {!match.snapshot_status?.locked && <div className="detail-muted">当前无赛前决策快照，只作实时参考。</div>}
         </section>
 
+        {detailMatch?.matchup_analysis && (
+          <section className="detail-section">
+            {sectionTitle("对阵风格预测")}
+            <div className="matchup-label-badge">{detailMatch.matchup_analysis.matchup_label}</div>
+            <div className="matchup-narrative">{detailMatch.matchup_analysis.narrative}</div>
+            <div className="metric-grid">
+              <div className="metric-item">
+                <span className="metric-label">节奏</span>
+                <span className="metric-value">{detailMatch.matchup_analysis.pace_label}</span>
+              </div>
+              <div className="metric-item">
+                <span className="metric-label">进球预期</span>
+                <span className="metric-value">
+                  {detailMatch.matchup_analysis.expected_total_goals === "high" ? "高" : detailMatch.matchup_analysis.expected_total_goals === "low" ? "低" : "中"}
+                </span>
+              </div>
+              <div className="metric-item">
+                <span className="metric-label">BTTS</span>
+                <span className="metric-value">{(detailMatch.matchup_analysis.btts_probability * 100).toFixed(0)}%</span>
+              </div>
+              <div className="metric-item">
+                <span className="metric-label">平局倾向</span>
+                <span className="metric-value">{(detailMatch.matchup_analysis.draw_tendency * 100).toFixed(0)}%</span>
+              </div>
+            </div>
+            {detailMatch.matchup_analysis.key_factors.length > 0 && (
+              <ul className="detail-list">
+                {detailMatch.matchup_analysis.key_factors.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            )}
+          </section>
+        )}
+
         <section className="detail-section profile-section">
           {sectionTitle("球队画像")}
           <div className="detail-muted">
