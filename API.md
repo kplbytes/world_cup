@@ -234,6 +234,11 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 | `only_missing` | boolean | 否 | 仅预测缺失的比赛（默认 true） |
 | `retry_failed` | boolean | 否 | 重试失败的预测（默认 false） |
 
+补充说明：
+
+- 只会处理未开赛且已具备真实 `home_team_id` / `away_team_id` 的比赛
+- 官方淘汰赛占位赛不会进入这批 AI 调用
+
 ### GET /api/ai-predictions
 
 获取指定比赛的所有 AI 预测结果。
@@ -324,6 +329,23 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 ### GET /api/match-count-breakdown
 
 比赛数量分类统计（总完成/有预测/有快照/有锁定/实际评分）。
+
+### GET /api/knockout-audit
+
+淘汰赛专项审计，直接返回：
+
+- 已完赛淘汰赛当前是否已有可评分样本
+- 按阶段拆分的 readiness（真实对阵、待定席位、48 小时内缺 AI、基线 / AI / Ensemble 覆盖）
+- 已完赛淘汰赛一旦出现样本时的阶段级版本表现
+
+关键字段：
+
+- `summary.can_validate_effectiveness=false`：当前还不能下淘汰赛效果结论
+- `summary.ai_needed_now`：未来 48 小时内真实淘汰赛仍缺 AI 的场次
+- `summary.auto_ai_workflow_enabled`：当前是否已启用后端自动 AI workflow
+- `upcoming_by_stage[].placeholder_upcoming_matches`：官方占位赛已创建，但对阵尚未决出
+- `finished_by_stage[].versions`：该阶段已完赛淘汰赛按 `model_version` 聚合的 Brier / LogLoss / hit_rate
+- `ai_ready` / `ai_needed_now` 只统计用户侧可见 AI 版本；已停用或欠费后隐藏的模型不会混入该口径
 
 ### GET /api/error-attribution-summary
 
@@ -431,6 +453,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 - 首页按钮是否可点、是否处于 60 分钟冷却期，以 `/api/workflows/status.button_states.ai_prediction` 为准
 - 工作流启动后，前端会轮询 `/api/workflows/status` 和 `/api/workflows/runs` 展示百分比进度
+- 当前 `hours=48` 时，AI 批量补跑只会覆盖未来 48 小时内、已具备真实主客队的比赛
 
 ### POST /api/workflows/post-match
 

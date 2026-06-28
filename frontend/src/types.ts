@@ -453,6 +453,79 @@ export interface ErrorAttributionSummary {
   ensemble_hurt: number;
 }
 
+export interface KnockoutAuditStageVersionScore {
+  model_version: string;
+  sample_count: number;
+  brier: number;
+  logloss: number;
+  hit_rate: number;
+}
+
+export interface KnockoutAuditFinishedStage {
+  stage: string;
+  stage_label: string;
+  total_matches: number;
+  finished_matches: number;
+  scored_matches: number;
+  excluded_matches: number;
+  versions: KnockoutAuditStageVersionScore[];
+}
+
+export interface KnockoutAuditUpcomingStage {
+  stage: string;
+  stage_label: string;
+  total_matches: number;
+  finished_matches: number;
+  real_upcoming_matches: number;
+  placeholder_upcoming_matches: number;
+  within_48h_matches: number;
+  baseline_ready: number;
+  ai_ready: number;
+  ensemble_ready: number;
+  ai_needed_now: number;
+}
+
+export interface KnockoutAuditExclusion {
+  match_id: string;
+  home_team: string;
+  away_team: string;
+  stage: string | null;
+  round_name: string | null;
+  reason: string;
+  reason_codes: string[];
+}
+
+export interface KnockoutAuditExclusionStageSummary {
+  stage: string;
+  stage_label: string;
+  excluded_matches: number;
+  reason_counts: Record<string, number>;
+}
+
+export interface KnockoutAudit {
+  summary: {
+    total_matches: number;
+    finished_matches: number;
+    scored_matches: number;
+    real_upcoming_matches: number;
+    placeholder_upcoming_matches: number;
+    within_48h_matches: number;
+    baseline_ready: number;
+    ai_ready: number;
+    ensemble_ready: number;
+    ai_needed_now: number;
+    can_validate_effectiveness: boolean;
+    auto_ai_workflow_enabled: boolean;
+    scheduled_refresh_enabled: boolean;
+    message: string;
+    critical_gaps: string[];
+  };
+  finished_by_stage: KnockoutAuditFinishedStage[];
+  upcoming_by_stage: KnockoutAuditUpcomingStage[];
+  exclusions: KnockoutAuditExclusion[];
+  exclusion_summary_by_stage: KnockoutAuditExclusionStageSummary[];
+}
+
 // Shadow model comparison row
 export interface ShadowModelRow {
   model_version: string;

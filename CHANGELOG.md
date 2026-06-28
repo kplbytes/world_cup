@@ -20,11 +20,13 @@
 - **工作流运行摘要增强**：`/api/workflows/runs` 现在返回 run / step 级 summary、started_at、finished_at，首页顶部状态和最近运行记录会展示步骤级摘要
 - **淘汰赛占位赛跳过修复**：`ensemble_generation` 遇到官方占位赛且对阵未决时记为 `skipped / teams_tbd`，不再把正常待定状态误报成失败
 - **部分成功终态补全**：`partial_success` 步骤现在会写入 `finished_at` 和 `duration_seconds`，避免历史记录长期显示为未结束
+- **淘汰赛专项审计**：新增 `/api/knockout-audit` 和模型复盘页对应展示，直接暴露 knockout 样本是否可评分、48 小时内缺 AI 场次、阶段级 readiness 和未评分原因
+- **AI 批量补跑收口**：批量 AI 预测和 `pre-match` workflow 只会挑选窗口内、已具备真实主客队的比赛；官方占位赛不再占用 AI 配额
 
 ### 文档
 
 - **README / QUICK_START / API / ARCHITECTURE / DEPLOY** 已同步到当前淘汰赛实现
-- **AI_PROJECT_CONSTRAINTS / FRONTEND_UI_RULES / docs/team_profiles.md** 已补充官方淘汰赛、手动工作流、保留型 auto 开关边界，以及当前画像进入 baseline 但不直接进入 AI prompt 的约束
+- **AI_PROJECT_CONSTRAINTS / FRONTEND_UI_RULES / docs/team_profiles.md** 已补充官方淘汰赛、手动工作流、保留型 auto 开关边界、淘汰赛专项审计以及当前画像进入 baseline 但不直接进入 AI prompt 的约束
 
 ## [2026-06-26] - 工作流与文档对齐
 

@@ -211,6 +211,11 @@ curl -X POST "http://127.0.0.1:8000/api/ai-predictions/run?match_id=MATCH_ID"
 curl -X POST "http://127.0.0.1:8000/api/ai-predictions/run-all?limit=10&only_missing=true"
 ```
 
+说明：
+
+- 该接口只会挑选未开赛且已具备真实主客队的比赛
+- 官方淘汰赛占位赛不会进入这批 AI 调用
+
 ### 4. 生成集成预测
 
 ```bash
@@ -246,8 +251,9 @@ curl -X POST "http://127.0.0.1:8000/api/workflows/post-match" \
 - `一键更新全部`：手动触发，包含 AI 步骤，会消耗外部 API
 - 工作流运行期间，首页按钮和状态条会展示百分比进度
 - 最近运行记录会展示步骤级摘要；淘汰赛席位未决时，Ensemble 显示“跳过 / 待定对阵”属于正常行为
+- 模型复盘中的淘汰赛专项审计会单独提示“暂无已完赛淘汰赛样本”与“未来 48 小时真实淘汰赛缺 AI”两类状态
 - `冠军与赛程` 页中的淘汰赛对阵卡可直接打开共享比赛详情
-- `AI_RUN_MODE=auto` 会让后端定时尝试补跑 AI workflow；`AUTO_RUN_*` 仍不是默认前端入口链路，页面刷新不会自动触发 workflow
+- `AI_RUN_MODE=auto` 会让后端定时尝试补跑 AI workflow；当前补跑只针对窗口内的真实比赛，不会对占位赛发起 AI 调用；`AUTO_RUN_*` 仍不是默认前端入口链路，页面刷新不会自动触发 workflow
 
 ## 常见问题
 

@@ -82,6 +82,7 @@
 - [ ] **API Key**：配置至少一个 AI 提供商的 API Key
 - [ ] **定时刷新策略**：明确是否需要把 `ENABLE_SCHEDULED_REFRESH` 打开；默认保持手动刷新
 - [ ] **自动触发开关**：默认保持 `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN=false`、`AUTO_RUN_AI_ON_OPEN=false`；如需后端自动补跑 AI，再单独设置 `AI_RUN_MODE=auto`
+- [ ] **AI 补跑口径**：确认接受“只对真实主客队比赛补跑 AI、官方淘汰赛占位赛不调用 AI”这一默认行为
 - [ ] **ADMIN_API_KEY**：设置强密码，启用写接口认证
 - [ ] **CORS_ALLOWED_ORIGINS**：设置为实际前端域名，不使用 `*`
 - [ ] **APP_MODE**：设置为 `production`

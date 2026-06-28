@@ -263,7 +263,42 @@ function workflowStatus(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflowStatus(), workflowRunsPayload: unknown[] = []) {
+const defaultKnockoutAudit = {
+  summary: {
+    total_matches: 32,
+    finished_matches: 0,
+    scored_matches: 0,
+    real_upcoming_matches: 0,
+    placeholder_upcoming_matches: 32,
+    within_48h_matches: 0,
+    baseline_ready: 0,
+    ai_ready: 0,
+    ensemble_ready: 0,
+    ai_needed_now: 0,
+    can_validate_effectiveness: false,
+    auto_ai_workflow_enabled: false,
+    scheduled_refresh_enabled: false,
+    message: "当前还没有已完赛淘汰赛样本，暂时只能验证链路 readiness，无法判断淘汰赛命中率。",
+    critical_gaps: ["no_finished_knockout_samples"],
+  },
+  finished_by_stage: [
+    { stage: "round_of_32", stage_label: "32强", total_matches: 16, finished_matches: 0, scored_matches: 0, excluded_matches: 0, versions: [] },
+    { stage: "round_of_16", stage_label: "16强", total_matches: 8, finished_matches: 0, scored_matches: 0, excluded_matches: 0, versions: [] },
+  ],
+  upcoming_by_stage: [
+    { stage: "round_of_32", stage_label: "32强", total_matches: 16, finished_matches: 0, real_upcoming_matches: 0, placeholder_upcoming_matches: 16, within_48h_matches: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, ai_needed_now: 0 },
+    { stage: "round_of_16", stage_label: "16强", total_matches: 8, finished_matches: 0, real_upcoming_matches: 0, placeholder_upcoming_matches: 8, within_48h_matches: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, ai_needed_now: 0 },
+  ],
+  exclusions: [],
+  exclusion_summary_by_stage: [],
+};
+
+function renderApp(
+  dashboardPayload = dashboard,
+  workflowStatusPayload = workflowStatus(),
+  workflowRunsPayload: unknown[] = [],
+  knockoutAuditPayload: unknown = defaultKnockoutAudit,
+) {
   vi.stubGlobal("fetch", vi.fn().mockImplementation(async (input: string | URL | Request) => {
     const url = String(input);
     const path = new URL(url, "http://localhost").pathname;
@@ -279,6 +314,7 @@ function renderApp(dashboardPayload = dashboard, workflowStatusPayload = workflo
     }) };
     if (path === "/api/workflows/status") return { ok: true, json: async () => workflowStatusPayload };
     if (path === "/api/workflows/runs") return { ok: true, json: async () => ({ runs: workflowRunsPayload }) };
+    if (path === "/api/knockout-audit") return { ok: true, json: async () => knockoutAuditPayload };
     if (path === "/api/adaptive-weights") return { ok: true, json: async () => ({
       weights: { system: 0.35, market: 0.30, "ai_ai-test-v1": 0.35 },
       performance: { system: { sample_count: 3, effective_n: 2.5, brier: 0.4, brier_var: 0.02, hit_rate: 0.8, posterior_mu: 0.42, posterior_se: 0.08, ci_95: [0.26, 0.58] }, market: { sample_count: 3, effective_n: 2.5, brier: 0.45, brier_var: 0.03, hit_rate: 0.7, posterior_mu: 0.44, posterior_se: 0.09, ci_95: [0.26, 0.62] } },
@@ -360,6 +396,33 @@ it("does not auto-trigger daily update when the page loads", async () => {
 
   const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls;
   expect(calls.some(([url, init]) => String(url).includes("/api/workflows/daily-open") && init?.method === "POST")).toBe(false);
+});
+
+it("surfaces knockout AI automation gap on the daily dashboard", async () => {
+  const knockoutAudit = {
+    ...defaultKnockoutAudit,
+    summary: {
+      ...defaultKnockoutAudit.summary,
+      real_upcoming_matches: 16,
+      within_48h_matches: 4,
+      baseline_ready: 16,
+      ai_ready: 1,
+      ensemble_ready: 16,
+      ai_needed_now: 3,
+      auto_ai_workflow_enabled: false,
+      message: "当前还没有已完赛淘汰赛样本，暂时无法验证淘汰赛命中率；未来 48 小时有 4 场真实淘汰赛，仅 1 场已有 AI，且自动 AI workflow 当前关闭。",
+      critical_gaps: ["no_finished_knockout_samples", "ai_coverage_gap_within_48h"],
+    },
+    upcoming_by_stage: [
+      { stage: "round_of_32", stage_label: "32强", total_matches: 16, finished_matches: 0, real_upcoming_matches: 16, placeholder_upcoming_matches: 0, within_48h_matches: 4, baseline_ready: 16, ai_ready: 1, ensemble_ready: 16, ai_needed_now: 3 },
+    ],
+  };
+
+  renderApp(dashboard, workflowStatus(), [], knockoutAudit);
+
+  expect(await screen.findByText(/淘汰赛未来 48 小时还有 3 场真实对阵缺 AI，且自动 AI workflow 当前关闭/)).toBeVisible();
+  expect(screen.getByText("淘汰赛 AI")).toBeVisible();
+  expect(screen.getByText("48h 缺 AI 3 场，自动补跑关闭")).toBeVisible();
 });
 
 it("shows workflow progress percent on the running daily action button", async () => {
@@ -527,6 +590,47 @@ it("shows profile evaluation section in model review", async () => {
   await screen.findByRole("tab", { name: "模型复盘" });
   await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
   expect(await screen.findByText(/球队画像模型表现/)).toBeVisible();
+});
+
+it("shows knockout audit on model review with readiness warning", async () => {
+  const knockoutAudit = {
+    summary: {
+      total_matches: 32,
+      finished_matches: 0,
+      scored_matches: 0,
+      real_upcoming_matches: 16,
+      placeholder_upcoming_matches: 16,
+      within_48h_matches: 4,
+      baseline_ready: 16,
+      ai_ready: 1,
+      ensemble_ready: 16,
+      ai_needed_now: 3,
+      can_validate_effectiveness: false,
+      auto_ai_workflow_enabled: false,
+      scheduled_refresh_enabled: false,
+      message: "当前还没有已完赛淘汰赛样本，暂时无法验证淘汰赛命中率；未来 48 小时有 4 场真实淘汰赛，仅 1 场已有 AI，且自动 AI workflow 当前关闭。",
+      critical_gaps: ["no_finished_knockout_samples", "ai_coverage_gap_within_48h"],
+    },
+    finished_by_stage: [
+      { stage: "round_of_32", stage_label: "32强", total_matches: 16, finished_matches: 0, scored_matches: 0, excluded_matches: 0, versions: [] },
+    ],
+    upcoming_by_stage: [
+      { stage: "round_of_32", stage_label: "32强", total_matches: 16, finished_matches: 0, real_upcoming_matches: 16, placeholder_upcoming_matches: 0, within_48h_matches: 4, baseline_ready: 16, ai_ready: 1, ensemble_ready: 16, ai_needed_now: 3 },
+      { stage: "round_of_16", stage_label: "16强", total_matches: 8, finished_matches: 0, real_upcoming_matches: 0, placeholder_upcoming_matches: 8, within_48h_matches: 0, baseline_ready: 0, ai_ready: 0, ensemble_ready: 0, ai_needed_now: 0 },
+    ],
+    exclusions: [],
+    exclusion_summary_by_stage: [],
+  };
+
+  renderApp(dashboard, workflowStatus(), [], knockoutAudit);
+  await screen.findByRole("tab", { name: "模型复盘" });
+  await userEvent.click(screen.getByRole("tab", { name: "模型复盘" }));
+
+  expect(await screen.findByText("淘汰赛专项审计")).toBeVisible();
+  expect(screen.getByText(/未来 48 小时有 4 场真实淘汰赛，仅 1 场已有 AI，且自动 AI workflow 当前关闭/)).toBeVisible();
+  expect(screen.getByText("48h 缺 AI")).toBeVisible();
+  expect(screen.getByText("自动 AI")).toBeVisible();
+  expect(screen.getByText("关闭")).toBeVisible();
 });
 
 it("renders model review even if the legacy model-score endpoint fails", async () => {

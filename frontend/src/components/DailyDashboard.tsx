@@ -3,8 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getAccuracyCommandCenter,
   getDecisionSnapshotStatus,
+  getKnockoutAudit,
 } from "../api";
-import type { Match, DecisionSnapshotStatus } from "../types";
+import type { Match, DecisionSnapshotStatus, KnockoutAudit } from "../types";
 import { formatChinaTimeShort, isFinishedMatch, isUpcomingMatch, isWithinNextHoursChina, isLiveMatch } from "../utils/time";
 import { getTeamDisplayFromRef } from "../utils/teamNames";
 import { directionLabel } from "../utils/recommendation";
@@ -125,8 +126,14 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
     queryFn: getDecisionSnapshotStatus,
     staleTime: 30_000,
   });
+  const knockoutAuditQuery = useQuery({
+    queryKey: ["knockout-audit"],
+    queryFn: getKnockoutAudit,
+    staleTime: 60_000,
+  });
 
   const snapshotStatus = snapshotQuery.data as DecisionSnapshotStatus | undefined;
+  const knockoutAudit = knockoutAuditQuery.data as KnockoutAudit | undefined;
 
   const future24hMatches = useMemo(() => {
     if (!dashboardData) return [];
@@ -299,6 +306,21 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
 
     items.push({ label: "Ensemble", value: ensembleReady ? "已生成" : "未生成", tone: ensembleReady ? "ok" : "neutral" });
 
+    if ((knockoutAudit?.summary?.real_upcoming_matches ?? 0) > 0) {
+      const missingKnockoutAi = knockoutAudit?.summary?.ai_needed_now ?? 0;
+      const autoAiEnabled = knockoutAudit?.summary?.auto_ai_workflow_enabled ?? false;
+      const value = missingKnockoutAi > 0
+        ? autoAiEnabled
+          ? `48h 缺 AI ${missingKnockoutAi} 场`
+          : `48h 缺 AI ${missingKnockoutAi} 场，自动补跑关闭`
+        : autoAiEnabled
+          ? "已开启自动补跑"
+          : "当前手动管理";
+      const tone: StatusItem["tone"] =
+        missingKnockoutAi > 0 ? (autoAiEnabled ? "warn" : "error") : autoAiEnabled ? "ok" : "neutral";
+      items.push({ label: "淘汰赛 AI", value, tone });
+    }
+
     if (snapTotal > 0) {
       items.push({ label: "赛前决策快照", value: `${snapReady}/${snapTotal}`, tone: snapReady === snapTotal ? "ok" : "warn" });
       const missing = snapTotal - snapReady;
@@ -308,7 +330,7 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
     }
 
     return items;
-  }, [status, snapshotStatus, future24hMatches.length]);
+  }, [status, snapshotStatus, future24hMatches.length, knockoutAudit]);
 
   // ── Next step suggestion ──
   const nextStep = useMemo<{ text: string; tone: "ok" | "warn" | "error" } | null>(() => {
@@ -327,6 +349,8 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
     const needsAi = status.upcoming_matches?.needs_ai ?? 0;
     const aiReady = status.upcoming_matches?.ai_ready ?? 0;
     const ensembleReady = status.upcoming_matches?.ensemble_ready ?? 0;
+    const knockoutAiNeededNow = knockoutAudit?.summary?.ai_needed_now ?? 0;
+    const knockoutAutoAiEnabled = knockoutAudit?.summary?.auto_ai_workflow_enabled ?? false;
 
     if (rawStatus === "not_run" || rawStatus === "needs_run") {
       return { text: '建议：先点击"更新今日数据"，同步昨晚赛果和今日赛程。', tone: "error" };
@@ -336,6 +360,9 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
     }
     if (rawStatus === "partial_success") {
       return { text: "今日流程部分失败，请查看工作流日志，并优先重试失败步骤。", tone: "warn" };
+    }
+    if (knockoutAiNeededNow > 0 && !knockoutAutoAiEnabled) {
+      return { text: `淘汰赛未来 48 小时还有 ${knockoutAiNeededNow} 场真实对阵缺 AI，且自动 AI workflow 当前关闭；请手动点击"运行 AI 预测"。`, tone: "error" };
     }
     if (needsAi > 0) {
       return { text: `今日有 ${needsAi} 场比赛尚未生成 AI 预测，可点击"运行 AI 预测"。`, tone: "warn" };
@@ -347,7 +374,7 @@ export default function DailyDashboard({ dashboardData }: DailyDashboardProps) {
       return { text: "今日预测已准备完成。赛后将使用开赛前最后一份有效预测进行复盘。", tone: "ok" };
     }
     return null;
-  }, [status]);
+  }, [status, knockoutAudit]);
 
   // ── Model performance summary ──
   const modelSummary = useMemo(() => {

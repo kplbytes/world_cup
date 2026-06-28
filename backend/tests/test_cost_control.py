@@ -307,3 +307,67 @@ class TestOnlyMissingAndRetryFailed:
 
         mock_run.assert_called_once()
         assert mock_run.call_args.args[1] == "no_ai_match"
+
+    @pytest.mark.asyncio
+    async def test_batch_ai_respects_hours_window(self, session):
+        """hours should constrain batch AI to near-term matches."""
+        from app.ai.service import run_ai_predictions_batch
+
+        _make_team(session, "HW1", "HoursWindow1")
+        _make_team(session, "HW2", "HoursWindow2")
+        _make_team(session, "HW3", "HoursWindow3")
+        _make_team(session, "HW4", "HoursWindow4")
+
+        near_match = _make_match(session, "hours_near", "HW1", "HW2")
+        near_match.kickoff = datetime.now(timezone.utc) + timedelta(hours=6)
+        far_match = _make_match(session, "hours_far", "HW3", "HW4")
+        far_match.kickoff = datetime.now(timezone.utc) + timedelta(hours=72)
+        session.flush()
+
+        with patch("app.ai.service.run_ai_predictions_for_match", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = [{"status": "success", "match_id": "hours_near"}]
+
+            await run_ai_predictions_batch(
+                session, limit=10, only_missing=True, retry_failed=False, hours=48,
+            )
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[1] == "hours_near"
+
+    @pytest.mark.asyncio
+    async def test_batch_ai_skips_placeholder_knockout_matches(self, session):
+        """Placeholder knockout matches should not consume AI batch slots."""
+        from app.ai.service import run_ai_predictions_batch
+
+        _make_team(session, "PK1", "PlaceholderKeep1")
+        _make_team(session, "PK2", "PlaceholderKeep2")
+        _make_team(session, "PK3", "PlaceholderKeep3")
+        _make_team(session, "PK4", "PlaceholderKeep4")
+
+        placeholder = Match(
+            id="ko_placeholder",
+            home_team_id=None,
+            away_team_id=None,
+            kickoff=datetime.now(timezone.utc) + timedelta(hours=3),
+            status="scheduled",
+            source="test",
+            group_code=None,
+            stage="round_of_16",
+            is_placeholder_match=True,
+            home_team_source="W73",
+            away_team_source="W74",
+        )
+        session.add(placeholder)
+        real_match = _make_match(session, "ko_real", "PK1", "PK2", stage="round_of_16", group_code=None)
+        real_match.kickoff = datetime.now(timezone.utc) + timedelta(hours=4)
+        session.flush()
+
+        with patch("app.ai.service.run_ai_predictions_for_match", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = [{"status": "success", "match_id": "ko_real"}]
+
+            await run_ai_predictions_batch(
+                session, limit=10, only_missing=True, retry_failed=False, hours=48,
+            )
+
+        mock_run.assert_called_once()
+        assert mock_run.call_args.args[1] == "ko_real"

@@ -81,6 +81,7 @@ cp .env.example .env
 - **双提示词**：v1（含基线参考）+ v2（独立判断，无基线泄漏）
 - **去重**：跳过已有成功预测的模型（除非 force）
 - **单场冷却**：同一场比赛 1 小时内不重复刷新 AI 预测；超过 1 小时可用 `force=true` 手动重跑
+- **批量补跑边界**：批量 AI 只会处理未开赛、已确定真实主客队的比赛；官方淘汰赛占位赛不会消耗 AI 配额
 - **基线抄袭检测**：标记与系统预测完全一致的 AI 输出
 - **独立审计**：`/api/ai-independence` 检查 AI 与基线的偏差程度
 - **画像边界**：Team Profile 当前会进入 baseline / numerical 重算，但 AI prompt 仍把画像视为 `disabled_display_only`，不直接注入结构化画像调整
@@ -218,7 +219,7 @@ cp .env.example .env
 |------|------|
 | **今日工作台** | 今日状态、下一步建议、工作流操作、未来 24/48 小时比赛 |
 | **比赛中心** | 按小组/今日/淘汰赛查看所有比赛 |
-| **模型复盘** | 核心结论、自适应 Ensemble 权重、AI 评估、误差归因、画像评估 |
+| **模型复盘** | 核心结论、淘汰赛专项审计、自适应 Ensemble 权重、AI 评估、误差归因、画像评估 |
 | **冠军与赛程** | 冠军概率、晋级概率、官方淘汰赛路径、点击对阵卡查看比赛详情 |
 
 比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页；比赛中心和冠军与赛程中的淘汰赛对阵卡都复用这套详情抽屉。
@@ -233,7 +234,7 @@ cp .env.example .env
 
 ![比赛中心](docs/screenshots/match-center.png)
 
-**模型复盘** — 模型版本对比、AI 独立性评估、误差归因分析和校准曲线；当分项接口失败时会显示明确错误，而不是一直停留在加载中。
+**模型复盘** — 模型版本对比、淘汰赛专项审计、AI 独立性评估、误差归因分析和校准曲线；会直接区分“还没有已完赛淘汰赛样本”和“48 小时内真实淘汰赛缺 AI”这两类问题；当分项接口失败时会显示明确错误，而不是一直停留在加载中。
 
 ![模型复盘](docs/screenshots/model-review.png)
 
@@ -266,7 +267,7 @@ backend/app/
 | 分组 | 主要端点 |
 |------|---------|
 | 仪表盘 | `GET /api/dashboard`, `GET /api/matches/{id}`, `POST /api/refresh`, `GET /api/health` |
-| 评分 | `GET /api/model-score`, `GET /api/accuracy-command-center`, `GET /api/scoring-exclusions` |
+| 评分 | `GET /api/model-score`, `GET /api/accuracy-command-center`, `GET /api/knockout-audit`, `GET /api/scoring-exclusions` |
 | AI | `GET /api/ai-models`, `POST /api/ai-predictions/run`, `POST /api/ensemble/run` |
 | 工作流 | `GET /api/workflows/status`, `GET /api/workflows/runs`, `GET /api/workflows/runs/{id}`, `POST /api/workflows/daily-open`, `POST /api/workflows/pre-match`, `POST /api/workflows/post-match`, `POST /api/workflows/lock`, `POST /api/workflows/full` |
 | 画像 | `GET /api/team-profiles`, `GET /api/team-profiles/{team_id}` |

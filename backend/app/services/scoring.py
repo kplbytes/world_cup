@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import timezone
-from typing import Any
+from typing import Any, Callable
 from collections import defaultdict
 
 from sqlalchemy import case, func, select
@@ -817,12 +817,24 @@ def snapshot_prediction(session: Session, match_id: str) -> PredictionSnapshot |
 
 def model_score_by_stage(session: Session) -> dict[str, list[dict[str, Any]]]:
     """Aggregate model scores by tournament stage and version."""
-    rows = _scorable_snapshot_rows(session)
+    rows = _scorable_snapshot_rows_by_version(session)
+
+    return _aggregate_snapshot_rows_by_stage(rows)
+
+
+def _aggregate_snapshot_rows_by_stage(
+    rows: list[tuple[PredictionSnapshot, Match]],
+    *,
+    stage_filter: Callable[[str], bool] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Aggregate scoring rows by stage and model version."""
 
     # Group by (stage, model_version)
     by_stage_version: dict[str, dict[str, dict[str, Any]]] = {}
     for snap, match in rows:
         stage = getattr(match, 'stage', 'group') or 'group'
+        if stage_filter is not None and not stage_filter(stage):
+            continue
         version = snap.model_version or "unknown"
         key = stage
         if key not in by_stage_version:
@@ -1004,6 +1016,8 @@ def get_scoring_exclusions(
                 "match_id": match.id,
                 "home_team": team_names.get(match.home_team_id, match.home_team_id),
                 "away_team": team_names.get(match.away_team_id, match.away_team_id),
+                "stage": match.stage,
+                "round_name": match.round_name,
                 "reason": "；".join(reasons),
                 "reason_codes": reason_codes,
             })
@@ -1152,6 +1166,8 @@ def get_match_count_breakdown(session: Session) -> MatchCountBreakdown:
             "match_id": match.id,
             "home_team": team_names.get(match.home_team_id, match.home_team_id),
             "away_team": team_names.get(match.away_team_id, match.away_team_id),
+            "stage": match.stage,
+            "round_name": match.round_name,
             "status": status,
             "status_label": status_label,
             "has_prediction": has_prediction,

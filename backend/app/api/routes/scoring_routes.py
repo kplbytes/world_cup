@@ -72,6 +72,14 @@ def match_count_breakdown():
         }
 
 
+@router.get("/knockout-audit")
+def knockout_audit():
+    """Audit knockout-stage scoring readiness and coverage gaps."""
+    with session_scope() as session:
+        from app.services.knockout_audit import get_knockout_audit
+        return get_knockout_audit(session)
+
+
 @router.get("/error-attribution-summary")
 def error_attribution_summary():
     """Aggregate error attribution counts across all scored matches."""

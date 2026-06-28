@@ -215,6 +215,7 @@ App.tsx
 - **运行摘要可读**：最近运行记录和顶部状态区会显示步骤级摘要，不只保留 run 级 success / failed 标签
 - **共享详情抽屉复用**：比赛中心和冠军与赛程的淘汰赛对阵卡都通过 `/api/matches/{id}` 复用同一个 `MatchDetailDrawer`
 - **模型复盘容错**：以 `/api/accuracy-command-center` 为主查询；分项接口失败时显示明确错误/空态，不允许整页长期卡在加载中
+- **淘汰赛专项审计**：模型复盘会单独展示 knockout readiness 和已完赛淘汰赛评分可用性，避免把“占位赛待定”和“真实评分失败”混在一起
 
 ## 数据流
 
@@ -240,7 +241,7 @@ AI 预测 (ai/service) ── 多模型独立预测
     │                      │
     │                      ├── DeepSeek V4 Flash / Pro
     │                      ├── DeepSeek V4 Flash (Independent, v2 prompt)
-    │                      └── 去重 + 1 小时重跑冷却 + 抄袭检测
+    │                      └── 去重 + 1 小时重跑冷却 + 仅真实比赛批量补跑 + 抄袭检测
     │
     ▼
 集成融合 (ensemble) ─── 加权融合
@@ -280,6 +281,7 @@ AI 预测 (ai/service) ── 多模型独立预测
 - `ensemble_generation` 对尚未决出的淘汰赛占位赛会返回 `skipped_reasons.teams_tbd`
 - 已确定真实对阵但缺少基线快照时，`ensemble_generation` 会返回 `failed_reasons.missing_system_prediction`
 - `partial_success` 也属于终态步骤，必须记录 `finished_at` 和 `duration_seconds`
+- `ai_prediction` 的批量执行会过滤掉没有真实主客队的占位赛；`hours=48` 时只补跑未来 48 小时内的真实比赛
 
 ### 淘汰赛状态同步
 
@@ -417,6 +419,8 @@ workflow_runs ──1:N──> workflow_steps
 ### 3. 手动工作流优先 (Manual-First Workflow)
 
 标准前端入口默认依赖显式 POST 到 `/api/workflows/*`。`AI_RUN_MODE=auto` 现在只影响后端调度器，不改变首页手动按钮语义；`AUTO_RUN_DAILY_WORKFLOW_ON_OPEN`、`AUTO_RUN_AI_ON_OPEN` 仍不作为对用户承诺的默认链路。
+
+模型复盘的 knockout audit 口径与用户侧可见模型保持一致。隐藏、欠费或停用的模型不会参与 `ai_ready` / `ai_needed_now` 统计，避免复盘数字和页面展示不一致。
 
 ### 4. 赛前锁定 (Pre-Match Lock)
 

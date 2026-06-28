@@ -860,7 +860,7 @@ def _run_score_step(run_id: int):
         _update_step(run_id, "post_match_score", "failed", error=str(e))
 
 
-def _run_ai_prediction_step(run_id: int, limit: int = 10, only_missing: bool = True, retry_failed: bool = False):
+def _run_ai_prediction_step(run_id: int, hours: int = 48, limit: int = 10, only_missing: bool = True, retry_failed: bool = False):
     """Step: run AI predictions (sync version for CLI/scripts, runs in background thread)."""
     _update_step(run_id, "ai_prediction", "running")
     try:
@@ -882,26 +882,27 @@ def _run_ai_prediction_step(run_id: int, limit: int = 10, only_missing: bool = T
                     results = pool.submit(
                         asyncio.run,
                         run_ai_predictions_batch(
-                            session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed
+                            session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed, hours=hours
                         )
                     ).result()
             else:
                 results = asyncio.run(run_ai_predictions_batch(
-                    session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed
+                    session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed, hours=hours
                 ))
 
         success = sum(1 for r in results if r.get("status") != "error" and r.get("status") != "skipped")
         failed = sum(1 for r in results if r.get("status") == "error")
         skipped = sum(1 for r in results if r.get("status") == "skipped")
 
-        _update_step(run_id, "ai_prediction", "success" if failed == 0 else "failed" if success == 0 else "success",
+        step_status = "success" if failed == 0 else "failed" if success == 0 else "partial_success"
+        _update_step(run_id, "ai_prediction", step_status,
                      {"success": success, "failed": failed, "skipped": skipped, "api_calls": success})
     except Exception as e:
         logger.error(f"AI prediction step failed: {e}")
         _update_step(run_id, "ai_prediction", "failed", error=str(e))
 
 
-async def _run_ai_prediction_step_async(run_id: int, limit: int = 10, only_missing: bool = True, retry_failed: bool = False):
+async def _run_ai_prediction_step_async(run_id: int, hours: int = 48, limit: int = 10, only_missing: bool = True, retry_failed: bool = False):
     """Step: run AI predictions (async version for use within async context)."""
     _update_step(run_id, "ai_prediction", "running")
     try:
@@ -913,14 +914,15 @@ async def _run_ai_prediction_step_async(run_id: int, limit: int = 10, only_missi
         clamped_limit = min(limit, settings.ai_run_all_max_limit)
         with session_scope() as session:
             results = await run_ai_predictions_batch(
-                session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed
+                session, limit=clamped_limit, only_missing=only_missing, retry_failed=retry_failed, hours=hours
             )
 
         success = sum(1 for r in results if r.get("status") != "error" and r.get("status") != "skipped")
         failed = sum(1 for r in results if r.get("status") == "error")
         skipped = sum(1 for r in results if r.get("status") == "skipped")
 
-        _update_step(run_id, "ai_prediction", "success" if failed == 0 else "failed" if success == 0 else "success",
+        step_status = "success" if failed == 0 else "failed" if success == 0 else "partial_success"
+        _update_step(run_id, "ai_prediction", step_status,
                      {"success": success, "failed": failed, "skipped": skipped, "api_calls": success})
     except Exception as e:
         logger.error(f"AI prediction step failed: {e}")
@@ -1133,7 +1135,7 @@ def execute_daily_open_workflow(
         _update_step(run_id, "pre_match_recompute", "skipped", {"reason": "covered_by_post_match_recompute"})
 
         if with_ai:
-            _run_ai_prediction_step(run_id, limit=limit, only_missing=only_missing)
+            _run_ai_prediction_step(run_id, hours=hours, limit=limit, only_missing=only_missing)
         else:
             _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
 
@@ -1208,7 +1210,7 @@ def execute_pre_match_workflow(
         _run_recompute_step(run_id, "pre_match_recompute")
 
         if with_ai:
-            _run_ai_prediction_step(run_id, limit=limit, only_missing=only_missing)
+            _run_ai_prediction_step(run_id, hours=hours, limit=limit, only_missing=only_missing)
         else:
             _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
 
@@ -1358,7 +1360,7 @@ def execute_full_workflow(
         _update_step(run_id, "pre_match_recompute", "skipped", {"reason": "covered_by_post_match_recompute"})
 
         if with_ai:
-            _run_ai_prediction_step(run_id, limit=limit, only_missing=only_missing)
+            _run_ai_prediction_step(run_id, hours=hours, limit=limit, only_missing=only_missing)
         else:
             _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
 
@@ -1443,7 +1445,7 @@ async def run_daily_open_workflow_async(
         _update_step(run_id, "pre_match_recompute", "skipped", {"reason": "covered_by_post_match_recompute"})
 
         if with_ai:
-            await _run_ai_prediction_step_async(run_id, limit=limit, only_missing=only_missing)
+            await _run_ai_prediction_step_async(run_id, hours=hours, limit=limit, only_missing=only_missing)
         else:
             _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
 
@@ -1491,7 +1493,7 @@ async def run_pre_match_workflow_async(
         _run_recompute_step(run_id, "pre_match_recompute")
 
         if with_ai:
-            await _run_ai_prediction_step_async(run_id, limit=limit, only_missing=only_missing)
+            await _run_ai_prediction_step_async(run_id, hours=hours, limit=limit, only_missing=only_missing)
         else:
             _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
 
@@ -1538,7 +1540,7 @@ async def run_full_workflow_async(
         _update_step(run_id, "pre_match_recompute", "skipped", {"reason": "covered_by_post_match_recompute"})
 
         if with_ai:
-            await _run_ai_prediction_step_async(run_id, limit=limit, only_missing=only_missing)
+            await _run_ai_prediction_step_async(run_id, hours=hours, limit=limit, only_missing=only_missing)
         else:
             _update_step(run_id, "ai_prediction", "skipped", {"reason": "with_ai=false"})
 

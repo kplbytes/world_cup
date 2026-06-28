@@ -7,7 +7,7 @@ import type {
   AccuracyCommandCenter,
   Match, ProfileEvaluation, TeamProfileEnvelope,
   MatchCountBreakdown, ErrorAttributionSummary,
-  DecisionSnapshotStatus, ModelComparisonItem,
+  DecisionSnapshotStatus, ModelComparisonItem, KnockoutAudit,
   MatchScoreDetailItem, WorkflowStatus, WorkflowRunInfo, WorkflowTriggerResponse,
 } from "./types";
 
@@ -245,6 +245,12 @@ export async function getWorkflowRuns(limit?: number): Promise<{ runs: WorkflowR
 export async function getMatchCountBreakdown(): Promise<MatchCountBreakdown> {
   const res = await fetchWithTimeout("/api/match-count-breakdown");
   if (!res.ok) throw new Error("Failed to fetch match count breakdown");
+  return res.json();
+}
+
+export async function getKnockoutAudit(): Promise<KnockoutAudit> {
+  const res = await fetchWithTimeout("/api/knockout-audit");
+  if (!res.ok) throw new Error("Failed to fetch knockout audit");
   return res.json();
 }
 

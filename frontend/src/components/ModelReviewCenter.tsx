@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getAccuracyCommandCenter, getAIEvaluation, getModelScoreDetails, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion, getAdaptiveWeights } from "../api";
+import { getAccuracyCommandCenter, getAIEvaluation, getModelScoreDetails, getProfileEvaluation, getMatchCountBreakdown, getErrorAttributionSummary, getModelScoreByVersion, getAdaptiveWeights, getKnockoutAudit } from "../api";
 import { formatChinaTimeShort } from "../utils/time";
 import { getTeamDisplayNameFromAny } from "../utils/teamNames";
 import { fmt, pct } from "../utils/format";
-import type { MatchScoreDetailItem, VersionScoreSummary, MatchCountBreakdown, ErrorAttributionSummary, ShadowModelRow, ModelComparisonItem } from "../types";
+import type { MatchScoreDetailItem, VersionScoreSummary, MatchCountBreakdown, ErrorAttributionSummary, ShadowModelRow, ModelComparisonItem, KnockoutAudit } from "../types";
 import SectionCard from "./ui/SectionCard";
 import MetricCard from "./ui/MetricCard";
 import EmptyState from "./ui/EmptyState";
@@ -66,6 +66,167 @@ function ScoringExclusions({ exclusions }: { exclusions: Array<{ match_id: strin
         })}
       </div>
     </section>
+  );
+}
+
+function KnockoutAuditSection({
+  audit,
+  isLoading,
+  isError,
+  error,
+}: {
+  audit: KnockoutAudit | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+}) {
+  if (isLoading) {
+    return (
+      <SectionCard title="淘汰赛专项审计">
+        <EmptyState>加载淘汰赛专项审计...</EmptyState>
+      </SectionCard>
+    );
+  }
+
+  if (isError || !audit || !audit.summary) {
+    return (
+      <SectionCard title="淘汰赛专项审计">
+        <div className="empty" style={{ textAlign: "left" }}>
+          淘汰赛专项审计暂不可用{error ? `：${error.message}` : ""}
+        </div>
+      </SectionCard>
+    );
+  }
+
+  const summary = audit.summary;
+  const finishedByStage = audit.finished_by_stage ?? [];
+  const upcomingByStage = audit.upcoming_by_stage ?? [];
+  const exclusionSummaryByStage = audit.exclusion_summary_by_stage ?? [];
+  const badge = summary.can_validate_effectiveness
+    ? "已可评分"
+    : summary.ai_needed_now > 0
+      ? `48h 缺 AI ${summary.ai_needed_now}`
+      : "待验证";
+
+  return (
+    <SectionCard title="淘汰赛专项审计" badge={badge}>
+      <div
+        style={{
+          padding: "16px 20px",
+          borderRadius: 6,
+          background: summary.can_validate_effectiveness ? "rgba(53,217,155,0.08)" : "rgba(246,195,67,0.08)",
+          borderLeft: `4px solid ${summary.can_validate_effectiveness ? "var(--success-green)" : "var(--accent-yellow)"}`,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>{summary.message}</div>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          占位赛表示官方赛程已生成但对阵尚未决出；这类比赛当前应记为待定，不应误报为工作流失败。
+        </div>
+      </div>
+
+      <div className="metric-grid">
+        <MetricCard label="已完赛淘汰赛" value={summary.finished_matches} tone={summary.finished_matches > 0 ? "ok" : "warn"} />
+        <MetricCard label="已评分淘汰赛" value={summary.scored_matches} tone={summary.scored_matches > 0 ? "ok" : "warn"} />
+        <MetricCard label="真实未来对阵" value={summary.real_upcoming_matches} tone={summary.real_upcoming_matches > 0 ? "ok" : "neutral"} />
+        <MetricCard label="待定席位" value={summary.placeholder_upcoming_matches} tone={summary.placeholder_upcoming_matches > 0 ? "warn" : "neutral"} />
+        <MetricCard label="48h 内比赛" value={summary.within_48h_matches} tone={summary.within_48h_matches > 0 ? "warn" : "neutral"} />
+        <MetricCard label="48h 缺 AI" value={summary.ai_needed_now} tone={summary.ai_needed_now > 0 ? "error" : "ok"} />
+        <MetricCard label="自动 AI" value={summary.auto_ai_workflow_enabled ? "开启" : "关闭"} tone={summary.auto_ai_workflow_enabled ? "ok" : "warn"} />
+        <MetricCard label="基线就绪" value={`${summary.baseline_ready}/${summary.real_upcoming_matches}`} tone={summary.real_upcoming_matches > summary.baseline_ready ? "error" : "ok"} />
+        <MetricCard label="Ensemble 就绪" value={`${summary.ensemble_ready}/${summary.real_upcoming_matches}`} tone={summary.real_upcoming_matches > summary.ensemble_ready ? "error" : "ok"} />
+      </div>
+
+      <div className="table-wrap" style={{ marginTop: 18 }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>阶段</th>
+              <th>总场次</th>
+              <th>已完赛</th>
+              <th>真实对阵</th>
+              <th>待定席位</th>
+              <th>48h 内</th>
+              <th>基线</th>
+              <th>AI</th>
+              <th>Ensemble</th>
+              <th>缺 AI</th>
+            </tr>
+          </thead>
+            <tbody>
+            {upcomingByStage.map((row) => (
+              <tr key={row.stage}>
+                <td>{row.stage_label}</td>
+                <td>{row.total_matches}</td>
+                <td>{row.finished_matches}</td>
+                <td>{row.real_upcoming_matches}</td>
+                <td>{row.placeholder_upcoming_matches}</td>
+                <td>{row.within_48h_matches}</td>
+                <td>{row.real_upcoming_matches > 0 ? `${row.baseline_ready}/${row.real_upcoming_matches}` : "—"}</td>
+                <td>{row.real_upcoming_matches > 0 ? `${row.ai_ready}/${row.real_upcoming_matches}` : "—"}</td>
+                <td>{row.real_upcoming_matches > 0 ? `${row.ensemble_ready}/${row.real_upcoming_matches}` : "—"}</td>
+                <td style={{ color: row.ai_needed_now > 0 ? "var(--risk-red)" : "var(--text-secondary)" }}>{row.ai_needed_now}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {finishedByStage.some((row) => row.finished_matches > 0) ? (
+        <div className="table-wrap" style={{ marginTop: 18 }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>阶段</th>
+                <th>已完赛</th>
+                <th>已评分</th>
+                <th>未评分</th>
+                <th>当前最佳版本</th>
+                <th>Brier</th>
+                <th>命中率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {finishedByStage.map((row) => {
+                const best = row.versions[0];
+                return (
+                  <tr key={row.stage}>
+                    <td>{row.stage_label}</td>
+                    <td>{row.finished_matches}</td>
+                    <td>{row.scored_matches}</td>
+                    <td>{row.excluded_matches}</td>
+                    <td>{best?.model_version ?? "—"}</td>
+                    <td>{best ? fmt(best.brier) : "—"}</td>
+                    <td>{best ? pct(best.hit_rate) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 16, padding: "6px 10px", borderLeft: "2px solid var(--line)" }}>
+          当前还没有已完赛淘汰赛样本，所以这里暂时只展示 readiness，不展示淘汰赛命中率结论。
+        </div>
+      )}
+
+      {exclusionSummaryByStage.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <h3 style={{ marginBottom: 10 }}>淘汰赛未评分原因</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            {exclusionSummaryByStage.map((row) => (
+              <div key={row.stage} style={{ padding: "10px 12px", borderRadius: 4, background: "var(--paper-2)", border: "1px solid var(--line)", fontSize: 12 }}>
+                <strong>{row.stage_label}</strong>
+                <span style={{ color: "var(--text-secondary)", marginLeft: 8 }}>未评分 {row.excluded_matches} 场</span>
+                <div style={{ marginTop: 6, color: "var(--text-secondary)" }}>
+                  {Object.entries(row.reason_counts).map(([reason, count]) => `${translateExclusionReason(reason)} ${count}`).join(" · ")}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </SectionCard>
   );
 }
 
@@ -725,6 +886,7 @@ export default function ModelReviewCenter() {
   const modelScoreDetails = useQuery({ queryKey: ["model-score-details"], queryFn: getModelScoreDetails });
   const profileEval = useQuery({ queryKey: ["profile-evaluation"], queryFn: getProfileEvaluation });
   const matchCountBreakdownQuery = useQuery({ queryKey: ["match-count-breakdown"], queryFn: getMatchCountBreakdown });
+  const knockoutAuditQuery = useQuery({ queryKey: ["knockout-audit"], queryFn: getKnockoutAudit, staleTime: 60_000 });
   const matchCountBreakdownData = matchCountBreakdownQuery.data;
   const errorAttributionSummary = useQuery({ queryKey: ["error-attribution-summary"], queryFn: getErrorAttributionSummary });
   const versionScoreData = useQuery({ queryKey: ["model-score-by-version"], queryFn: getModelScoreByVersion });
@@ -837,6 +999,13 @@ export default function ModelReviewCenter() {
           </div>
         </div>
       </SectionCard>
+
+      <KnockoutAuditSection
+        audit={knockoutAuditQuery.data}
+        isLoading={knockoutAuditQuery.isLoading}
+        isError={knockoutAuditQuery.isError}
+        error={knockoutAuditQuery.error instanceof Error ? knockoutAuditQuery.error : null}
+      />
 
       {/* B. 自适应 Ensemble 权重 (BMA v2) */}
       <SectionCard title="自适应 Ensemble 权重" badge={adaptiveWeightsQuery.data?.is_adaptive ? "BMA 已启用" : "BMA 待激活"}>

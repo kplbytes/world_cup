@@ -464,6 +464,7 @@ async def run_ai_predictions_batch(
     limit: int = 10,
     only_missing: bool = True,
     retry_failed: bool = False,
+    hours: int | None = None,
 ) -> list[dict[str, Any]]:
     """Run AI predictions for multiple matches.
 
@@ -472,13 +473,18 @@ async def run_ai_predictions_batch(
         limit: Maximum number of matches to process
         only_missing: If True, skip matches that already have AI predictions
         retry_failed: If True, also retry models that previously failed
+        hours: Only include matches kicking off within the next N hours
     """
     now = datetime.now(timezone.utc)
     query = (
         select(Match)
         .where(Match.status != "final")
         .where(Match.kickoff >= now)
+        .where(Match.home_team_id.is_not(None))
+        .where(Match.away_team_id.is_not(None))
     )
+    if hours is not None:
+        query = query.where(Match.kickoff <= now + timedelta(hours=hours))
     if stage:
         query = query.where(Match.stage == stage)
     query = query.order_by(Match.kickoff).limit(limit)

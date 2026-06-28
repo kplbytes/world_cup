@@ -788,6 +788,291 @@ def test_no_pre_kickoff_snapshot_appears_in_scoring_exclusions(db_session):
     assert "excluded_after_kickoff" in excluded[0]["reason_codes"]
 
 
+def test_model_score_by_stage_counts_versions_independently(db_session):
+    from app.services.scoring import model_score_by_stage
+
+    kickoff = datetime(2026, 6, 20, 12, 0, tzinfo=timezone.utc)
+    _seed_match_with_snapshots(
+        db_session,
+        match_id="m_stage_versions",
+        kickoff=kickoff,
+        snapshots=[
+            {
+                "snapshotted_at": kickoff - timedelta(hours=2),
+                "home_win": 0.58,
+                "draw": 0.24,
+                "away_win": 0.18,
+                "model_version": "elo-poisson-v1",
+            },
+            {
+                "snapshotted_at": kickoff - timedelta(hours=1),
+                "home_win": 0.52,
+                "draw": 0.27,
+                "away_win": 0.21,
+                "model_version": "elo-poisson-v1-shadow",
+            },
+        ],
+        home_score=1,
+        away_score=0,
+    )
+
+    result = model_score_by_stage(db_session)
+
+    assert "group" in result
+    versions = {row["model_version"] for row in result["group"]}
+    assert versions == {"elo-poisson-v1", "elo-poisson-v1-shadow"}
+
+
+def test_scoring_exclusions_include_stage_metadata_for_knockout(db_session):
+    from app.services.scoring import get_scoring_exclusions
+
+    db_session.add_all([
+        Team(id="T1_KO_EX", name="Team 1", short_name="Team 1", code="TK1", group_code="A"),
+        Team(id="T2_KO_EX", name="Team 2", short_name="Team 2", code="TK2", group_code="B"),
+    ])
+    db_session.flush()
+
+    db_session.add(
+        Match(
+            id="m_knockout_excluded",
+            group_code=None,
+            home_team_id="T1_KO_EX",
+            away_team_id="T2_KO_EX",
+            kickoff=datetime(2026, 6, 28, 12, 0, tzinfo=timezone.utc),
+            status="final",
+            source="test",
+            stage="round_of_32",
+            round_name="32强",
+            home_score=0,
+            away_score=1,
+        )
+    )
+    db_session.flush()
+
+    exclusions = get_scoring_exclusions(db_session)
+    excluded = next(e for e in exclusions if e["match_id"] == "m_knockout_excluded")
+    assert excluded["stage"] == "round_of_32"
+    assert excluded["round_name"] == "32强"
+
+
+def test_match_count_breakdown_details_include_stage_metadata(db_session):
+    kickoff = datetime(2026, 6, 29, 12, 0, tzinfo=timezone.utc)
+    _seed_match_with_snapshots(
+        db_session,
+        match_id="m_knockout_breakdown",
+        kickoff=kickoff,
+        snapshots=[
+            {
+                "snapshotted_at": kickoff - timedelta(hours=2),
+                "home_win": 0.6,
+                "draw": 0.2,
+                "away_win": 0.2,
+                "model_version": "elo-poisson-v1",
+            },
+        ],
+        home_score=1,
+        away_score=0,
+    )
+    match = db_session.get(Match, "m_knockout_breakdown")
+    match.group_code = None
+    match.stage = "quarter_final"
+    match.round_name = "四分之一决赛"
+    db_session.flush()
+
+    breakdown = get_match_count_breakdown(db_session)
+    detail = next(item for item in breakdown.details if item["match_id"] == "m_knockout_breakdown")
+    assert detail["stage"] == "quarter_final"
+    assert detail["round_name"] == "四分之一决赛"
+
+
+def test_knockout_audit_reports_readiness_and_stage_scores(db_session):
+    from app.services.knockout_audit import get_knockout_audit
+
+    db_session.add_all([
+        Team(id="K1", name="Knockout 1", short_name="Knockout 1", code="K01", group_code="A"),
+        Team(id="K2", name="Knockout 2", short_name="Knockout 2", code="K02", group_code="B"),
+        Team(id="K3", name="Knockout 3", short_name="Knockout 3", code="K03", group_code="C"),
+        Team(id="K4", name="Knockout 4", short_name="Knockout 4", code="K04", group_code="D"),
+    ])
+    db_session.flush()
+
+    revision = DashboardRevision(active=True, model_version="elo-poisson-v1", simulation_iterations=1, simulation_seed=1)
+    db_session.add(revision)
+    db_session.flush()
+
+    finished_kickoff = datetime.now(timezone.utc) - timedelta(days=1)
+    future_kickoff = datetime.now(timezone.utc) + timedelta(hours=12)
+
+    db_session.add_all([
+        Match(
+            id="ko_finished",
+            group_code=None,
+            home_team_id="K1",
+            away_team_id="K2",
+            kickoff=finished_kickoff,
+            status="final",
+            source="test",
+            stage="round_of_32",
+            round_name="32强",
+            home_score=2,
+            away_score=1,
+        ),
+        Match(
+            id="ko_future_real",
+            group_code=None,
+            home_team_id="K3",
+            away_team_id="K4",
+            kickoff=future_kickoff,
+            status="scheduled",
+            source="test",
+            stage="round_of_32",
+            round_name="32强",
+        ),
+        Match(
+            id="ko_future_placeholder",
+            group_code=None,
+            home_team_id=None,
+            away_team_id=None,
+            kickoff=future_kickoff + timedelta(days=2),
+            status="scheduled",
+            source="test",
+            stage="round_of_16",
+            round_name="16强",
+            is_placeholder_match=True,
+            home_team_source="W73",
+            away_team_source="W74",
+        ),
+    ])
+    db_session.flush()
+
+    db_session.add_all([
+        MatchPrediction(
+            revision_id=revision.id,
+            match_id="ko_finished",
+            home_win=0.58,
+            draw=0.23,
+            away_win=0.19,
+            home_xg=1.3,
+            away_xg=0.9,
+            confidence=0.8,
+            confidence_label="High",
+            data_confidence=0.9,
+            data_confidence_label="High",
+            model_confidence=0.85,
+            model_confidence_label="High",
+            explanation="test",
+            model_inputs={},
+            model_version="elo-poisson-v1",
+            scorelines=[],
+            score_matrix=[],
+        ),
+        MatchPrediction(
+            revision_id=revision.id,
+            match_id="ko_future_real",
+            home_win=0.51,
+            draw=0.25,
+            away_win=0.24,
+            home_xg=1.1,
+            away_xg=0.95,
+            confidence=0.76,
+            confidence_label="High",
+            data_confidence=0.9,
+            data_confidence_label="High",
+            model_confidence=0.85,
+            model_confidence_label="High",
+            explanation="test",
+            model_inputs={},
+            model_version="elo-poisson-v1",
+            scorelines=[],
+            score_matrix=[],
+        ),
+    ])
+    db_session.add_all([
+        PredictionSnapshot(
+            match_id="ko_finished",
+            revision_id=revision.id,
+            kickoff=finished_kickoff,
+            snapshotted_at=finished_kickoff - timedelta(hours=2),
+            home_win=0.58,
+            draw=0.23,
+            away_win=0.19,
+            home_xg=1.3,
+            away_xg=0.9,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.8,
+            confidence_label="High",
+            model_inputs={},
+            model_version="elo-poisson-v1",
+        ),
+        PredictionSnapshot(
+            match_id="ko_future_real",
+            revision_id=revision.id,
+            kickoff=future_kickoff,
+            snapshotted_at=datetime.now(timezone.utc),
+            home_win=0.51,
+            draw=0.25,
+            away_win=0.24,
+            home_xg=1.1,
+            away_xg=0.95,
+            scorelines=[],
+            score_matrix=[],
+            confidence=0.76,
+            confidence_label="High",
+            model_inputs={},
+            model_version="elo-poisson-v1",
+        ),
+    ])
+    db_session.add(
+        EnsemblePrediction(
+            match_id="ko_future_real",
+            model_version="ensemble-v1",
+            system_model_version="elo-poisson-v1",
+            system_weight=0.55,
+            market_weight=0.0,
+            ai_weights_json={},
+            source_probabilities_json={},
+            ensemble_home_win=0.51,
+            ensemble_draw=0.25,
+            ensemble_away_win=0.24,
+            confidence=0.7,
+            reason="test",
+            is_pre_match_locked=False,
+            source_status_json={},
+        )
+    )
+    db_session.flush()
+
+    audit = get_knockout_audit(db_session)
+
+    assert audit["summary"]["total_matches"] == 3
+    assert audit["summary"]["finished_matches"] == 1
+    assert audit["summary"]["scored_matches"] == 1
+    assert audit["summary"]["real_upcoming_matches"] == 1
+    assert audit["summary"]["placeholder_upcoming_matches"] == 1
+    assert audit["summary"]["within_48h_matches"] == 1
+    assert audit["summary"]["baseline_ready"] == 1
+    assert audit["summary"]["ai_ready"] == 0
+    assert audit["summary"]["ensemble_ready"] == 1
+    assert audit["summary"]["ai_needed_now"] == 1
+    assert audit["summary"]["can_validate_effectiveness"] is True
+    assert audit["summary"]["auto_ai_workflow_enabled"] is False
+    assert audit["summary"]["scheduled_refresh_enabled"] is False
+    assert "ai_coverage_gap_within_48h" in audit["summary"]["critical_gaps"]
+
+    round32_finished = next(row for row in audit["finished_by_stage"] if row["stage"] == "round_of_32")
+    assert round32_finished["finished_matches"] == 1
+    assert round32_finished["scored_matches"] == 1
+    assert round32_finished["versions"][0]["model_version"] == "elo-poisson-v1"
+
+    round32_upcoming = next(row for row in audit["upcoming_by_stage"] if row["stage"] == "round_of_32")
+    assert round32_upcoming["real_upcoming_matches"] == 1
+    assert round32_upcoming["ai_needed_now"] == 1
+
+    round16_upcoming = next(row for row in audit["upcoming_by_stage"] if row["stage"] == "round_of_16")
+    assert round16_upcoming["placeholder_upcoming_matches"] == 1
+
+
 class TestModelComparison:
     def test_model_comparison_includes_all_sources(self, db_session):
         """model_comparison should include Baseline, AI versions, and Ensemble."""
