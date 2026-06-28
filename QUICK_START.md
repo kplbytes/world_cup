@@ -86,6 +86,11 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 - 后端：http://127.0.0.1:8000
 - API 文档：http://127.0.0.1:8000/docs
 
+说明：
+
+- 根目录 `./start.sh` 会同时拉起后端和 Vite 前端，适合本地日常使用
+- `./scripts/start.sh` 只启动后端，并由后端直接托管 `frontend/dist`，适合单端口联调或部署前本地验证
+
 关闭系统：
 ```bash
 ./stop.sh
@@ -108,6 +113,17 @@ npx vite --host 127.0.0.1 --port 5173
 ```bash
 ./scripts/dev.sh
 ```
+
+### 方式四：单端口启动（后端托管已构建前端）
+
+```bash
+./scripts/start.sh
+```
+
+访问地址：
+
+- 单端口前端 + API：http://127.0.0.1:8000
+- API 文档：http://127.0.0.1:8000/docs
 
 ## 验证系统运行
 
@@ -170,7 +186,7 @@ curl -X POST "http://127.0.0.1:8000/api/ai-predictions/run?match_id=MATCH_ID"
 ### 3. 批量运行 AI 预测
 
 ```bash
-# 对未来未预测的比赛批量运行（最多 10 场）
+# 对未来未预测的比赛批量运行（示例 10 场；最大值受 AI_RUN_ALL_MAX_LIMIT 控制，默认 20）
 curl -X POST "http://127.0.0.1:8000/api/ai-predictions/run-all?limit=10&only_missing=true"
 ```
 
@@ -192,9 +208,22 @@ curl -X POST "http://127.0.0.1:8000/api/workflows/daily-open" \
 curl -X POST "http://127.0.0.1:8000/api/workflows/pre-match" \
   -H "Content-Type: application/json" \
   -d '{"with_ai": true, "with_ensemble": true, "only_missing": true}'
+
+# 赛后复盘工作流：对应首页“同步赛果”
+curl -X POST "http://127.0.0.1:8000/api/workflows/post-match" \
+  -H "Content-Type: application/json" \
+  -d '{"since_hours": 24}'
 ```
 
 > 首页刷新不会自动触发上述工作流；当前默认是纯手动点击执行。
+
+工作台按钮当前口径：
+
+- `更新今日数据`：手动触发，不走 60 分钟冷却
+- `同步赛果`：手动触发，不走 60 分钟冷却
+- `运行 AI 预测`：手动触发，默认 60 分钟冷却
+- `一键更新全部`：手动触发，包含 AI 步骤，会消耗外部 API
+- 工作流运行期间，首页按钮和状态条会展示百分比进度
 
 ## 常见问题
 
@@ -226,8 +255,9 @@ lsof -ti:5173 | xargs kill    # 前端
 
 ### Q: 数据库初始化失败
 
-删除旧数据库重新初始化：
+先备份数据库，再重新初始化：
 ```bash
+cp data/world-cup.sqlite3 /tmp/world-cup.sqlite3.bak 2>/dev/null || true
 rm data/world-cup.sqlite3
 # 重启后端，系统会自动初始化
 ```

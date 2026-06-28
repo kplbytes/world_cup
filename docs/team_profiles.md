@@ -9,6 +9,7 @@
 - 会进入 `MatchContext`，但调整幅度受 caps 限制；
 - 会影响赛前预测和 AI prompt 输入；
 - 赛后仍通过独立评估结果观察画像是“helped / hurt / neutral”；
+- 前端比赛详情、球队详情和模型复盘都应读取同一套来源可追溯 payload，其中模型复盘使用 `/api/team-profiles/evaluation`；
 - 来源不足时必须显式暴露 `unavailable`、`missing_fields`、`data_quality_score`，不能伪装成真实强信号；
 - 仍不做多阶段 T-24 / T-6 / T-90 / T-30 多版本策略文案，评分口径以开赛前最后一份有效预测为准。
 

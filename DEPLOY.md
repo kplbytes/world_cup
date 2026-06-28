@@ -68,7 +68,7 @@
 | `APP_MODE` | `local` | 运行模式：`local` / `test` / `production` |
 | `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 前端打开时是否自动运行每日工作流 |
 | `AUTO_RUN_AI_ON_OPEN` | `false` | 前端打开时是否自动运行 AI 预测 |
-| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流冷却时间 |
+| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流冷却时间（仅影响“运行 AI 预测”按钮） |
 | `WORKFLOW_DEFAULT_HOURS` | `48` | 默认前瞻小时数 |
 | `WORKFLOW_DEFAULT_SINCE_HOURS` | `24` | 默认回溯小时数 |
 | `WORKFLOW_DEFAULT_LIMIT` | `10` | 默认 AI 批量限制 |
@@ -84,6 +84,7 @@
 - [ ] **ADMIN_API_KEY**：设置强密码，启用写接口认证
 - [ ] **CORS_ALLOWED_ORIGINS**：设置为实际前端域名，不使用 `*`
 - [ ] **APP_MODE**：设置为 `production`
+- [ ] **启动入口**：部署环境优先使用 `./scripts/start.sh` 或 systemd；根目录 `./start.sh` 仅用于本地双进程开发
 - [ ] **数据库备份**：首次部署前备份 `data/world-cup.sqlite3`
 - [ ] **前端构建**：`cd frontend && npm run build`
 - [ ] **后端依赖**：`cd backend && .venv/bin/pip install -e .`
@@ -105,8 +106,8 @@ cp .env.example .env
 cd backend && .venv/bin/python -m pytest tests/ -q
 cd frontend && npm test -- --run && npm run typecheck && npm run build
 
-# 5. 启动
-./start.sh
+# 5. 启动（单端口，本地部署验证）
+./scripts/start.sh
 ```
 
 ### 部署后验证
@@ -118,8 +119,8 @@ curl http://127.0.0.1:8000/api/health
 # 仪表盘可访问
 curl -s http://127.0.0.1:8000/api/dashboard | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Revision: {d[\"revision\"][\"id\"]}, Groups: {len(d[\"groups\"])}')"
 
-# 前端可访问（start.sh 开发入口）
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:5173/
+# 前端可访问（scripts/start.sh 由后端托管 dist）
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/
 ```
 
 ## 使用 systemd 部署（Linux）
@@ -136,8 +137,8 @@ After=network.target
 [Service]
 Type=simple
 User=worldcup
-WorkingDirectory=/opt/world_cup/backend
-ExecStart=/opt/world_cup/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+WorkingDirectory=/opt/world_cup
+ExecStart=/opt/world_cup/backend/.venv/bin/uvicorn app.main:app --app-dir /opt/world_cup/backend --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=5
 Environment=APP_MODE=production
@@ -277,7 +278,16 @@ sqlite3 data/world-cup.sqlite3 "VACUUM;"
 
 1. **调度器未运行**：检查 `/api/health` 中 `apscheduler` 状态
 2. **数据源不可达**：检查网络和 API 令牌
-3. **手动刷新**：`curl -X POST http://127.0.0.1:8000/api/refresh`
+3. **后台自动刷新默认关闭是正常行为**：`ENABLE_SCHEDULED_REFRESH=false` 时只保留快照锁定和维护任务
+4. **手动刷新**：通过首页按钮或 `curl -X POST http://127.0.0.1:8000/api/workflows/daily-open`
+
+### 工作流卡住在 running
+
+系统启动时会自动把上次异常退出遗留的 `running` workflow / step 修复为 `failed`。如果仍有异常：
+
+1. 检查 `workflow_runs` / `workflow_steps` 是否存在长时间未结束记录
+2. 检查最近一次服务是否发生异常中断
+3. 重启后重新查看 `/api/workflows/status`
 
 ### 内存占用过高
 

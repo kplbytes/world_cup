@@ -89,9 +89,14 @@ backend/app/
 │   ├── market_comparison.py  # 模型 vs 市场对比
 │   ├── calibration.py        # 概率校准
 │   ├── accuracy_command.py   # 准确率指挥中心
+│   ├── adaptive_weights.py   # 自适应集成权重
+│   ├── ai_independence.py    # AI 独立性审计
 │   ├── model_recommendation.py # 模型推荐
 │   ├── data_quality.py       # 数据质量检查
+│   ├── error_attribution.py  # 误差归因
+│   ├── manual_adjustments.py # 手动调整
 │   ├── seed.py               # 种子数据加载
+│   ├── team_matching.py      # 队名/别名匹配
 │   └── localization.py       # 本地化（球队名翻译）
 │
 ├── ai/                  # AI 预测子系统
@@ -109,7 +114,7 @@ backend/app/
 │       ├── base.py               # 抽象基类
 │       ├── openai_compat.py      # OpenAI 兼容客户端
 │       ├── deepseek.py           # DeepSeek 提供商
-│       └── ...                   # 其他兼容提供商（如有）
+│       └── xiaomi.py             # 备用兼容提供商实现（当前未在 ai_models.yaml 启用）
 │
 ├── prediction/          # 基线预测引擎
 │   ├── elo.py                # Elo 评级计算
@@ -122,8 +127,8 @@ backend/app/
 │   ├── service.py            # 画像服务
 │   ├── data_loader.py        # 数据加载
 │   ├── feature_engineering.py # 特征工程
-│   ├── scorer.py             # 历史保留：当前不参与主预测链路
-│   └── evaluation.py         # 历史保留：当前不做 Shadow 因子验证
+│   ├── scorer.py             # 画像调整计算
+│   └── evaluation.py         # 画像独立评估（模型复盘）
 │
 ├── tournament/          # 赛事逻辑
 │   ├── standings.py          # 积分榜计算
@@ -171,16 +176,26 @@ backend/app/
 
 ```
 App.tsx
-├── DailyDashboard          # 每日仪表盘（默认首页）
+├── AppHeader               # 顶部品牌、版本、模型标签
+├── PageShell               # 页面宽度与布局容器
+├── DailyDashboard          # 今日工作台（默认首页）
+│   ├── StatusStrip
+│   ├── WorkflowProgressBar
+│   ├── ActionButton
+│   ├── MatchSummaryCard
+│   └── MatchDetailDrawer
 ├── MatchCenter             # 比赛中心
-│   └── MatchDetailDrawer   # 比赛详情抽屉
+│   ├── GroupNav
+│   ├── GroupDashboard
+│   ├── MatchSummaryCard
+│   ├── MatchDetailDrawer
+│   └── BracketView
 ├── ModelReviewCenter       # 模型复盘中心
-│   ├── AIModelComparisonView
-│   └── AccuracyCommandCenterView
-└── TournamentCenter        # 赛事中心
-    ├── BracketView         # 对阵表
-    ├── GroupDashboard      # 小组积分
-    └── TournamentProjectionView  # 晋级概率
+├── TournamentCenter        # 冠军与赛程
+│   ├── 冠军概率
+│   ├── 晋级概率
+│   └── 淘汰赛路径
+└── TeamDetail              # 球队详情抽屉
 ```
 
 ### 关键设计
@@ -191,7 +206,9 @@ App.tsx
   3. 基线预测（无 AI 时）→ 显示基线推荐
   4. 无预测 → 显示"待生成"
 
+- **固定四个顶层入口**：今日工作台、比赛中心、模型复盘、冠军与赛程；导航位置在各入口间保持一致
 - **实时状态**：3 小时内开赛的比赛显示在"即将开赛"列表
+- **工作流进度可见**：今日工作台动作按钮和状态区共用同一组 workflow progress 数据
 
 ## 数据流
 
@@ -215,7 +232,7 @@ App.tsx
 AI 预测 (ai/service) ── 多模型独立预测
     │                      │
     │                      ├── DeepSeek V4 Flash / Pro
-    │                      ├── 独立提示词 v2 变体
+    │                      ├── DeepSeek V4 Flash (Independent, v2 prompt)
     │                      └── 去重 + 1 小时重跑冷却 + 抄袭检测
     │
     ▼
@@ -296,6 +313,8 @@ providers:
         prompt_version: worldcup-ai-v1
 ```
 
+当前默认配置只启用 DeepSeek provider。代码库保留的备用 provider 实现不会自动出现在用户侧页面和文档主说明中。
+
 ### 提示词版本
 
 | 版本 | 特点 |
@@ -341,13 +360,15 @@ workflow_runs ──1:N──> workflow_steps
 
 ### Schema 迁移
 
-数据库使用 `PRAGMA user_version` 进行轻量级版本控制，当前版本为 5。迁移在 `db.py` 的 `_upgrade_schema()` 中执行，支持：
+数据库使用 `PRAGMA user_version` 进行轻量级版本控制，当前版本为 7。迁移在 `db.py` 的 `_upgrade_schema()` 中执行，支持：
 
 - v1：prediction_snapshots 增加锁定字段
 - v2：matches 增加淘汰赛字段 + AI 表
 - v3：workflow 系统表
 - v4：team_profile 表 + 去重
 - v5：prediction_snapshots 主键重构 + 唯一约束
+- v6：structured team profile modules
+- v7：prediction snapshot access indexes
 
 ## 关键设计决策
 

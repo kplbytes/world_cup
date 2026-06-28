@@ -141,8 +141,9 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 说明：
 
-- 默认会跳过已有成功预测；如需人工重跑，传 `force=true`
-- 同一场比赛的成功 AI 预测在 1 小时内不会再次强制刷新，超过 1 小时可用 `force=true` 手动重跑
+- 这是底层刷新接口，主要负责外部数据同步和重算
+- 首页动作区通常走 `/api/workflows/*` 接口，而不是直接调用这个端点
+- `ENABLE_SCHEDULED_REFRESH=false` 时，不会后台自动周期性调用该接口
 
 ---
 
@@ -151,6 +152,8 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 ### GET /api/ai-models
 
 列出所有已配置的 AI 模型及其状态。
+
+当前默认配置只包含 DeepSeek 系列模型；停用或欠费后不再对用户侧暴露的模型不会出现在工作台展示说明中。
 
 **响应示例：**
 
@@ -366,7 +369,7 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 - `today_status`
 - `next_action`
-- `button_states.daily_open / ai_prediction / post_match / full`
+- `button_states.daily_open / ai_prediction / post_match / full / lock`
 - `ai_status`
 - `last_run.progress`
 
@@ -408,6 +411,11 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
   "only_missing": true
 }
 ```
+
+说明：
+
+- 首页按钮是否可点、是否处于 60 分钟冷却期，以 `/api/workflows/status.button_states.ai_prediction` 为准
+- 工作流启动后，前端会轮询 `/api/workflows/status` 和 `/api/workflows/runs` 展示百分比进度
 
 ### POST /api/workflows/post-match
 

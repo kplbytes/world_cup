@@ -1,6 +1,6 @@
 # 2026 FIFA World Cup Prediction Workbench
 
-> **状态：生产就绪 (Production Ready)**
+> **状态：文档已对齐到 2026-06-28 当前实现**
 
 本地优先、多层融合的 2026 FIFA 世界杯预测系统。覆盖 48 支球队、12 个小组、72 场小组赛，支持淘汰赛路径推演、赛前锁定、赛后复盘、AI 融合预测和球队画像。
 
@@ -35,7 +35,12 @@ cp .env.example .env
 
 > 详细步骤请参阅 [QUICK_START.md](QUICK_START.md)
 
-当前首页刷新只会拉取状态和展示数据，不会自动触发工作流。`更新今日数据`、`同步赛果`、`运行 AI 预测` 和 `一键更新全部` 都需要用户手动点击。
+当前首页刷新只会拉取状态和展示数据，不会自动触发工作流。
+
+- `更新今日数据`、`同步赛果`、`运行 AI 预测`、`一键更新全部` 都需要用户手动点击
+- `更新今日数据` 和 `同步赛果` 不受 60 分钟冷却限制
+- `运行 AI 预测` 受 `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` 控制，默认 60 分钟
+- 工作流运行中时，首页动作按钮和顶部状态条会显示百分比进度
 
 ## 核心功能
 
@@ -67,25 +72,26 @@ cp .env.example .env
 
 ### AI 预测
 
-- **多模型**：DeepSeek V4 Flash、DeepSeek V4 Pro，以及独立提示词 `worldcup-ai-v2` 变体
+- **当前可见模型**：DeepSeek V4 Flash、DeepSeek V4 Pro，以及独立提示词 `worldcup-ai-v2` 的 DeepSeek V4 Flash 变体
 - **双提示词**：v1（含基线参考）+ v2（独立判断，无基线泄漏）
 - **去重**：跳过已有成功预测的模型（除非 force）
 - **单场冷却**：同一场比赛 1 小时内不重复刷新 AI 预测；超过 1 小时可用 `force=true` 手动重跑
 - **基线抄袭检测**：标记与系统预测完全一致的 AI 输出
 - **独立审计**：`/api/ai-independence` 检查 AI 与基线的偏差程度
+- **展示约束**：停用或欠费的 provider/model 不在用户侧首页和模型复盘页展示
 
 ### 集成融合
 
 | 场景 | 系统权重 | 市场权重 | AI 权重 |
 |------|---------|---------|--------|
-| 全部可用 | 40% | 20% | 40% |
+| 全部可用 | 35% | 30% | 35% |
 | 无市场 | 50% | - | 50% |
-| 无 AI | 75% | 25% | - |
+| 无 AI | 55% | 45% | - |
 | 仅系统 | 100% | - | - |
 
 ### 球队画像
 
-- **已接入预测引擎**：`elo-poisson-v3-profile` 模型通过 `profile_adapter.py` 将画像分数（0-100）转换为 `MatchContext` 调整项，在 `predict_match()` 中按 `profile_weight` 加权影响攻防、状态、FIFA 排名；`profile_weight=0` 时完全回退到 v1 行为
+- **已接入当前重算链路**：画像特征会通过 `profile_adapter.py` 转换为 `MatchContext` 调整项进入当前 baseline / numerical 重算；独立画像评估结果仍以 `elo-poisson-v1-team-profile` 单独存储，供模型复盘使用
 - 使用 Mart Jürisoo 国际比赛结果快照（2022-01-01 至 2026-06-19 已完赛比赛）构建真实历史样本；`seed_mock_v1` 仅作无真实样本时的本地 fallback，并会降低数据可信度
 - FIFA 排名优先从 FIFA 官方 FDCP API 导入，当前覆盖 48/48 支球队；Elo/FIFA source 会进入球队画像 `source_list`
 - 七个结构化模块：基础实力、近期状态、攻防能力、战术风格、阵容与球员风险、比赛环境适应、数据可信度
@@ -156,6 +162,7 @@ cp .env.example .env
 | `SIMULATION_SEED` | `20260613` | 随机种子 |
 | `REFRESH_INTERVAL_MINUTES` | `15` | 常规刷新间隔 |
 | `LIVE_REFRESH_INTERVAL_MINUTES` | `2` | 比赛期间刷新间隔 |
+| `SNAPSHOT_LOCK_INTERVAL_MINUTES` | `1` | 决策快照锁定检查间隔 |
 | `ENABLE_SCHEDULED_REFRESH` | `false` | 是否启用后台定时刷新赛果/赛程 |
 
 ### AI 预测
@@ -171,6 +178,7 @@ cp .env.example .env
 | `AI_MAX_RETRIES` | `2` | 最大重试次数 |
 | `AI_MAX_CONCURRENT_REQUESTS` | `2` | 最大并发请求数 |
 | `AI_RUN_ALL_MAX_LIMIT` | `20` | 批量运行最大比赛数 |
+| `AI_PROMPT_VERSION` | `worldcup-ai-v1` | 默认提示词版本 |
 
 ### 安全与 CORS
 
@@ -179,13 +187,20 @@ cp .env.example .env
 | `ADMIN_API_KEY` | 空 | 写接口认证密钥（空=不认证） |
 | `CORS_ALLOWED_ORIGINS` | `*` | 允许的 CORS 来源（逗号分隔） |
 
+### 运行模式与实验开关
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `APP_MODE` | `local` | 运行模式：`local` / `test` / `production` |
+| `ENABLE_NUMERICAL_ADJUSTMENTS` | `false` | 是否启用实验性数值修正版本 |
+
 ### 工作流
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` | `false` | 是否允许页面打开时自动触发每日工作流 |
 | `AUTO_RUN_AI_ON_OPEN` | `false` | 是否允许页面打开时自动触发 AI 预测 |
-| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流按钮的冷却时间（分钟） |
+| `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` | `60` | AI 工作流按钮的冷却时间（分钟，仅作用于“运行 AI 预测”） |
 
 ## 前端页面
 
@@ -194,7 +209,7 @@ cp .env.example .env
 | **今日工作台** | 今日状态、下一步建议、工作流操作、未来 24/48 小时比赛 |
 | **比赛中心** | 按小组/今日/淘汰赛查看所有比赛 |
 | **模型复盘** | 核心结论、自适应 Ensemble 权重、AI 评估、误差归因、画像评估 |
-| **赛事中心** | 对阵表、晋级概率、球队路径、积分榜 |
+| **冠军与赛程** | 冠军概率、晋级概率、淘汰赛路径 |
 
 比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页。
 

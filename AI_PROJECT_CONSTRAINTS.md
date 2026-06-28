@@ -20,7 +20,7 @@
 3. `TEAM_PROFILE_IMPLEMENTATION_REPORT.md` / `TEAM_PROFILE_HANDOFF_PLAN.md`；
 4. `README.md`。
 
-说明：`README.md` 已包含部分过时描述，不能在冲突时当最高真相源。
+说明：`README.md` 用于总览，但任何时候只要与当前代码冲突，都不能高于本文件和实际实现。
 
 ## 2. 项目当前定位
 
@@ -76,6 +76,7 @@
 - 首页动作区的 `更新今日数据`、`同步赛果`、`运行 AI 预测`、`一键更新全部` 由用户手动点击后才会调用对应 POST 接口；
 - `AUTO_RUN_DAILY_WORKFLOW_ON_OPEN` 和 `AUTO_RUN_AI_ON_OPEN` 默认都是 `false`；
 - `WORKFLOW_AUTO_RUN_COOLDOWN_MINUTES` 当前主要用于 AI 预测按钮冷却，不适用于“更新今日数据”和“同步赛果”。
+- 顶部 Header 不再放重复的“同步赛果”入口，相关操作统一留在今日工作台动作区。
 
 因此：
 
@@ -232,6 +233,11 @@ AI 模型状态不能只显示 enabled 或"已运行 N 个"。
 前端今日工作台和模型复盘都不得只显示"AI 已运行 N 个模型"而忽略失败和解析错误。
 
 `/api/workflows/status` 返回的 `ai_status` 字段包含上述完整口径。
+
+### 8.1.2 用户侧可见模型约束
+
+- 停用、欠费或已明确下线的 provider/model，不要继续在首页、模型复盘或 README 中当成当前可用能力展示；
+- 当前用户侧文档与页面只应描述实际启用且可见的模型集合。
 
 ### 8.2 AI 触发必须真实调用
 
