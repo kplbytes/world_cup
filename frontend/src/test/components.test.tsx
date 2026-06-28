@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import MatchSummaryCard from "../components/MatchSummaryCard";
-import MatchCard from "../components/MatchCard";
 import ProbabilityBar from "../components/ProbabilityBar";
 import ProbabilityBars from "../components/ui/ProbabilityBars";
 import EmptyState from "../components/ui/EmptyState";
@@ -15,9 +14,8 @@ import StatusStrip from "../components/ui/StatusStrip";
 import WorkflowProgressBar from "../components/ui/WorkflowProgressBar";
 import ActionButton from "../components/ActionButton";
 import GroupNav from "../components/GroupNav";
-import Header from "../components/Header";
 import { workflowRunsRefetchInterval, workflowStatusRefetchInterval } from "../hooks/useWorkflowActions";
-import type { Match, Dashboard } from "../types";
+import type { Match } from "../types";
 
 afterEach(() => {
   cleanup();
@@ -311,128 +309,5 @@ describe("GroupNav", () => {
     render(<GroupNav selected="A" onSelect={onSelect} />);
     await userEvent.click(screen.getByText("D"));
     expect(onSelect).toHaveBeenCalledWith("D");
-  });
-});
-
-// ── Header ───────────────────────────────────────────────────────────
-
-describe("Header", () => {
-  const dashboard: Dashboard = {
-    revision: { id: 1, created_at: "2026-06-14T04:00:00Z", model_version: "elo-poisson-v1", simulation_iterations: 50000, simulation_seed: 42 },
-    groups: [],
-    data_sources: [],
-  };
-
-  it("renders title and model version", () => {
-    render(<Header dashboard={dashboard} refreshing={false} onRefresh={() => {}} />);
-    expect(screen.getByText("2026 世界杯预测工作台")).toBeVisible();
-    expect(screen.getByText("elo-poisson-v1")).toBeVisible();
-  });
-
-  it("shows sync button when not refreshing", () => {
-    render(<Header dashboard={dashboard} refreshing={false} onRefresh={() => {}} />);
-    expect(screen.getByText("同步赛果")).toBeVisible();
-  });
-
-  it("shows syncing text when refreshing", () => {
-    render(<Header dashboard={dashboard} refreshing={true} onRefresh={() => {}} />);
-    expect(screen.getByText("正在同步")).toBeVisible();
-  });
-
-  it("calls onRefresh when sync button is clicked", async () => {
-    const onRefresh = vi.fn();
-    render(<Header dashboard={dashboard} refreshing={false} onRefresh={onRefresh} />);
-    await userEvent.click(screen.getByText("同步赛果"));
-    expect(onRefresh).toHaveBeenCalled();
-  });
-
-  it("disables sync button when refreshing", () => {
-    render(<Header dashboard={dashboard} refreshing={true} onRefresh={() => {}} />);
-    expect(screen.getByText("正在同步")).toBeDisabled();
-  });
-});
-
-// ── MatchCard ────────────────────────────────────────────────────────
-
-describe("MatchCard", () => {
-  it("renders team names and kickoff time", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText(/巴西/)).toBeVisible();
-    expect(screen.getByText(/阿根廷/)).toBeVisible();
-  });
-
-  it("shows VS for upcoming matches", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("VS")).toBeVisible();
-  });
-
-  it("shows score for finished matches", () => {
-    const match = makeMatch({ status: "final", home_score: 3, away_score: 1 });
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("3 : 1")).toBeVisible();
-  });
-
-  it("shows 终场 for finished matches", () => {
-    const match = makeMatch({ status: "final", home_score: 1, away_score: 0 });
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("终场")).toBeVisible();
-  });
-
-  it("shows confidence label for upcoming matches", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("高")).toBeVisible();
-  });
-
-  it("shows detail button", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("查看详情")).toBeVisible();
-  });
-
-  it("shows prediction direction labels", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("Baseline")).toBeVisible();
-    expect(screen.getByText("AI")).toBeVisible();
-    expect(screen.getByText("Ensemble")).toBeVisible();
-  });
-
-  it("shows 待运行 when no AI prediction", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("待运行")).toBeVisible();
-  });
-
-  it("shows 待生成 when no Ensemble prediction", () => {
-    const match = makeMatch();
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("待生成")).toBeVisible();
-  });
-
-  it("shows locked status when snapshot is locked", () => {
-    const match = makeMatch({
-      snapshot_status: { locked: true, locked_at: "2026-06-14T00:00:00Z", is_fallback: false, participates_in_model_score: true, real_time_only: false },
-    });
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("已锁定")).toBeVisible();
-  });
-
-  it("shows real-time status when snapshot is real_time_only", () => {
-    const match = makeMatch({
-      snapshot_status: { locked: false, locked_at: null, is_fallback: false, participates_in_model_score: false, real_time_only: true },
-    });
-    render(<MatchCard match={match} />);
-    expect(screen.getByText("实时")).toBeVisible();
-  });
-
-  it("calls onOpenDetails when detail button is clicked", async () => {
-    const match = makeMatch();
-    const onOpen = vi.fn();
-    render(<MatchCard match={match} onOpenDetails={onOpen} />);
-    await userEvent.click(screen.getByText("查看详情"));
-    expect(onOpen).toHaveBeenCalledWith(match);
   });
 });
