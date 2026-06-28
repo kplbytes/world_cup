@@ -119,6 +119,9 @@ curl http://127.0.0.1:8000/api/health
 # 仪表盘可访问
 curl -s http://127.0.0.1:8000/api/dashboard | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Revision: {d[\"revision\"][\"id\"]}, Groups: {len(d[\"groups\"])}')"
 
+# 淘汰赛对阵表可访问（应包含 official Match 73-104 结构）
+curl -s http://127.0.0.1:8000/api/tournament/bracket | python3 -c "import sys,json; d=json.load(sys.stdin); print(', '.join(f'{k}:{len(v)}' for k,v in d.items()))"
+
 # 前端可访问（scripts/start.sh 由后端托管 dist）
 curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/
 ```
@@ -288,6 +291,12 @@ sqlite3 data/world-cup.sqlite3 "VACUUM;"
 1. 检查 `workflow_runs` / `workflow_steps` 是否存在长时间未结束记录
 2. 检查最近一次服务是否发生异常中断
 3. 重启后重新查看 `/api/workflows/status`
+
+### 淘汰赛路径为空或长期停留待定
+
+1. 启动时会自动写入官方 Match 73-104 占位赛程，可先检查 `/api/tournament/bracket`
+2. 小组赛未全部结束前，部分最佳第三名席位处于待定是正常行为
+3. 若已完赛淘汰赛未推进，检查对应比赛是否已写入比分，或是否带有 `home_advance` / `away_advance`
 
 ### 内存占用过高
 

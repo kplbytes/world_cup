@@ -21,13 +21,9 @@ _projections_cache_lock = threading.Lock()
 @router.get("/tournament/bracket")
 def tournament_bracket():
     """Get current tournament bracket."""
-    from app.tournament.standings import get_current_standings, get_third_placed_ranking
-    from app.tournament.bracket import generate_bracket
+    from app.tournament.knockout import get_knockout_bracket_payload
     with session_scope() as session:
-        standings = get_current_standings(session)
-        third_placed = get_third_placed_ranking(session)
-        bracket = generate_bracket(standings, third_placed)
-    return bracket
+        return get_knockout_bracket_payload(session)
 
 
 @router.get("/tournament/projections")

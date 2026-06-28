@@ -41,7 +41,7 @@ export default function BracketView() {
   return (
     <div className="bracket-view">
       <div className="banner-warn">
-        基于 2026 世界杯官方 Match 73-88 框架；最佳第三名落位采用简化贪心分配，与 FIFA 官方组合表可能存在差异。
+        基于 2026 世界杯官方 Match 73-104 赛程；最佳第三名落位按官方组合表生成，已结束比赛会自动推进到下一轮。
       </div>
 
       <div className="bracket-stage-tabs">

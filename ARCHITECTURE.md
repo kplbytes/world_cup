@@ -35,7 +35,7 @@
 ### 应用生命周期
 
 ```
-启动 → 初始化数据库 → 种子数据 → 首次重算 → 修复锁定/卡住工作流 → 启动调度器 → 就绪
+启动 → 初始化数据库 → 种子数据 → 同步官方淘汰赛占位/晋级状态 → 首次重算 → 修复锁定/卡住工作流 → 启动调度器 → 就绪
                                                                              │
                                               ┌──────────────────────────────┼─────────────────────┐
                                               │                              │                     │
@@ -45,8 +45,9 @@
 
 1. **`create_app()`**：创建 FastAPI 实例，注册中间件和路由
 2. **`initialize_database()`**：建表、种子数据、首次重算、修复锁定、清理异常中断后遗留的 running workflow
-3. **调度器**：默认两个后台任务——快照锁定和维护；定时刷新赛果/赛程只有在 `ENABLE_SCHEDULED_REFRESH=true` 时才启用
-4. **关闭**：停止调度器，关闭 AI 提供商客户端
+3. **淘汰赛同步**：启动时会写入官方 Match 73-104 淘汰赛占位赛程，并根据当前积分榜/已结束淘汰赛结果同步席位和晋级关系
+4. **调度器**：默认两个后台任务——快照锁定和维护；定时刷新赛果/赛程只有在 `ENABLE_SCHEDULED_REFRESH=true` 时才启用
+5. **关闭**：停止调度器，关闭 AI 提供商客户端
 
 ### 中间件栈（外→内）
 
@@ -113,8 +114,7 @@ backend/app/
 │   └── providers/            # AI 提供商实现
 │       ├── base.py               # 抽象基类
 │       ├── openai_compat.py      # OpenAI 兼容客户端
-│       ├── deepseek.py           # DeepSeek 提供商
-│       └── xiaomi.py             # 备用兼容提供商实现（当前未在 ai_models.yaml 启用）
+│       └── deepseek.py           # DeepSeek 提供商
 │
 ├── prediction/          # 基线预测引擎
 │   ├── elo.py                # Elo 评级计算
@@ -132,7 +132,9 @@ backend/app/
 │
 ├── tournament/          # 赛事逻辑
 │   ├── standings.py          # 积分榜计算
-│   ├── bracket.py            # 对阵表生成
+│   ├── bracket.py            # 官方淘汰赛对阵推导
+│   ├── knockout.py           # Match 73-104 占位赛程与自动晋级推进
+│   ├── third_place.py        # 最佳第三名官方组合表
 │   ├── simulation.py         # Monte Carlo 模拟
 │   ├── qualification.py      # 出线规则
 │   └── rules.py              # 排名规则
@@ -270,6 +272,29 @@ AI 预测 (ai/service) ── 多模型独立预测
 | 8 | `accuracy_command_update` | 准确率更新 |
 | 9 | `artifact_generation` | 产物生成 |
 
+### 淘汰赛状态同步
+
+```
+官方淘汰赛种子 (data/seed/world-cup-2026-knockout.json)
+    │
+    ▼
+ensure_knockout_placeholders()
+    │
+    ├── 写入 Match 73-104 占位赛程
+    ├── 绑定 winner_to_match_id / loser_to_match_id
+    └── 保留 home_source / away_source
+    │
+    ▼
+populate_round_of_32_from_standings()
+    │
+    └── 使用当前积分榜 + 最佳第三名官方组合表填充 32 强
+    │
+    ▼
+propagate_knockout_advancement()
+    │
+    └── 已结束淘汰赛按比分或 advance flags 自动写入下一轮
+```
+
 ## AI 提供商架构
 
 ### OpenAI 兼容设计
@@ -329,7 +354,7 @@ providers:
 | 表名 | 用途 | 关键字段 |
 |------|------|---------|
 | `teams` | 球队信息 | id, name, code, group_code |
-| `matches` | 比赛信息 | id, kickoff, status, home/away_score, stage |
+| `matches` | 比赛信息 | id, kickoff, status, home/away_score, stage, round_name, bracket_position, home_team_source, away_team_source |
 | `team_ratings` | 球队评级 | team_id, elo, fifa_rank, effective_date |
 | `dashboard_revisions` | 预测版本 | id, model_version, active, simulation_iterations |
 | `match_predictions` | 基线预测 | revision_id, match_id, home_win, draw, away_win, home_xg |

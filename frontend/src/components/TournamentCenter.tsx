@@ -152,7 +152,7 @@ export default function TournamentCenter() {
     return (
       <div>
         <div style={{ color: "var(--risk-red)", fontSize: 13, fontWeight: 600, marginBottom: 16, padding: "10px 14px", border: "1px solid var(--risk-red)", borderRadius: 6, background: "rgba(255,107,107,0.08)", lineHeight: 1.6 }}>
-          当前淘汰赛路径为简化模拟，真实 2026 赛制路径后续校准后再作为正式参考。
+          当前淘汰赛路径按官方赛程和第三名组合表生成；已结束比赛会自动写入晋级结果，未决出席位显示为待定。
         </div>
         <BracketView />
       </div>

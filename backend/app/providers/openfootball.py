@@ -53,11 +53,11 @@ class OpenFootballProvider:
         }
         code_by_name.update(aliases)
 
-        matches = [
-            cls._normalize_match(match, code_by_name)
-            for match in raw_tournament["matches"]
-            if match.get("group")
-        ]
+        matches = []
+        for match in raw_tournament["matches"]:
+            normalized = cls._normalize_match(match, code_by_name)
+            if normalized is not None:
+                matches.append(normalized)
         return TournamentPayload(
             name=raw_tournament["name"],
             source=SourceMetadata(
@@ -84,13 +84,32 @@ class OpenFootballProvider:
         )
 
     @staticmethod
-    def _normalize_match(raw: dict, code_by_name: dict[str, str]) -> TournamentMatch:
-        group_code = raw["group"].removeprefix("Group ")
+    def _normalize_match(raw: dict, code_by_name: dict[str, str]) -> TournamentMatch | None:
+        is_group_match = bool(raw.get("group"))
+        if raw["team1"] not in code_by_name or raw["team2"] not in code_by_name:
+            return None
+
+        group_code = raw["group"].removeprefix("Group ") if is_group_match else None
         home_id = code_by_name[raw["team1"]]
         away_id = code_by_name[raw["team2"]]
         kickoff = _parse_kickoff(raw["date"], raw["time"])
-        final_score = raw.get("score", {}).get("ft")
-        match_id = f"2026-{group_code}-{home_id}-{away_id}-{raw['date']}"
+        score = raw.get("score", {}) or {}
+        final_score = score.get("ft")
+        extra_time_score = score.get("et") or score.get("aet")
+        penalties_score = score.get("p") or score.get("pen")
+        match_id = (
+            f"2026-{group_code}-{home_id}-{away_id}-{raw['date']}"
+            if is_group_match
+            else f"2026-KO-{int(raw['num']):03d}"
+        )
+        home_advance = None
+        away_advance = None
+        if penalties_score:
+            home_advance = penalties_score[0] > penalties_score[1]
+            away_advance = penalties_score[1] > penalties_score[0]
+        elif extra_time_score:
+            home_advance = extra_time_score[0] > extra_time_score[1]
+            away_advance = extra_time_score[1] > extra_time_score[0]
         return TournamentMatch(
             id=match_id,
             group_code=group_code,
@@ -101,6 +120,10 @@ class OpenFootballProvider:
             status="final" if final_score else "scheduled",
             home_score=final_score[0] if final_score else None,
             away_score=final_score[1] if final_score else None,
+            home_advance=home_advance,
+            away_advance=away_advance,
+            went_to_extra_time=bool(extra_time_score) if final_score else None,
+            went_to_penalties=bool(penalties_score) if final_score else None,
             source_match_id=match_id,
         )
 

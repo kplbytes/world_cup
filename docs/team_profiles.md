@@ -7,6 +7,7 @@
 当前约束：
 
 - 会进入 `MatchContext`，但调整幅度受 caps 限制；
+- 小组赛和淘汰赛重算链路都应走同一套画像调整逻辑，不能在 knockout 阶段静默关掉画像权重；
 - 会影响赛前预测和 AI prompt 输入；
 - 赛后仍通过独立评估结果观察画像是“helped / hurt / neutral”；
 - 前端比赛详情、球队详情和模型复盘都应读取同一套来源可追溯 payload，其中模型复盘使用 `/api/team-profiles/evaluation`；

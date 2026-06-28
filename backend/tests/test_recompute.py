@@ -15,7 +15,7 @@ from app.models import (
     TeamProfilePrediction,
 )
 from app.providers.openfootball import OpenFootballProvider
-from app.services.recompute import _compute_data_context, _prune_old_revisions, recompute_all
+from app.services.recompute import _compute_data_context, _prune_old_revisions, recompute_all, recompute_knockout_stage
 from app.services.seed import seed_ratings, seed_tournament
 
 
@@ -191,3 +191,138 @@ def test_prune_old_revisions_preserves_scoring_history(db_session):
             QualificationPrediction.revision_id == old_revision_id
         )
     ) == 0
+
+
+def test_recompute_all_uses_profile_adjustments_without_market_data(db_session, monkeypatch):
+    seed_database(db_session)
+    match_id = db_session.scalar(
+        select(Match.id).where(Match.status == "scheduled", Match.stage == "group").order_by(Match.kickoff.asc())
+    )
+    assert match_id is not None
+
+    monkeypatch.setattr("app.team_profiles.service.get_team_profile", lambda session, team_id, as_of_date=None: {"team_id": team_id})
+
+    monkeypatch.setattr(
+        "app.prediction.profile_adapter.compute_profile_adjustments",
+        lambda home, away: {
+            "profile_home_attack": 0.20,
+            "profile_home_defense": 0.00,
+            "profile_away_attack": -0.10,
+            "profile_away_defense": 0.00,
+            "profile_home_form": 0.04,
+            "profile_away_form": 0.00,
+            "profile_draw_adjustment": 0.02,
+            "profile_available": True,
+            "profile_risk_flags": ["group_profile_test"],
+        },
+    )
+    with_profile_revision = recompute_all(db_session, iterations=50, seed=9)
+    with_profile = db_session.scalar(
+        select(MatchPrediction)
+        .where(MatchPrediction.revision_id == with_profile_revision.id, MatchPrediction.match_id == match_id)
+        .order_by(MatchPrediction.id.asc())
+    )
+
+    monkeypatch.setattr(
+        "app.prediction.profile_adapter.compute_profile_adjustments",
+        lambda home, away: {
+            "profile_home_attack": 0.0,
+            "profile_home_defense": 0.0,
+            "profile_away_attack": 0.0,
+            "profile_away_defense": 0.0,
+            "profile_home_form": 0.0,
+            "profile_away_form": 0.0,
+            "profile_draw_adjustment": 0.0,
+            "profile_available": False,
+            "profile_risk_flags": [],
+        },
+    )
+    without_profile_revision = recompute_all(db_session, iterations=50, seed=9)
+    without_profile = db_session.scalar(
+        select(MatchPrediction)
+        .where(MatchPrediction.revision_id == without_profile_revision.id, MatchPrediction.match_id == match_id)
+        .order_by(MatchPrediction.id.asc())
+    )
+
+    assert with_profile is not None
+    assert without_profile is not None
+    assert with_profile.model_inputs["profile_adjustments"]["profile_available"] is True
+    assert with_profile.model_inputs["profile_adjustments"]["home_attack"] == 0.20
+    assert (
+        with_profile.home_xg != without_profile.home_xg
+        or with_profile.home_win != without_profile.home_win
+        or with_profile.draw != without_profile.draw
+    )
+
+
+def test_recompute_knockout_stage_uses_profile_adjustments(db_session, monkeypatch):
+    seed_database(db_session)
+    db_session.add(
+        Match(
+            id="ko-profile-test",
+            group_code=None,
+            home_team_id="MEX",
+            away_team_id="KOR",
+            kickoff=db_session.scalar(select(Match.kickoff).where(Match.id == "2026-A-MEX-KOR-2026-06-18")) + timedelta(days=10),
+            status="scheduled",
+            source="test",
+            stage="round_of_32",
+            round_name="32强",
+            bracket_position=73,
+        )
+    )
+    db_session.commit()
+
+    monkeypatch.setattr("app.team_profiles.service.get_team_profile", lambda session, team_id, as_of_date=None: {"team_id": team_id})
+
+    monkeypatch.setattr(
+        "app.prediction.profile_adapter.compute_profile_adjustments",
+        lambda home, away: {
+            "profile_home_attack": 0.20,
+            "profile_home_defense": 0.00,
+            "profile_away_attack": -0.10,
+            "profile_away_defense": 0.00,
+            "profile_home_form": 0.04,
+            "profile_away_form": 0.00,
+            "profile_draw_adjustment": 0.02,
+            "profile_available": True,
+            "profile_risk_flags": ["knockout_profile_test"],
+        },
+    )
+    with_profile_revision = recompute_knockout_stage(db_session, iterations=50, seed=9)
+    with_profile = db_session.scalar(
+        select(MatchPrediction)
+        .where(MatchPrediction.revision_id == with_profile_revision.id, MatchPrediction.match_id == "ko-profile-test")
+        .order_by(MatchPrediction.id.asc())
+    )
+
+    monkeypatch.setattr(
+        "app.prediction.profile_adapter.compute_profile_adjustments",
+        lambda home, away: {
+            "profile_home_attack": 0.0,
+            "profile_home_defense": 0.0,
+            "profile_away_attack": 0.0,
+            "profile_away_defense": 0.0,
+            "profile_home_form": 0.0,
+            "profile_away_form": 0.0,
+            "profile_draw_adjustment": 0.0,
+            "profile_available": False,
+            "profile_risk_flags": [],
+        },
+    )
+    without_profile_revision = recompute_knockout_stage(db_session, iterations=50, seed=9)
+    without_profile = db_session.scalar(
+        select(MatchPrediction)
+        .where(MatchPrediction.revision_id == without_profile_revision.id, MatchPrediction.match_id == "ko-profile-test")
+        .order_by(MatchPrediction.id.asc())
+    )
+
+    assert with_profile is not None
+    assert without_profile is not None
+    assert with_profile.model_inputs["profile_available"] is True
+    assert with_profile.model_inputs["profile_adjustments"]["home_attack"] == 0.20
+    assert (
+        with_profile.home_xg != without_profile.home_xg
+        or with_profile.home_win != without_profile.home_win
+        or with_profile.draw != without_profile.draw
+    )

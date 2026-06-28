@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -71,3 +72,29 @@ def test_provider_rejects_a_team_assigned_to_the_wrong_group(tmp_path):
 
     with pytest.raises(ValidationError):
         provider.load()
+
+
+def test_provider_normalizes_knockout_match_with_advance_flags(tmp_path):
+    raw_tournament = json.loads((FIXTURES / "openfootball-worldcup-2026.json").read_text())
+    raw_tournament["matches"][72]["team1"] = "Mexico"
+    raw_tournament["matches"][72]["team2"] = "South Korea"
+    raw_tournament["matches"][72]["score"] = {"ft": [1, 1], "p": [5, 4]}
+
+    matches_path = tmp_path / "matches.json"
+    matches_path.write_text(json.dumps(raw_tournament), encoding="utf-8")
+
+    payload = OpenFootballProvider.from_files(
+        matches_path=matches_path,
+        teams_path=FIXTURES / "openfootball-worldcup-teams-2026.json",
+    ).load()
+
+    knockout = next(match for match in payload.matches if match.id == "2026-KO-073")
+    assert knockout.group_code is None
+    assert knockout.home_team_id == "MEX"
+    assert knockout.away_team_id == "KOR"
+    assert knockout.status == "final"
+    assert knockout.home_score == 1
+    assert knockout.away_score == 1
+    assert knockout.home_advance is True
+    assert knockout.away_advance is False
+    assert knockout.went_to_penalties is True

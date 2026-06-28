@@ -1,5 +1,24 @@
 # 变更日志
 
+## [2026-06-28] - 淘汰赛链路与文档同步
+
+### 淘汰赛
+
+- **官方淘汰赛赛程入库**：新增 `data/seed/world-cup-2026-knockout.json`，按官方 Match 73-104 生成 32 场淘汰赛占位赛程
+- **最佳第三名官方组合表**：新增 `data/seed/world-cup-2026-third-place-combinations.json`，替换旧的简化第三名分配口径
+- **自动晋级推进**：已结束淘汰赛会按比分或 `home_advance` / `away_advance` 自动写入下一轮；支持加时/点球标记
+- **启动自修复**：服务启动时会同步淘汰赛占位状态，并修复异常中断后残留的 running workflow
+
+### 预测与复盘
+
+- **画像进入淘汰赛重算链路**：淘汰赛重算会继续加载 Team Profile 调整项，而不是在 knockout 阶段静默禁用画像权重
+- **模型复盘与用户侧模型展示继续收敛**：停用、欠费或已下线模型不再出现在用户侧说明中
+
+### 文档
+
+- **README / QUICK_START / API / ARCHITECTURE / DEPLOY** 已同步到当前淘汰赛实现
+- **AI_PROJECT_CONSTRAINTS / FRONTEND_UI_RULES / docs/team_profiles.md** 已补充官方淘汰赛、手动工作流与当前画像链路约束
+
 ## [2026-06-26] - 工作流与文档对齐
 
 ### 工作流与前端

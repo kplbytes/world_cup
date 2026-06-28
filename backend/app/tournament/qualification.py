@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 
 from app.tournament.bracket import ROUND_OF_32_BRACKET
+from app.tournament.third_place import official_match_group_allocation
 
 logger = logging.getLogger(__name__)
 
@@ -103,25 +104,29 @@ def _allocate_third_placed_teams(
     qualified_third: list[str],
     third_group_map: dict[str, str],
 ) -> dict[str, str]:
-    """Allocate the 8 qualified third-placed teams to bracket slots.
-
-    For each bracket slot that needs a third-place team, pick the
-    highest-ranked available team from the slot's candidate groups.
-    If no candidate matches, pick the highest-ranked remaining team (with a warning).
-
-    Args:
-        qualified_third: list of team_ids ranked best-to-worst among 3rd-placed teams
-        third_group_map: team_id -> group_code for each third-placed team
-
-    Returns:
-        slot_string -> team_id mapping for all third-place slots in the bracket
-    """
+    """Allocate the 8 qualified third-placed teams to bracket slots."""
     third_slots: list[str] = []
-    for _, home_slot, away_slot in OFFICIAL_R32_MATCHUPS:
+    slot_by_match_number: dict[int, str] = {}
+    for match_number, home_slot, away_slot in OFFICIAL_R32_MATCHUPS:
         if home_slot.startswith("3"):
             third_slots.append(home_slot)
         if away_slot.startswith("3"):
             third_slots.append(away_slot)
+            slot_by_match_number[match_number] = away_slot
+
+    official_groups = official_match_group_allocation(
+        [third_group_map.get(team_id, "") for team_id in qualified_third]
+    )
+    if official_groups is not None:
+        team_by_group = {third_group_map.get(team_id, ""): team_id for team_id in qualified_third}
+        allocation: dict[str, str] = {}
+        for match_number, group_code in official_groups.items():
+            slot = slot_by_match_number.get(match_number)
+            team_id = team_by_group.get(group_code)
+            if slot and team_id:
+                allocation[slot] = team_id
+        if allocation:
+            return allocation
 
     remaining = list(qualified_third)
     allocation: dict[str, str] = {}

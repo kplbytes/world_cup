@@ -373,6 +373,12 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 - `ai_status`
 - `last_run.progress`
 
+补充说明：
+
+- `button_states.ai_prediction` 会反映 60 分钟冷却状态
+- `button_states.daily_open` 和 `button_states.post_match` 不受该冷却限制
+- `last_run.progress.percent` 为前端首页顶部状态条和动作按钮共用的百分比进度
+
 ### POST /api/workflows/daily-open
 
 手动触发每日更新工作流。当前前端刷新页面不会自动调用该接口。
@@ -428,6 +434,11 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
   "since_hours": 24
 }
 ```
+
+说明：
+
+- 首页“同步赛果”按钮会调用此接口
+- 该按钮只受“当前已有工作流正在运行”和“是否存在可复盘已完赛比赛”影响，不走 60 分钟 AI 冷却
 
 ### POST /api/workflows/lock
 
@@ -559,9 +570,31 @@ curl -X POST http://127.0.0.1:8000/api/refresh \
 
 获取当前淘汰赛对阵表。
 
+当前实现说明：
+
+- 对阵表以本地 `data/seed/world-cup-2026-knockout.json` 中的官方 Match 73-104 赛程为准
+- 32 强席位会结合当前积分榜和最佳第三名官方组合表动态填充
+- 已结束淘汰赛会按比分或 `home_advance` / `away_advance` 自动推进到下一轮
+- 小组赛未全部结束前，未明确的席位会保留 `home_source` / `away_source` 并显示为待定
+
+**响应字段（单场比赛）常见包括：**
+
+- `match_number`
+- `stage`
+- `round_name`
+- `home_source` / `away_source`
+- `home_team` / `away_team`
+- `home_score` / `away_score`
+- `home_advance` / `away_advance`
+- `went_to_extra_time` / `went_to_penalties`
+- `winner_to_match_id` / `loser_to_match_id`
+- `is_placeholder_match`
+
 ### GET /api/tournament/projections
 
 获取所有球队的赛事晋级概率（5 分钟缓存）。
+
+该端点与 `/api/tournament/bracket` 使用同一套官方淘汰赛赛程和最佳第三名组合表。
 
 **响应示例：**
 

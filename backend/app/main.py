@@ -29,6 +29,7 @@ from app.services.recompute import recompute_all
 from app.services.refresh import refresh_tournament
 from app.services.seed import seed_ratings, seed_team_aliases, seed_tournament
 from app.services.snapshots import lock_due_predictions, repair_invalid_prediction_locks
+from app.tournament.knockout import sync_knockout_state
 
 # Initialize logging before anything else
 setup_logging()
@@ -176,6 +177,7 @@ def initialize_database() -> None:
         if profile_count == 0:
             from app.team_profiles.service import rebuild_team_profiles
             rebuild_team_profiles(session, use_seed=True)
+        sync_knockout_state(session)
         active = session.scalar(
             select(DashboardRevision.id).where(DashboardRevision.active.is_(True)).limit(1)
         )

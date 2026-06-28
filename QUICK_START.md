@@ -166,6 +166,14 @@ curl http://127.0.0.1:8000/api/dashboard | python3 -m json.tool | head -20
 curl http://127.0.0.1:8000/api/matches | python3 -m json.tool | head -20
 ```
 
+### 4. 查看淘汰赛路径
+
+```bash
+curl http://127.0.0.1:8000/api/tournament/bracket | python3 -m json.tool | head -40
+```
+
+系统启动时会自动写入官方 Match 73-104 淘汰赛占位赛程；小组赛未全部结束前，未决出的席位会显示为待定。
+
 ## 首次 AI 预测运行
 
 确保已配置至少一个 AI API Key，然后：

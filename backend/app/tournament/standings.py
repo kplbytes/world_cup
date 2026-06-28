@@ -59,7 +59,12 @@ def get_current_standings(session: Session) -> dict[str, list[dict[str, Any]]]:
 def get_third_placed_ranking(session: Session) -> dict[str, Any]:
     """Rank third-placed teams across groups."""
     standings = get_current_standings(session)
-    third_placed = [group[2] for group in standings.values() if len(group) >= 3]
+    third_placed = []
+    for group_code, group in standings.items():
+        if len(group) >= 3:
+            third = dict(group[2])
+            third["group"] = group_code
+            third_placed.append(third)
 
     from app.domain.standings import StandingRow
     rows = [
@@ -79,8 +84,24 @@ def get_third_placed_ranking(session: Session) -> dict[str, Any]:
     if len(rows) == 12:
         ranking = rank_third_placed(rows)
         return {
-            "qualified": [{"team_id": r.team_id, "points": r.points, "gd": r.goal_difference} for r in ranking.qualified],
-            "eliminated": [{"team_id": r.team_id, "points": r.points, "gd": r.goal_difference} for r in ranking.eliminated],
+            "qualified": [
+                {
+                    "team_id": r.team_id,
+                    "group": next((team["group"] for team in third_placed if team["team_id"] == r.team_id), None),
+                    "points": r.points,
+                    "gd": r.goal_difference,
+                }
+                for r in ranking.qualified
+            ],
+            "eliminated": [
+                {
+                    "team_id": r.team_id,
+                    "group": next((team["group"] for team in third_placed if team["team_id"] == r.team_id), None),
+                    "points": r.points,
+                    "gd": r.goal_difference,
+                }
+                for r in ranking.eliminated
+            ],
         }
     return {"qualified": [], "eliminated": []}
 

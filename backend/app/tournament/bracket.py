@@ -5,14 +5,17 @@
 - Round of 32 (matches 73-88) -> Round of 16 (89-96) -> QF (97-100) -> SF (101-102)
   -> Third place (103) -> Final (104)
 
-Third-place team allocation uses a simplified greedy approach.
-See SIMPLIFIED_BRACKET and BRACKET_DISCLAIMER below.
+Third-place team allocation follows the published official combination table.
+When the group-stage picture is incomplete or invalid, the code falls back to
+candidate-set allocation so partial bracket previews can still render.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+from app.tournament.third_place import official_match_group_allocation
 
 VALID_STAGES = [
     "group",
@@ -24,18 +27,9 @@ VALID_STAGES = [
     "final",
 ]
 
-# ---------------------------------------------------------------------------
-# Simplified bracket flag & disclaimer
-# ---------------------------------------------------------------------------
-
-SIMPLIFIED_BRACKET: bool = True
-
 BRACKET_DISCLAIMER: str = (
-    "本淘汰赛赛程采用简化版第三名球队分配规则。"
-    "官方 FIFA 规则根据晋级第三名球队所属小组的组合，"
-    "使用一张预定义分配表来决定各场次的对手。"
-    "此处采用贪心算法按候选小组集合依次分配，"
-    "在大多数情况下与官方结果一致，但某些边缘情况可能不同。"
+    "本淘汰赛赛程采用 2026 世界杯官方第三名组合表生成。"
+    "如果小组赛尚未全部结束或第三名集合不完整，才会回退到候选槽位预览。"
 )
 
 # ---------------------------------------------------------------------------
@@ -175,7 +169,7 @@ def _resolve_team(
 
 
 # ---------------------------------------------------------------------------
-# Third-place team allocation (simplified greedy approach)
+# Third-place team allocation
 # ---------------------------------------------------------------------------
 
 _logger = logging.getLogger(__name__)
@@ -184,20 +178,12 @@ _logger = logging.getLogger(__name__)
 def _allocate_third_placed_teams(
     qualified_third: list[dict[str, Any]],
 ) -> dict[int, dict[str, Any] | None]:
-    """Allocate 8 qualified third-placed teams to bracket slots.
+    """Allocate third-placed teams to Round-of-32 matches.
 
-    Uses a greedy approach:
-    1. Rank the 8 qualifying third-placed teams (assumed pre-sorted).
-    2. For each slot in predefined order, pick the highest-ranked available
-       third-place team whose group is in the slot's candidate set.
-    3. If no candidate is available for a slot, pick the highest-ranked
-       remaining third-place team (fallback).
-
-    Returns
-    -------
-    dict mapping match_number -> team dict (or None)
+    Uses the official combination table when 8 qualifying third-placed groups
+    are known. Falls back to candidate-set allocation for incomplete or invalid
+    inputs so the UI can still render a partial preview during group-stage play.
     """
-    # Build lookup: group_code -> team, preserving ranking order
     available: list[tuple[str, dict[str, Any]]] = []
     for team in qualified_third:
         group_code = team.get("group", "")
@@ -205,6 +191,14 @@ def _allocate_third_placed_teams(
             available.append((group_code.upper(), team))
 
     allocation: dict[int, dict[str, Any] | None] = {}
+
+    official_groups = official_match_group_allocation([group for group, _ in available])
+    if official_groups is not None:
+        teams_by_group = {group: team for group, team in available}
+        for match_num in _THIRD_PLACE_SLOT_ORDER:
+            group_code = official_groups.get(match_num)
+            allocation[match_num] = teams_by_group.get(group_code) if group_code else None
+        return allocation
 
     for match_num in _THIRD_PLACE_SLOT_ORDER:
         # Find the candidate groups for this slot

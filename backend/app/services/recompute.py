@@ -197,8 +197,19 @@ def recompute_knockout_stage(
             "market_blend_weight": 0.20,
             "smart_market_blend": True,
             "dynamic_draw_boost": True,
-            "profile_weight": 0.0,  # disabled for simulated knockout matches
+            "profile_weight": 0.15,
         })()
+
+        from app.team_profiles.service import get_team_profile
+        from app.prediction.profile_adapter import compute_profile_adjustments
+
+        _profile_enabled = getattr(_ko_config, 'profile_weight', 0.0) > 0
+        _profile_map: dict[str, object] = {}
+        if _profile_enabled:
+            for team in teams:
+                profile = get_team_profile(session, team.id)
+                if profile is not None:
+                    _profile_map[team.id] = profile
 
         for match in predictable:
             home_str = strengths[match.home_team_id]
@@ -206,7 +217,7 @@ def recompute_knockout_stage(
             elo_closeness = 1.0 - abs(home_str - away_str)
             is_group = False  # knockout stage
             match_market = market_by_match_ko.get(match.id)
-            match_config = _ko_config if match_market else None
+            match_config = _ko_config
 
             # FIFA rank delta
             fifa_rank_delta = 0.0
@@ -217,6 +228,12 @@ def recompute_knockout_stage(
                 away_fifa = getattr(away_rating, 'fifa_rank', None)
                 if home_fifa and away_fifa:
                     fifa_rank_delta = home_fifa - away_fifa
+
+            prof = {"profile_available": False}  # type: dict[str, Any]
+            if _profile_enabled:
+                home_p = _profile_map.get(match.home_team_id)
+                away_p = _profile_map.get(match.away_team_id)
+                prof = compute_profile_adjustments(home_p, away_p)
 
             base_ctx = MatchContext(
                 data_freshness=freshness,
@@ -233,6 +250,15 @@ def recompute_knockout_stage(
                 fifa_rank_delta=fifa_rank_delta,
                 is_group_stage=is_group,
                 elo_closeness=elo_closeness,
+                profile_home_attack=prof.get("profile_home_attack", 0.0),
+                profile_home_defense=prof.get("profile_home_defense", 0.0),
+                profile_away_attack=prof.get("profile_away_attack", 0.0),
+                profile_away_defense=prof.get("profile_away_defense", 0.0),
+                profile_home_form=prof.get("profile_home_form", 0.0),
+                profile_away_form=prof.get("profile_away_form", 0.0),
+                profile_draw_adjustment=prof.get("profile_draw_adjustment", 0.0),
+                profile_available=prof.get("profile_available", False),
+                profile_risk_flags=prof.get("profile_risk_flags"),
             )
             prediction = predict_match(
                 strengths[match.home_team_id],
@@ -278,6 +304,16 @@ def recompute_knockout_stage(
                         "elo_closeness": elo_closeness,
                         "is_group_stage": is_group,
                         "fifa_rank_adjustment": -fifa_rank_delta / 40.0 * 0.2 * 0.15 if fifa_rank_delta else 0.0,
+                        "profile_adjustments": {
+                            "home_attack": prof.get("profile_home_attack", 0.0),
+                            "home_defense": prof.get("profile_home_defense", 0.0),
+                            "away_attack": prof.get("profile_away_attack", 0.0),
+                            "away_defense": prof.get("profile_away_defense", 0.0),
+                            "home_form": prof.get("profile_home_form", 0.0),
+                            "away_form": prof.get("profile_away_form", 0.0),
+                            "draw": prof.get("profile_draw_adjustment", 0.0),
+                        },
+                        "profile_available": prof.get("profile_available", False),
                     },
                     model_version=prediction.model_version,
                 )
@@ -577,7 +613,7 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
         match_manual = manual_by_match.get(match.id, [])
         manual_ctx = build_adjustment_context(match, match_manual)
         match_market = market_by_match.get(match.id)
-        match_config = _market_blend_config if match_market else None
+        match_config = _market_blend_config
 
         # Research-enhanced: compute elo_closeness and group stage flag
         home_str = strengths[match.home_team_id]

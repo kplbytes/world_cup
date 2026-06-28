@@ -152,6 +152,22 @@ def test_group_match_team_and_source_endpoints(tmp_path):
     assert client.get("/api/matches/missing").status_code == 404
 
 
+def test_tournament_bracket_endpoint_returns_database_backed_schedule(tmp_path):
+    client = api_client(tmp_path)
+
+    response = client.get("/api/tournament/bracket")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["round_of_32"]) == 16
+    assert len(payload["round_of_16"]) == 8
+    match_73 = next(match for match in payload["round_of_32"] if match["match_number"] == 73)
+    assert match_73["id"] == "2026-KO-073"
+    assert match_73["home_source"] == "A2"
+    assert match_73["away_source"] == "B2"
+    assert match_73["winner_to_match_id"] == "2026-KO-090"
+
+
 def test_build_providers_always_includes_worldcup26(monkeypatch):
     from app.api.routes.dashboard_routes import _build_providers
 

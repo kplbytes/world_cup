@@ -13,6 +13,7 @@ from app.services.recompute import recompute_all
 from app.services.scoring import save_model_score, score_model, snapshot_prediction
 from app.services.snapshots import lock_due_predictions
 from app.intelligence.pipeline import run_intelligence_pipeline
+from app.tournament.knockout import sync_knockout_state
 
 _SCORE_ONLY_PROVIDERS = {"worldcup26"}
 
@@ -34,6 +35,7 @@ def refresh_tournament(
     seed: int = 20260613,
     recompute_predictions: bool = True,
 ) -> RefreshOutcome:
+    sync_knockout_state(session)
     sync_run = SyncRun(status="running")
     session.add(sync_run)
     session.flush()
@@ -103,10 +105,30 @@ def refresh_tournament(
                 ):
                     warnings.append(f"conflicting final score ignored: {incoming.id}")
                 continue
+            if stored.home_team_id != incoming.home_team_id:
+                stored.home_team_id = incoming.home_team_id
+                updated += 1
+            if stored.away_team_id != incoming.away_team_id:
+                stored.away_team_id = incoming.away_team_id
+                updated += 1
+            if incoming.group_code is not None and stored.group_code != incoming.group_code:
+                stored.group_code = incoming.group_code
+                updated += 1
             if incoming.status == "final":
                 stored.status = "final"
                 stored.home_score = incoming.home_score
                 stored.away_score = incoming.away_score
+                if stored.stage != "group":
+                    if incoming.home_advance is not None or incoming.away_advance is not None:
+                        stored.home_advance = incoming.home_advance
+                        stored.away_advance = incoming.away_advance
+                    elif incoming.home_score is not None and incoming.away_score is not None and incoming.home_score != incoming.away_score:
+                        stored.home_advance = incoming.home_score > incoming.away_score
+                        stored.away_advance = incoming.away_score > incoming.home_score
+                    stored.went_to_extra_time = incoming.went_to_extra_time
+                    stored.went_to_penalties = incoming.went_to_penalties
+                    if incoming.home_score == incoming.away_score and not (stored.home_advance or stored.away_advance):
+                        warnings.append(f"knockout winner unresolved: {incoming.id}")
                 stored.source = payload.source.provider
                 stored.source_updated_at = payload.source.fetched_at
                 snapshot_prediction(session, stored.id)
@@ -137,6 +159,7 @@ def refresh_tournament(
                     stored.venue = incoming.venue
                 stored.source_updated_at = payload.source.fetched_at
                 updated += 1
+    sync_knockout_state(session)
 
     # Fetch market odds (non-blocking: failures logged as warnings)
     try:

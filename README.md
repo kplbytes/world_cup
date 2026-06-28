@@ -2,7 +2,7 @@
 
 > **状态：文档已对齐到 2026-06-28 当前实现**
 
-本地优先、多层融合的 2026 FIFA 世界杯预测系统。覆盖 48 支球队、12 个小组、72 场小组赛，支持淘汰赛路径推演、赛前锁定、赛后复盘、AI 融合预测和球队画像。
+本地优先、多层融合的 2026 FIFA 世界杯预测系统。覆盖 48 支球队、12 个小组、72 场小组赛，并内置 2026 世界杯官方 Match 73-104 淘汰赛赛程、自动晋级推进、赛前锁定、赛后复盘、AI 融合预测和球队画像。
 
 ## 技术栈
 
@@ -107,8 +107,9 @@ cp .env.example .env
 
 - Monte Carlo 模拟（默认 50,000 次迭代）
 - 小组出线概率、淘汰赛晋级路径
-- 淘汰赛对阵表生成
-- 第三名排名规则
+- 淘汰赛对阵表基于官方 Match 73-104 赛程种子生成
+- 最佳第三名落位按官方组合表分配；小组赛未完整结束前允许临时预览
+- 已结束淘汰赛会按比分或 `home_advance` / `away_advance` 自动推进到下一轮
 
 ## 架构概览
 
@@ -209,7 +210,7 @@ cp .env.example .env
 | **今日工作台** | 今日状态、下一步建议、工作流操作、未来 24/48 小时比赛 |
 | **比赛中心** | 按小组/今日/淘汰赛查看所有比赛 |
 | **模型复盘** | 核心结论、自适应 Ensemble 权重、AI 评估、误差归因、画像评估 |
-| **冠军与赛程** | 冠军概率、晋级概率、淘汰赛路径 |
+| **冠军与赛程** | 冠军概率、晋级概率、官方淘汰赛路径 |
 
 比赛详情在共享的 `MatchDetailDrawer` 中展示，包含预测、画像、风险和锁定状态等标签页。
 
@@ -227,7 +228,7 @@ cp .env.example .env
 
 ![模型复盘](docs/screenshots/model-review.png)
 
-**冠军与赛程** — 淘汰赛对阵表、球队晋级概率投影和小组积分榜。
+**冠军与赛程** — 官方淘汰赛对阵表、球队晋级概率投影和小组积分榜；已结束淘汰赛会自动写入下一轮席位。
 
 ![冠军与赛程](docs/screenshots/tournament-center.png)
 
@@ -246,7 +247,7 @@ backend/app/
 ├── ai/                  # AI 提供商、提示词、解析器、集成、评估
 ├── team_profiles/       # 数据加载、特征工程、画像服务
 ├── workflows/           # 手动工作流状态、按钮状态 & 执行
-├── tournament/          # 积分榜、对阵表、模拟
+├── tournament/          # 积分榜、官方淘汰赛种子/推进、模拟
 ├── logging_config.py    # 结构化 JSON 日志（带轮转）
 └── middleware.py         # 请求 ID 追踪 & 访问日志
 ```
@@ -258,7 +259,7 @@ backend/app/
 | 仪表盘 | `GET /api/dashboard`, `GET /api/matches/{id}`, `POST /api/refresh`, `GET /api/health` |
 | 评分 | `GET /api/model-score`, `GET /api/accuracy-command-center`, `GET /api/scoring-exclusions` |
 | AI | `GET /api/ai-models`, `POST /api/ai-predictions/run`, `POST /api/ensemble/run` |
-| 工作流 | `GET /api/workflows/status`, `POST /api/workflows/daily-open`, `POST /api/workflows/pre-match`, `POST /api/workflows/full` |
+| 工作流 | `GET /api/workflows/status`, `POST /api/workflows/daily-open`, `POST /api/workflows/pre-match`, `POST /api/workflows/post-match`, `POST /api/workflows/lock`, `POST /api/workflows/full` |
 | 画像 | `GET /api/team-profiles`, `GET /api/team-profiles/{team_id}` |
 | 赛事 | `GET /api/tournament/bracket`, `GET /api/tournament/projections`, `POST /api/tournament/simulate` |
 
@@ -338,7 +339,7 @@ for line in sys.stdin:
 ## 已知限制
 
 1. 球队画像已切换为真实国际比赛结果快照；`seed_mock_v1` 仅作为无真实样本时的本地 fallback
-2. 淘汰赛模拟为简化版本，不应视为正式计算
+2. 小组赛尚未完整结束时，最佳第三名落位可能先以当前积分和 fallback 逻辑给出临时预览；全部第三名组合明确后才会完全落到官方组合表
 3. 免费/公开数据源可能有延迟、WAF 拦截、字段漂移或覆盖不全
 4. AI / 情报 / 市场功能依赖本地 API 令牌配置
 5. OpenFootball 和 WorldCup26 提供商不支持 `live` 比赛状态，仅 football-data.org 支持
