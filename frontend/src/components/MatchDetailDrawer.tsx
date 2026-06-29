@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Match, AIPredictionItem, AIModelStatus, EnsemblePredictionItem } from "../types";
-import { getAIModels, getAIPredictions, getEnsemble, getMatchDetail, runAIPrediction, runEnsemble } from "../api";
+import { getAIModels, getAIPredictions, getEnsemble, getMatchDetail, runAIPrediction, runEnsemble, ApiError } from "../api";
 import { formatChinaTimeShort, isFinishedMatch } from "../utils/time";
 import { getTeamDisplayFromRef } from "../utils/teamNames";
 import { getMatchRecommendation, getSourceDisplayName, directionLabel, filterScorelinesByDirection } from "../utils/recommendation";
@@ -101,6 +101,9 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
     queryKey: ["match-detail", match?.id],
     queryFn: () => getMatchDetail(match!.id),
     enabled: open && Boolean(match?.id),
+    // P3-C: align with the other drawer queries (60s staleTime) so the
+    // detail query doesn't refetch more aggressively than its siblings.
+    staleTime: 60_000,
   });
 
   const refreshAIMutation = useMutation({
@@ -112,14 +115,14 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
     },
     onSuccess: async () => {
       if (!match) return;
+      // P3-A: invalidateQueries already triggers a background refetch for
+      // active queries — the previous explicit refetchQueries calls caused
+      // duplicate concurrent requests for the same keys. Invalidation alone
+      // is sufficient and is the idiomatic TanStack Query pattern.
       await queryClient.invalidateQueries({ queryKey: ["ai-predictions", match.id] });
       await queryClient.invalidateQueries({ queryKey: ["ensemble", match.id] });
       // Invalidate dashboard so cards refresh after AI/Ensemble update
       await queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      await Promise.all([
-        queryClient.refetchQueries({ queryKey: ["ai-predictions", match.id] }),
-        queryClient.refetchQueries({ queryKey: ["ensemble", match.id] }),
-      ]);
     },
   });
 
@@ -149,8 +152,14 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
   const aiPredictions = aiQuery.data?.predictions ?? [];
   const ensemblePredictions = ensembleQuery.data?.predictions ?? [];
   const hasAIPredictionError = aiQuery.isError || ensembleQuery.isError;
-  const aiErrorMessage = aiQuery.error instanceof Error ? aiQuery.error.message : null;
-  const ensembleErrorMessage = ensembleQuery.error instanceof Error ? ensembleQuery.error.message : null;
+  // P3-E: surface a friendlier message for 404s (data not yet generated)
+  // instead of the raw "X failed: 404" string.
+  const aiErrorMessage = aiQuery.error instanceof Error
+    ? (aiQuery.error instanceof ApiError && aiQuery.error.isNotFound() ? "本场尚未生成 AI 预测" : aiQuery.error.message)
+    : null;
+  const ensembleErrorMessage = ensembleQuery.error instanceof Error
+    ? (ensembleQuery.error instanceof ApiError && ensembleQuery.error.isNotFound() ? "本场尚未生成 Ensemble 预测" : ensembleQuery.error.message)
+    : null;
 
   // Memoized: match detail + recommendation + risk
   const { detailMatch, profiles, ensemble, rec, risk, scorelineList, isFinished, lockedText, scoringText, scoringReason } = useMemo(() => {
@@ -433,6 +442,14 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
           <section className="detail-section">
             {sectionTitle("对阵风格预测")}
             <div className="matchup-label-badge">{detailMatch.matchup_analysis.matchup_label}</div>
+            {/* P4-B: context tags as quick-scan badges */}
+            {detailMatch.matchup_analysis.context_tags && detailMatch.matchup_analysis.context_tags.length > 0 && (
+              <div className="context-tags">
+                {detailMatch.matchup_analysis.context_tags.map((tag, i) => (
+                  <span key={i} className="context-tag">{tag}</span>
+                ))}
+              </div>
+            )}
             <div className="matchup-narrative">{detailMatch.matchup_analysis.narrative}</div>
             <div className="metric-grid">
               <div className="metric-item">
@@ -457,6 +474,42 @@ export default function MatchDetailDrawer({ open, match, onClose }: Props) {
             {detailMatch.matchup_analysis.key_factors.length > 0 && (
               <ul className="detail-list">
                 {detailMatch.matchup_analysis.key_factors.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            )}
+            {/* P4-A: sparks / storylines ("火花") */}
+            {detailMatch.matchup_analysis.sparks && detailMatch.matchup_analysis.sparks.length > 0 && (
+              <div className="sparks-section">
+                <div className="sparks-title">火花看点</div>
+                <ul className="sparks-list">
+                  {detailMatch.matchup_analysis.sparks.map((s, i) => <li key={i}>{s}</li>)}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* P4-C: historical head-to-head */}
+        {detailMatch?.head_to_head && (
+          <section className="detail-section">
+            {sectionTitle("历史交锋")}
+            <div className="h2h-summary">
+              <span className="h2h-stat">近 {detailMatch.head_to_head.total_matches} 场</span>
+              <span className="h2h-stat">主队胜 {detailMatch.head_to_head.home_wins}</span>
+              <span className="h2h-stat">平 {detailMatch.head_to_head.draws}</span>
+              <span className="h2h-stat">主队负 {detailMatch.head_to_head.home_losses}</span>
+              <span className="h2h-stat">场均进 {detailMatch.head_to_head.home_avg_goals_for}</span>
+              <span className="h2h-stat">场均失 {detailMatch.head_to_head.home_avg_goals_against}</span>
+            </div>
+            {detailMatch.head_to_head.recent_matches.length > 0 && (
+              <ul className="detail-list h2h-list">
+                {detailMatch.head_to_head.recent_matches.map((m, i) => (
+                  <li key={i}>
+                    <span className="h2h-date">{m.date ? m.date.slice(0, 10) : "未知日期"}</span>
+                    <span className="h2h-comp">{m.competition}{m.is_world_cup ? "（世界杯）" : ""}</span>
+                    <span className="h2h-score">{m.goals_for}-{m.goals_against}</span>
+                    <span className="h2h-result">{m.result === "win" ? "胜" : m.result === "draw" ? "平" : "负"}</span>
+                  </li>
+                ))}
               </ul>
             )}
           </section>

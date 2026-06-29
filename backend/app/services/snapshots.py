@@ -154,6 +154,17 @@ def lock_due_predictions(
                 counts["ensemble"] += 1
 
     session.flush()
+
+    # P2-I: invalidate dashboard/decision caches after locking — locked
+    # predictions change what build_dashboard / build_decision return, so
+    # any cached results from before locking are now stale.
+    if any(counts.values()):
+        try:
+            from app.services.dashboard import invalidate_dashboard_caches
+            invalidate_dashboard_caches()
+        except Exception:
+            pass
+
     return counts
 
 

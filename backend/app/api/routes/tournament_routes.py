@@ -17,6 +17,22 @@ _projections_cache_ts: float = 0.0
 _PROJECTIONS_CACHE_TTL = 300.0  # seconds
 _projections_cache_lock = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# Per-team_id TTL cache for GET /tournament/team-path (5 minutes)
+# P2-D: get_team_path runs a 5000-iteration Monte Carlo simulation per call.
+# Cache the result per team_id for 5 minutes to avoid re-simulating on every
+# page refresh. Cache size is capped at 64 teams (LRU-ish eviction).
+# ---------------------------------------------------------------------------
+_team_path_cache: dict[str, dict] = {}
+_team_path_cache_lock = threading.Lock()
+_TEAM_PATH_CACHE_TTL = 300.0  # seconds
+
+
+def invalidate_team_path_cache() -> None:
+    """Invalidate the per-team_id cache. Called by invalidate_dashboard_caches()."""
+    with _team_path_cache_lock:
+        _team_path_cache.clear()
+
 
 @router.get("/tournament/bracket")
 def tournament_bracket():
@@ -89,11 +105,29 @@ def tournament_simulate(iterations: int = 10000, seed: int = 20260613):
 @router.get("/tournament/team-path")
 def tournament_team_path(team_id: str):
     """Get a team's potential tournament path."""
+    # P2-D: per-team_id TTL cache (5 min). Monte Carlo simulation with 5000
+    # iterations is expensive; per-team caching keeps responses snappy while
+    # ensuring different teams are tracked independently.
+    now = _time.monotonic()
+    with _team_path_cache_lock:
+        cached = _team_path_cache.get(team_id)
+        if cached is not None and (now - cached["ts"]) < _TEAM_PATH_CACHE_TTL:
+            return cached["value"]
+
     from app.tournament.simulation import get_team_path
     # TODO: get_team_path() internally calls run_tournament_simulation(iterations=5000);
     # consider adding iteration limit protection there as well.
     with session_scope() as session:
-        return get_team_path(session, team_id)
+        result = get_team_path(session, team_id)
+
+    with _team_path_cache_lock:
+        _team_path_cache[team_id] = {"value": result, "ts": _time.monotonic()}
+        # Cap cache size to avoid unbounded growth if many different teams
+        # are queried. Keep most-recently-written entries (LRU-ish).
+        if len(_team_path_cache) > 64:
+            oldest_key = min(_team_path_cache, key=lambda k: _team_path_cache[k]["ts"])
+            _team_path_cache.pop(oldest_key, None)
+    return result
 
 
 @router.get("/tournament/standings")

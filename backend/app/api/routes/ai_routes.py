@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.db import session_scope
+from app.services.cache_utils import cached_get
 
 
 router = APIRouter()
@@ -97,6 +98,7 @@ def ensemble_get(match_id: str):
 
 
 @router.get("/ai-evaluation")
+@cached_get(ttl_seconds=60)
 def ai_evaluation():
     """Evaluate AI and ensemble predictions against actual results."""
     from app.ai.evaluation import evaluate_ai_predictions
@@ -105,6 +107,7 @@ def ai_evaluation():
 
 
 @router.get("/ai-independence")
+@cached_get(ttl_seconds=60)
 def ai_independence():
     """Audit how far AI predictions deviate from the active baseline predictions."""
     from app.services.ai_independence import analyze_ai_independence

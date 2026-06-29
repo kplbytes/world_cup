@@ -161,6 +161,82 @@ def analyze_matchup(
     elif btts_probability < 0.35:
         narratives.append(f"某一方可能零封对手（BTTS 概率仅约 {btts_probability:.0%}）。")
 
+    # --- P4-B: context tags ---
+    # Short labels that summarize the match's strategic storyline. These are
+    # surfaced in the MatchDetailDrawer as quick-scan badges.
+    context_tags: list[str] = []
+    if archetype == "open_exchange":
+        context_tags.append("进球大战预期")
+    if archetype == "defensive_grind":
+        context_tags.append("平局高危")
+    if archetype == "attack_vs_defense":
+        context_tags.append("攻防博弈")
+    if "慢热型" in all_tags:
+        context_tags.append("慢热警告")
+    if "防守反击型" in home_tags and "强压制型" in away_tags:
+        context_tags.append("反击破压制")
+    if "防守反击型" in away_tags and "强压制型" in home_tags:
+        context_tags.append("反击破压制")
+
+    # Strength-based tags (requires long_term_strength_score)
+    home_str = _metric(home_profile, "long_term_strength_score", 0.5)
+    away_str = _metric(away_profile, "long_term_strength_score", 0.5)
+    if home_str >= 0.7 and away_str >= 0.7:
+        context_tags.append("强强对话")
+    elif min(home_str, away_str) < 0.3 and max(home_str, away_str) >= 0.6:
+        context_tags.append("黑马挑战")
+    elif abs(home_str - away_str) >= 0.3:
+        context_tags.append("实力悬殊")
+
+    # Upset potential
+    upset_risk = max(
+        _metric(home_profile, "upset_potential_score", 0.0),
+        _metric(away_profile, "upset_potential_score", 0.0),
+    )
+    if upset_risk >= 0.6:
+        context_tags.append("爆冷风险")
+
+    # --- P4-A: sparks (key storylines / "火花") ---
+    # 2-3 short narrative hooks that describe what makes this matchup
+    # interesting. These answer the user's "会擦出怎样的火花" question.
+    sparks: list[str] = []
+    if archetype == "open_exchange":
+        sparks.append(
+            f"两队进攻火力均突出（大2.5球概率约 {avg_over:.0%}），"
+            f"有望上演进球互飙的好戏，中场控制权将是胜负手。"
+        )
+    elif archetype == "defensive_grind":
+        sparks.append(
+            f"双方均以防守见长（平局倾向约 {draw_tendency:.0%}），"
+            f"比赛可能陷入闷局，定位球或一次失误即可决定胜负。"
+        )
+    elif archetype == "attack_vs_defense":
+        if home_open:
+            sparks.append(
+                "主队强攻 vs 客队铁桶阵：破密集阵是核心看点，"
+                "若主队久攻不下心态急躁，客队反击偷袭可能成为冷门剧本。"
+            )
+        else:
+            sparks.append(
+                "客队强攻 vs 主队铁桶阵：破密集阵是核心看点，"
+                "若客队久攻不下心态急躁，主队反击偷袭可能成为冷门剧本。"
+            )
+    if "慢热型" in home_tags and "慢热型" in away_tags:
+        sparks.append("双方均有慢热特征，上半场可能沉闷，比赛在下半场才真正打开。")
+    elif "慢热型" in home_tags:
+        sparks.append("主队慢热，客队若开局抢攻可能早早确立优势。")
+    elif "慢热型" in away_tags:
+        sparks.append("客队慢热，主队若开局抢攻可能早早确立优势。")
+
+    if upset_risk >= 0.6:
+        sparks.append("历史数据显示弱方具备爆冷潜力，本场比赛可能并非一边倒。")
+    if home_str >= 0.7 and away_str >= 0.7:
+        sparks.append("两支顶级球队正面交锋，胜负取决于细节与临场调整，堪称提前到来的决赛级别较量。")
+
+    # Deduplicate context_tags while preserving order
+    seen: set[str] = set()
+    context_tags = [t for t in context_tags if not (t in seen or seen.add(t))]
+
     return {
         "matchup_label": matchup_label,
         "archetype": archetype,
@@ -174,4 +250,8 @@ def analyze_matchup(
         "narrative": "".join(narratives),
         "home_tags": sorted(home_tags),
         "away_tags": sorted(away_tags),
+        # P4-B: quick-scan context badges
+        "context_tags": context_tags[:6],
+        # P4-A: 2-3 storyline hooks ("火花")
+        "sparks": sparks[:3],
     }

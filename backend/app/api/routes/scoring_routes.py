@@ -3,6 +3,7 @@ from sqlalchemy import select
 
 from app.db import session_scope
 from app.models import Match, PredictionSnapshot
+from app.services.cache_utils import cached_get
 from app.services.scoring import model_score_payload, model_score_by_version
 
 
@@ -10,6 +11,7 @@ router = APIRouter()
 
 
 @router.get("/model-score")
+@cached_get(ttl_seconds=30)
 def model_score():
     with session_scope() as session:
         payload = model_score_payload(session)
@@ -18,6 +20,7 @@ def model_score():
 
 
 @router.get("/model-score/details")
+@cached_get(ttl_seconds=30)
 def model_score_details():
     """Per-match scoring details for all scored matches."""
     with session_scope() as session:
@@ -31,6 +34,7 @@ def model_score_details():
 
 
 @router.get("/model-score/by-version")
+@cached_get(ttl_seconds=30)
 def model_score_by_version_endpoint():
     """Aggregate model scores by version with error statistics."""
     with session_scope() as session:
@@ -38,6 +42,7 @@ def model_score_by_version_endpoint():
 
 
 @router.get("/model-score/by-stage")
+@cached_get(ttl_seconds=30)
 def model_score_by_stage():
     """Model scores aggregated by tournament stage."""
     with session_scope() as session:
@@ -73,6 +78,7 @@ def match_count_breakdown():
 
 
 @router.get("/knockout-audit")
+@cached_get(ttl_seconds=60)
 def knockout_audit():
     """Audit knockout-stage scoring readiness and coverage gaps."""
     with session_scope() as session:
@@ -81,6 +87,7 @@ def knockout_audit():
 
 
 @router.get("/error-attribution-summary")
+@cached_get(ttl_seconds=60)
 def error_attribution_summary():
     """Aggregate error attribution counts across all scored matches."""
     with session_scope() as session:
@@ -89,6 +96,7 @@ def error_attribution_summary():
 
 
 @router.get("/model-calibration")
+@cached_get(ttl_seconds=60)
 def model_calibration():
     """Probability calibration analysis."""
     with session_scope() as session:
@@ -97,6 +105,7 @@ def model_calibration():
 
 
 @router.get("/market-comparison")
+@cached_get(ttl_seconds=60)
 def market_comparison():
     """Compare model vs market vs blended predictions."""
     with session_scope() as session:
@@ -105,6 +114,7 @@ def market_comparison():
 
 
 @router.get("/model-recommendation")
+@cached_get(ttl_seconds=60)
 def model_recommendation():
     """Recommend which model version to use next."""
     with session_scope() as session:
@@ -113,6 +123,7 @@ def model_recommendation():
 
 
 @router.get("/data-quality")
+@cached_get(ttl_seconds=60)
 def data_quality():
     """Data quality check results."""
     with session_scope() as session:
@@ -121,6 +132,7 @@ def data_quality():
 
 
 @router.get("/model-comparison")
+@cached_get(ttl_seconds=60)
 def model_comparison():
     """Get structured comparison: Baseline vs AI v1 vs AI v2 vs Ensemble."""
     with session_scope() as session:

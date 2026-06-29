@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.domain.standings import MatchResult, rank_group
 from app.models import (
     AutoAdjustment,
+    AIPrediction,
     DashboardRevision,
     DataSnapshot,
     ManualAdjustment,
@@ -25,6 +26,8 @@ from app.prediction.poisson import MODEL_VERSION, MatchContext, predict_match
 from app.prediction.shadow import compute_shadow_predictions
 from app.services.localization import localized_team_names
 from app.services.manual_adjustments import build_adjustment_context, serialize_adjustment
+from app.services.calibration_feedback import compute_and_persist_feedback, get_feedback_overrides
+from app.prediction.shadow_promotion import evaluate_shadow_promotion, get_promoted_params
 from app.tournament.knockout import sync_knockout_state
 from app.simulation.qualification import (
     SimulatedMatch,
@@ -218,12 +221,13 @@ def recompute_knockout_stage(
         # Knockout matches have lower base goals (~2.4 vs ~2.9 in group stage),
         # benefit from Poisson over-dispersion (more low-scoring games), and
         # need favorite_dampening to avoid overconfidence in tight knockout games.
+        _ko_feedback = {**get_feedback_overrides(), **get_promoted_params()}
         _ko_config = type("Config", (), {
             "market_blend_weight": 0.20,
             "smart_market_blend": True,
             "dynamic_draw_boost": True,
             "profile_weight": 0.15,
-            "favorite_dampening": 0.05,
+            "favorite_dampening": _ko_feedback.get("favorite_dampening", 0.05),
             "poisson_dispersion": 1.10,
             "base_goal_mean_home": 1.40,
             "base_goal_mean_away": 1.20,
@@ -451,7 +455,20 @@ def recompute_tournament_projection(
 
 
 def _prune_old_revisions(session: Session, keep: int = 5) -> None:
-    """Delete non-scoring data from old revisions to prevent database bloat."""
+    """Delete non-scoring data from old revisions to prevent database bloat.
+
+    P2-G improvements over the original:
+      - Prune in dependency order: child tables first, then parent
+        dashboard_revisions, so the EXISTS-guarded deletion can actually
+        succeed.
+      - Keep model_scores for historical analysis (twice the keep window)
+        but still prune them eventually to avoid unbounded growth.
+      - Keep match_predictions and prediction_snapshots indefinitely because
+        they ARE scoring history — pruning them would break trend analysis
+        and the test_prune_old_revisions_preserves_scoring_history contract.
+        Old dashboard_revisions whose scoring history is intact are kept by
+        design (the EXISTS checks in Step 4 ensure this).
+    """
     from sqlalchemy import func, text
 
     max_id = session.scalar(select(func.max(DashboardRevision.id)))
@@ -460,7 +477,17 @@ def _prune_old_revisions(session: Session, keep: int = 5) -> None:
     cutoff = max_id - keep
     if cutoff <= 0:
         return
+    # Score history is more valuable than prediction history — keep 2x
+    # window for model_scores so trend charts remain meaningful.
+    score_cutoff = max_id - (keep * 2)
 
+    # Step 1: prune child tables that are NOT scoring history.
+    # match_predictions / prediction_snapshots / model_scores are scoring
+    # history and must be preserved so old revisions stay queryable for
+    # trend analysis. Only non-scoring auxiliary tables are pruned here.
+    # NOTE: only tables that have a revision_id column can be pruned here.
+    # auto_adjustments / ensemble_predictions / ai_predictions are pruned by
+    # created_at in Step 5 below because they don't have revision_id.
     child_tables = [
         "qualification_predictions",
         "standings_snapshots",
@@ -473,6 +500,22 @@ def _prune_old_revisions(session: Session, keep: int = 5) -> None:
         )
         if result.rowcount:
             logger.info("pruned %d rows from %s (revision <= %d)", result.rowcount, table, cutoff)
+
+    # Step 2: prune old model_scores (with a larger keep window so trend
+    # charts keep historical context).
+    if score_cutoff > 0:
+        score_result = session.execute(
+            text("DELETE FROM model_scores WHERE revision_id <= :cutoff"),
+            {"cutoff": score_cutoff},
+        )
+        if score_result.rowcount:
+            logger.info("pruned %d rows from model_scores (revision <= %d)", score_result.rowcount, score_cutoff)
+
+    # Step 3: delete old inactive dashboard_revisions whose scoring history
+    # has been pruned. After Steps 1-2, the EXISTS checks should succeed for
+    # revisions older than the cutoff whose scoring history was pruned.
+    # Revisions with surviving match_predictions / prediction_snapshots /
+    # model_scores are kept by design (those are scoring history).
     session.execute(
         text(
             """
@@ -495,6 +538,36 @@ def _prune_old_revisions(session: Session, keep: int = 5) -> None:
         ),
         {"cutoff": cutoff},
     )
+
+    # Step 4: prune truly time-bound auxiliary tables by created_at.
+    # Only prune tables whose data loses value rapidly (news, intelligence
+    # signals) — keep ai_predictions, market_snapshots, ensemble_predictions
+    # indefinitely because they're used for historical evaluation / scoring.
+    from app.config import settings as _settings
+    retention_days = getattr(_settings, "aux_data_retention_days", 90)
+    if retention_days > 0:
+        time_bound_aux_tables = [
+            # Match intelligence (news, injury reports) is only useful
+            # for the immediate pre-match window. Prune aggressively.
+            "match_intelligence",
+        ]
+        for table in time_bound_aux_tables:
+            try:
+                result = session.execute(
+                    text(
+                        f"DELETE FROM {table} "
+                        "WHERE fetched_at < datetime('now', :days) "
+                        "AND fetched_at IS NOT NULL"
+                    ),
+                    {"days": f"-{retention_days} days"},
+                )
+                if result.rowcount:
+                    logger.info(
+                        "pruned %d rows from %s (older than %d days)",
+                        result.rowcount, table, retention_days,
+                    )
+            except Exception as exc:
+                logger.debug("skip aux prune for %s: %s", table, exc)
     session.flush()
 
 
@@ -539,12 +612,33 @@ def recompute_all(
         # Step 3: Tournament projection
         recompute_tournament_projection(session, iterations=iterations, seed=seed)
 
+        # Step 4: Calibration feedback — analyze observed bias and persist
+        # parameter overrides for the next recompute cycle. Safe no-op when
+        # there are too few scored matches (< 15).
+        try:
+            feedback = compute_and_persist_feedback(session)
+            if feedback:
+                logger.info("Calibration feedback applied: %s", feedback)
+        except Exception as exc:
+            logger.warning("Calibration feedback failed (non-fatal): %s", exc)
+
+        # Step 5: Shadow model promotion — evaluate shadow models vs baseline
+        # and promote any that consistently outperform. Persists params to disk.
+        try:
+            promotion = evaluate_shadow_promotion(session)
+            if promotion.get("promoted"):
+                logger.info("Shadow promotion: %s", promotion)
+        except Exception as exc:
+            logger.warning("Shadow promotion evaluation failed (non-fatal): %s", exc)
+
         logger.info("recompute_all completed in %.2fs, revision_id=%s", time.monotonic() - start, revision.id)
 
-        # Invalidate dashboard cache so next request sees fresh data
-        import app.services.dashboard as _dash_mod
-        _dash_mod._dashboard_cache = None
-        _dash_mod._dashboard_cache_ts = 0.0
+        # Invalidate dashboard + decision caches so next request sees fresh data
+        try:
+            from app.services.dashboard import invalidate_dashboard_caches
+            invalidate_dashboard_caches()
+        except Exception as exc:
+            logger.warning("Failed to invalidate dashboard caches (non-fatal): %s", exc)
 
         # Also invalidate the tournament projections cache (300s TTL) so
         # users see updated champion probabilities immediately after recompute.
@@ -645,6 +739,8 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
     # Config for v3-profile-enhanced predictions
     # Profile features are loaded from TeamProfile data and blended at 15% weight
     # FIFA rank weight reduced to 10% since profile attack/defense now carries more signal
+    # Merge calibration feedback + shadow promotion overrides
+    _feedback = {**get_feedback_overrides(), **get_promoted_params()}
     _market_blend_config = type("Config", (), {
         "market_blend_weight": 0.20,
         "smart_market_blend": True,
@@ -659,7 +755,7 @@ def compute_match_predictions(session, revision, teams, matches, ratings, streng
         "strength_coeff_away": 1.00,
         "poisson_dispersion": 1.10,
         "max_xg": 4.50,
-        "favorite_dampening": 0.05,
+        "favorite_dampening": _feedback.get("favorite_dampening", 0.05),
     })()
 
     # Load team profiles for profile-enhanced predictions
@@ -1018,12 +1114,97 @@ def _compute_data_context(
     ) or 0
     ranking_coverage = distinct_rated / max(len(teams), 1)
 
-    # Provider agreement: how many distinct providers have recent ok snapshots
-    provider_count = session.scalar(
-        select(func.count(DataSnapshot.provider.distinct()))
-        .where(DataSnapshot.status == "available")
-    ) or 0
-    # Single provider = 1.0, multiple = slight boost but capped
-    provider_agree = min(1.0, 0.8 + 0.1 * provider_count) if provider_count > 0 else 0.5
+    # Provider agreement: real agreement score based on actual prediction
+    # distributions across market + AI providers, falling back to a count-based
+    # heuristic when no per-match predictions exist yet.
+    provider_agree = _compute_provider_agreement(session, teams)
+    if provider_agree is None:
+        # Fallback: count-based heuristic (single provider = 1.0,
+        # multiple = slight boost but capped).
+        provider_count = session.scalar(
+            select(func.count(DataSnapshot.provider.distinct()))
+            .where(DataSnapshot.status == "available")
+        ) or 0
+        provider_agree = min(1.0, 0.8 + 0.1 * provider_count) if provider_count > 0 else 0.5
 
     return freshness, ranking_coverage, provider_agree
+
+
+def _compute_provider_agreement(
+    session: Session, teams: list[Team]
+) -> float | None:
+    """Compute real provider agreement from market + AI predictions.
+
+    For each match that has at least two provider predictions, compute a
+    similarity score = 1 - normalized_max_min_gap on the predicted outcome
+    distribution. Average across all such matches.
+
+    Returns None when there are not enough multi-provider matches to compute
+    a meaningful agreement score (caller falls back to count-based heuristic).
+    """
+    # Collect per-match prediction vectors from market snapshots.
+    market_rows = session.execute(
+        select(
+            MarketSnapshot.match_id,
+            MarketSnapshot.home_probability,
+            MarketSnapshot.draw_probability,
+            MarketSnapshot.away_probability,
+        )
+        .where(MarketSnapshot.provider == "sporttery")
+    ).all()
+    market_by_match: dict[str, tuple[float, float, float]] = {}
+    for row in market_rows:
+        mid, h, d, a = row
+        if h is None or d is None or a is None:
+            continue
+        market_by_match[mid] = (float(h), float(d), float(a))
+
+    # Collect per-match AI prediction vectors (use latest per match).
+    ai_rows = session.execute(
+        select(
+            AIPrediction.match_id,
+            AIPrediction.parsed_home_win,
+            AIPrediction.parsed_draw,
+            AIPrediction.parsed_away_win,
+        )
+        .where(AIPrediction.parsed_home_win.is_not(None))
+        .where(AIPrediction.parsed_draw.is_not(None))
+        .where(AIPrediction.parsed_away_win.is_not(None))
+    ).all()
+    ai_by_match: dict[str, tuple[float, float, float]] = {}
+    for row in ai_rows:
+        mid, h, d, a = row
+        if h is None or d is None or a is None:
+            continue
+        # Last writer wins — most recent AI prediction per match wins.
+        ai_by_match[mid] = (float(h), float(d), float(a))
+
+    if not market_by_match and not ai_by_match:
+        return None
+
+    # Compute average agreement across matches with at least 2 providers.
+    agreement_scores: list[float] = []
+    all_match_ids = set(market_by_match.keys()) | set(ai_by_match.keys())
+    for mid in all_match_ids:
+        vectors: list[tuple[float, float, float]] = []
+        if mid in market_by_match:
+            vectors.append(market_by_match[mid])
+        if mid in ai_by_match:
+            vectors.append(ai_by_match[mid])
+        if len(vectors) < 2:
+            continue
+        # Agreement = 1 - max(|h_a - h_b|, |d_a - d_b|, |a_a - a_b|).
+        # Max abs gap ranges 0..1; converting to [0, 1] agreement scale.
+        v1, v2 = vectors[0], vectors[1]
+        max_gap = max(
+            abs(v1[0] - v2[0]),
+            abs(v1[1] - v2[1]),
+            abs(v1[2] - v2[2]),
+        )
+        agreement_scores.append(max(0.0, 1.0 - max_gap))
+
+    if not agreement_scores:
+        return None
+    # Average agreement, floored at 0.5 (single-provider agreement is
+    # at least neutral, never worse).
+    return max(0.5, sum(agreement_scores) / len(agreement_scores))

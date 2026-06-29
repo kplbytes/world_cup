@@ -122,6 +122,7 @@ export type Match = {
   team_profiles?: MatchTeamProfiles;
   profile_prediction?: ProfilePrediction | null;
   matchup_analysis?: MatchupAnalysis | null;
+  head_to_head?: HeadToHead | null;
   match_review?: MatchReview | null;
   ai_prediction?: AIPredictionSummary | null;
   ensemble_prediction?: EnsemblePredictionSummary | null;
@@ -184,6 +185,31 @@ export type MatchupAnalysis = {
   narrative: string;
   home_tags: string[];
   away_tags: string[];
+  // P4-B: quick-scan context badges
+  context_tags?: string[];
+  // P4-A: storyline hooks ("火花")
+  sparks?: string[];
+};
+
+export type HeadToHeadMatch = {
+  date: string | null;
+  competition: string;
+  home_team_id: string;
+  away_team_id: string;
+  goals_for: number;
+  goals_against: number;
+  result: string;
+  is_world_cup: boolean;
+};
+
+export type HeadToHead = {
+  total_matches: number;
+  home_wins: number;
+  draws: number;
+  home_losses: number;
+  home_avg_goals_for: number;
+  home_avg_goals_against: number;
+  recent_matches: HeadToHeadMatch[];
 };
 export type ProfilePrediction = {
   model_version: string; profile_version: string; profile_as_of: string;

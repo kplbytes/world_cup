@@ -48,6 +48,42 @@ _dashboard_cache_ts: float = 0.0
 _DASHBOARD_CACHE_TTL = 5.0  # seconds
 _dashboard_cache_lock = threading.Lock()
 
+# ---------------------------------------------------------------------------
+# Simple TTL cache for build_decision() results
+# ---------------------------------------------------------------------------
+_decision_cache: dict | None = None
+_decision_cache_ts: float = 0.0
+_DECISION_CACHE_TTL = 5.0  # seconds
+_decision_cache_lock = threading.Lock()
+
+
+def invalidate_dashboard_caches() -> None:
+    """Invalidate both dashboard and decision caches.
+
+    Call this whenever the underlying data changes (e.g., after recompute,
+    workflow completion, snapshot writes, or manual adjustments) to ensure
+    the next dashboard/decision fetch reflects the latest state.
+    """
+    global _dashboard_cache, _decision_cache
+    with _dashboard_cache_lock:
+        _dashboard_cache = None
+    with _decision_cache_lock:
+        _decision_cache = None
+    # Also invalidate any @cached_get analysis endpoints (model-calibration,
+    # market-comparison, ai-evaluation, etc.) so users see fresh data after
+    # mutations.
+    try:
+        from app.services.cache_utils import invalidate_all_caches
+        invalidate_all_caches()
+    except Exception:
+        pass
+    # Invalidate tournament team-path cache (per-team_id, 5-min TTL).
+    try:
+        from app.api.routes.tournament_routes import invalidate_team_path_cache
+        invalidate_team_path_cache()
+    except Exception:
+        pass
+
 
 def _china_time_fields(kickoff_dt: datetime) -> dict:
     """Add China-time helper fields for a match kickoff."""
@@ -82,6 +118,19 @@ def _display_snapshots(session: Session, matches: list[Match]) -> dict[str, Pred
     if not matches:
         return {}
     match_ids = [match.id for match in matches]
+    # P2-E: cap the number of snapshots considered per match. Without a cap,
+    # a long-running deployment with frequent recompute could accumulate
+    # thousands of snapshots per match, making the ROW_NUMBER() window
+    # expensive. Limit to the most recent 50 per match via a correlated
+    # subquery, then rank within that subset.
+    _SNAPSHOT_PER_MATCH_CAP = 50
+    capped = (
+        select(PredictionSnapshot.id.label("snapshot_id"))
+        .where(PredictionSnapshot.match_id.in_(match_ids))
+        .order_by(PredictionSnapshot.match_id, PredictionSnapshot.snapshotted_at.desc())
+        .limit(_SNAPSHOT_PER_MATCH_CAP * max(len(match_ids), 1))
+        .subquery()
+    )
     ranked = (
         select(
             PredictionSnapshot.id.label("snapshot_id"),
@@ -94,7 +143,7 @@ def _display_snapshots(session: Session, matches: list[Match]) -> dict[str, Pred
             ).label("rn"),
         )
         .join(Match, PredictionSnapshot.match_id == Match.id)
-        .where(PredictionSnapshot.match_id.in_(match_ids))
+        .join(capped, PredictionSnapshot.id == capped.c.snapshot_id)
         .subquery()
     )
     return {
@@ -330,6 +379,7 @@ def build_dashboard(session: Session) -> dict:
 
     teams = list(session.scalars(select(Team).order_by(Team.group_code, Team.id)))
     matches = list(session.scalars(select(Match).order_by(Match.kickoff, Match.id)))
+    match_ids = [m.id for m in matches]
     standings = {
         row.team_id: row
         for row in session.scalars(
@@ -370,35 +420,48 @@ def build_dashboard(session: Session) -> dict:
             )
         )
     }
+    # P2-A: restrict market snapshots to loaded matches only — avoids loading
+    # the entire market_snapshots table on every dashboard build.
     market_snaps = {
         row.match_id: row
         for row in session.scalars(
-            select(MarketSnapshot).where(MarketSnapshot.provider == "sporttery")
-        )
-    }
-
-    intelligences_by_match = defaultdict(list)
-    for row in session.scalars(
-        select(MatchIntelligence).options(
-            load_only(
-                MatchIntelligence.match_id,
-                MatchIntelligence.provider,
-                MatchIntelligence.intelligence_type,
-                MatchIntelligence.source_confidence,
-                MatchIntelligence.fetched_at,
-                MatchIntelligence.normalized_payload,
+            select(MarketSnapshot).where(
+                MarketSnapshot.provider == "sporttery",
+                MarketSnapshot.match_id.in_(match_ids),
             )
         )
-    ):
-        intelligences_by_match[row.match_id].append(row)
+    } if match_ids else {}
+
+    intelligences_by_match = defaultdict(list)
+    if match_ids:
+        for row in session.scalars(
+            select(MatchIntelligence)
+            .options(
+                load_only(
+                    MatchIntelligence.match_id,
+                    MatchIntelligence.provider,
+                    MatchIntelligence.intelligence_type,
+                    MatchIntelligence.source_confidence,
+                    MatchIntelligence.fetched_at,
+                    MatchIntelligence.normalized_payload,
+                )
+            )
+            .where(MatchIntelligence.match_id.in_(match_ids))
+        ):
+            intelligences_by_match[row.match_id].append(row)
 
     adjustments_by_match_auto = defaultdict(list)
     seen_auto_adjs = set()
-    for row in session.scalars(select(AutoAdjustment).order_by(AutoAdjustment.id.desc())):
-        sig = (row.match_id, row.adjustment_type, row.affected_team_id, row.reason)
-        if sig not in seen_auto_adjs:
-            seen_auto_adjs.add(sig)
-            adjustments_by_match_auto[row.match_id].append(row)
+    if match_ids:
+        for row in session.scalars(
+            select(AutoAdjustment)
+            .where(AutoAdjustment.match_id.in_(match_ids))
+            .order_by(AutoAdjustment.id.desc())
+        ):
+            sig = (row.match_id, row.adjustment_type, row.affected_team_id, row.reason)
+            if sig not in seen_auto_adjs:
+                seen_auto_adjs.add(sig)
+                adjustments_by_match_auto[row.match_id].append(row)
 
     snapshots = _display_snapshots(session, matches)
 
@@ -823,6 +886,8 @@ def build_match_detail(session: Session, match_id: str) -> dict | None:
         # tags + rhythm metrics to predict how the two teams' styles interact.
         # Pure rule-based, does NOT modify Poisson probabilities.
         "matchup_analysis": _safe_matchup_analysis(home_profile, away_profile),
+        # P4-C: historical head-to-head summary from TeamProfileMatchHistory
+        "head_to_head": _safe_head_to_head(session, match.home_team_id, match.away_team_id),
         "profile_prediction": None,
         # AI/Ensemble prediction summaries (P0-3 fix)
         # Load AI and ensemble predictions once and reuse for both the summary
@@ -1256,6 +1321,73 @@ def _safe_matchup_analysis(home_profile, away_profile) -> dict | None:
         return None
 
 
+def _safe_head_to_head(session, home_team_id: str | None, away_team_id: str | None) -> dict | None:
+    """P4-C: Query historical head-to-head matches between two teams.
+
+    Uses TeamProfileMatchHistory rows where either team faced the other.
+    Returns None if either team_id is missing or no history exists.
+    """
+    if not home_team_id or not away_team_id:
+        return None
+    try:
+        from app.models import TeamProfileMatchHistory
+        # Home team's matches against the away team
+        home_h2h = list(session.scalars(
+            select(TeamProfileMatchHistory)
+            .where(
+                TeamProfileMatchHistory.team_id == home_team_id,
+                TeamProfileMatchHistory.opponent_team_id == away_team_id,
+            )
+            .order_by(TeamProfileMatchHistory.match_date.desc())
+            .limit(10)
+        ))
+        # Away team's matches against the home team
+        away_h2h = list(session.scalars(
+            select(TeamProfileMatchHistory)
+            .where(
+                TeamProfileMatchHistory.team_id == away_team_id,
+                TeamProfileMatchHistory.opponent_team_id == home_team_id,
+            )
+            .order_by(TeamProfileMatchHistory.match_date.desc())
+            .limit(10)
+        ))
+        all_rows = home_h2h + away_h2h
+        if not all_rows:
+            return None
+        # Aggregate: total matches, home team wins/draws/losses, avg goals
+        total = len(all_rows)
+        # From home team's perspective (home_h2h rows are home team's results)
+        hw = sum(1 for r in home_h2h if r.result == "win")
+        hd = sum(1 for r in home_h2h if r.result == "draw")
+        hl = sum(1 for r in home_h2h if r.result == "loss")
+        home_gf = sum(r.goals_for for r in home_h2h) if home_h2h else 0
+        home_ga = sum(r.goals_against for r in home_h2h) if home_h2h else 0
+        recent = [
+            {
+                "date": r.match_date.isoformat() if r.match_date else None,
+                "competition": r.competition,
+                "home_team_id": home_team_id if r.team_id == home_team_id else away_team_id,
+                "away_team_id": away_team_id if r.team_id == home_team_id else home_team_id,
+                "goals_for": r.goals_for,
+                "goals_against": r.goals_against,
+                "result": r.result,
+                "is_world_cup": r.is_world_cup,
+            }
+            for r in sorted(all_rows, key=lambda x: x.match_date, reverse=True)[:5]
+        ]
+        return {
+            "total_matches": total,
+            "home_wins": hw,
+            "draws": hd,
+            "home_losses": hl,
+            "home_avg_goals_for": round(home_gf / max(len(home_h2h), 1), 2),
+            "home_avg_goals_against": round(home_ga / max(len(home_h2h), 1), 2),
+            "recent_matches": recent,
+        }
+    except Exception:
+        return None
+
+
 def _ai_prediction_summary(ai_preds: list[AIPrediction]) -> dict | None:
     """Extract a summary of the best AI prediction for a match (for MatchCard)."""
     if not ai_preds:
@@ -1344,6 +1476,12 @@ def _bias_explanation(snapshot: PredictionSnapshot, match: Match, outcome_correc
 
 def build_decision(session: Session) -> dict:
     """Build decision view data for the frontend."""
+    global _decision_cache, _decision_cache_ts
+    now = _time.monotonic()
+    with _decision_cache_lock:
+        if _decision_cache is not None and (now - _decision_cache_ts) < _DECISION_CACHE_TTL:
+            return _decision_cache
+
     revision = session.scalar(
         select(DashboardRevision)
         .where(DashboardRevision.active.is_(True))
@@ -1351,14 +1489,19 @@ def build_decision(session: Session) -> dict:
         .limit(1)
     )
     if revision is None:
-        return {
+        result = {
             "today_matches": [], "most_confident": [], "most_uncertain": [],
             "biggest_divergence": [], "upset_risk": [], "recent_review": [],
             "review_summary": _empty_review_summary(),
         }
+        with _decision_cache_lock:
+            _decision_cache = result
+            _decision_cache_ts = _time.monotonic()
+        return result
 
     teams = list(session.scalars(select(Team).order_by(Team.group_code, Team.id)))
     matches = list(session.scalars(select(Match).order_by(Match.kickoff, Match.id)))
+    match_ids = [m.id for m in matches]
     predictions = {
         row.match_id: row
         for row in session.scalars(
@@ -1368,12 +1511,16 @@ def build_decision(session: Session) -> dict:
             )
         )
     }
+    # P2-B: restrict market snapshots to loaded matches only.
     market_snaps = {
         row.match_id: row
         for row in session.scalars(
-            select(MarketSnapshot).where(MarketSnapshot.provider == "sporttery")
+            select(MarketSnapshot).where(
+                MarketSnapshot.provider == "sporttery",
+                MarketSnapshot.match_id.in_(match_ids),
+            )
         )
-    }
+    } if match_ids else {}
     teams_by_id = {team.id: team for team in teams}
     display_names = localized_team_names(session, teams)
     manual_adjustments = {
@@ -1383,23 +1530,32 @@ def build_decision(session: Session) -> dict:
 
     adjustments_by_match_auto = defaultdict(list)
     seen_auto_adjs_decision = set()
-    for row in session.scalars(select(AutoAdjustment).order_by(AutoAdjustment.id.desc())):
-        sig = (row.match_id, row.adjustment_type, row.affected_team_id, row.reason)
-        if sig not in seen_auto_adjs_decision:
-            seen_auto_adjs_decision.add(sig)
-            adjustments_by_match_auto[row.match_id].append(row)
-
-    intelligences = {
-        row.id: row
+    if match_ids:
         for row in session.scalars(
-            select(MatchIntelligence).options(
-                load_only(
-                    MatchIntelligence.id,
-                    MatchIntelligence.provider,
+            select(AutoAdjustment)
+            .where(AutoAdjustment.match_id.in_(match_ids))
+            .order_by(AutoAdjustment.id.desc())
+        ):
+            sig = (row.match_id, row.adjustment_type, row.affected_team_id, row.reason)
+            if sig not in seen_auto_adjs_decision:
+                seen_auto_adjs_decision.add(sig)
+                adjustments_by_match_auto[row.match_id].append(row)
+
+    intelligences = {}
+    if match_ids:
+        intelligences = {
+            row.id: row
+            for row in session.scalars(
+                select(MatchIntelligence)
+                .options(
+                    load_only(
+                        MatchIntelligence.id,
+                        MatchIntelligence.provider,
+                    )
                 )
+                .where(MatchIntelligence.match_id.in_(match_ids))
             )
-        )
-    }
+        }
 
     local_now = decision_now().astimezone(SHANGHAI)
     local_today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1611,7 +1767,7 @@ def build_decision(session: Session) -> dict:
                     "reason": adj.reason
                 })
 
-    return {
+    result = {
         "today_matches": today_matches,
         "most_confident": most_confident,
         "most_uncertain": most_uncertain,
@@ -1628,3 +1784,8 @@ def build_decision(session: Session) -> dict:
             "xg_mae": review_report.xg_mae,
         },
     }
+    # P2-B: cache the computed decision payload for the TTL window.
+    with _decision_cache_lock:
+        _decision_cache = result
+        _decision_cache_ts = _time.monotonic()
+    return result

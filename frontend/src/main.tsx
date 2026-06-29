@@ -1,9 +1,31 @@
 import { Component, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 
 const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error, query) => {
+      // P3-D: centralized query error logging. Non-4xx errors are more
+      // actionable (server/network issues) so we log them at warn level.
+      // 4xx errors (esp. 404) are expected for some flows and are logged
+      // at debug level to avoid console noise.
+      const status = (error as { status?: number }).status ?? 0;
+      if (status >= 400 && status < 500) {
+        console.debug("[query] client error", status, query.queryKey, error.message);
+      } else {
+        console.warn("[query] error", query.queryKey, error.message);
+      }
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (error, _variables, _context, mutation) => {
+      // P3-D: mutations carry user intent (refresh, trigger workflow) —
+      // log at warn so failures surface in dev consoles / log shippers.
+      const key = mutation.options.mutationKey;
+      console.warn("[mutation] error", key, error.message);
+    },
+  }),
   defaultOptions: {
     queries: {
       staleTime: 60_000,

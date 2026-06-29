@@ -363,6 +363,78 @@ def _upgrade_schema(engine: Engine) -> None:
                         logger.warning(f"Index creation skipped: {e}")
                 conn.execute(text("PRAGMA user_version = 9"))
 
+            if version < 10:
+                logger.info("Upgrading database schema to version 10 (unique constraints for data integrity)...")
+                # P2-F: Add unique constraints to prevent duplicate rows that
+                # could otherwise be created by concurrent recompute / sync
+                # workflows. Each constraint is preceded by a deduplication
+                # step that keeps the latest row (max id) per natural key so
+                # the CREATE UNIQUE INDEX succeeds even if duplicates exist.
+                #
+                # Note: in a fresh database, _upgrade_schema runs BEFORE
+                # Base.metadata.create_all(), so these tables may not exist
+                # yet. We guard each dedup+index pair with a table-existence
+                # check (sqlite_master) so the migration is a no-op on fresh
+                # databases — the unique constraints will be created by
+                # Base.metadata.create_all() via the UniqueConstraint declared
+                # on the model (or by a later migration run after tables exist).
+                unique_constraint_specs = [
+                    # (table_name, dedup_sql, index_sql)
+                    (
+                        "match_predictions",
+                        """
+                        DELETE FROM match_predictions
+                        WHERE id NOT IN (
+                            SELECT MAX(id) FROM match_predictions
+                            GROUP BY match_id, revision_id, model_version
+                        )
+                        """,
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_match_predictions_match_revision_model ON match_predictions(match_id, revision_id, model_version)",
+                    ),
+                    # NOTE: table name is "standings_snapshots" (with 's'),
+                    # not "standing_snapshots" — the StandingSnapshot model
+                    # uses __tablename__ = "standings_snapshots".
+                    (
+                        "standings_snapshots",
+                        """
+                        DELETE FROM standings_snapshots
+                        WHERE id NOT IN (
+                            SELECT MAX(id) FROM standings_snapshots
+                            GROUP BY revision_id, team_id
+                        )
+                        """,
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_standings_snapshots_revision_team ON standings_snapshots(revision_id, team_id)",
+                    ),
+                    (
+                        "qualification_predictions",
+                        """
+                        DELETE FROM qualification_predictions
+                        WHERE id NOT IN (
+                            SELECT MAX(id) FROM qualification_predictions
+                            GROUP BY revision_id, team_id
+                        )
+                        """,
+                        "CREATE UNIQUE INDEX IF NOT EXISTS uq_qualification_predictions_revision_team ON qualification_predictions(revision_id, team_id)",
+                    ),
+                ]
+                for table_name, dedup_sql, idx_sql in unique_constraint_specs:
+                    table_exists = conn.scalar(text(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=:name"
+                    ), {"name": table_name})
+                    if not table_exists:
+                        # Fresh database — table will be created by
+                        # Base.metadata.create_all() with proper constraints.
+                        continue
+                    try:
+                        conn.execute(text(dedup_sql))
+                    except Exception as e:
+                        logger.warning(f"Deduplication skipped for {table_name}: {e}")
+                    try:
+                        conn.execute(text(idx_sql))
+                    except Exception as e:
+                        logger.warning(f"Unique index creation skipped for {table_name}: {e}")
+                conn.execute(text("PRAGMA user_version = 10"))
+
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")
             raise

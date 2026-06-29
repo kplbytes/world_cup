@@ -251,7 +251,7 @@ def create_app(start_background: bool = True) -> FastAPI:
             logger.info("scheduled_auto_ai skipped: workflow lock unavailable")
 
     def scheduled_maintenance() -> None:
-        """Periodically clean up old non-revision-bound data."""
+        """Periodically clean up old non-revision-bound data and prune stale revisions."""
         from datetime import timedelta
 
         with session_scope() as session:
@@ -272,6 +272,48 @@ def create_app(start_background: bool = True) -> FastAPI:
             if total:
                 logger.info("maintenance: pruned %d old records (data_snapshots=%d, match_intelligence=%d)",
                            total, r1.rowcount or 0, r2.rowcount or 0)
+
+            # P2-H: prune old dashboard revisions' non-scoring data so the
+            # database doesn't grow unboundedly over a long tournament.
+            # Scoring history (match_predictions, prediction_snapshots,
+            # model_scores) is preserved by _prune_old_revisions.
+            try:
+                from app.services.recompute import _prune_old_revisions
+                _prune_old_revisions(session, keep=5)
+                session.commit()
+            except Exception as exc:
+                logger.warning("maintenance: prune_old_revisions failed: %s", exc)
+
+            # P2-H: invalidate caches after maintenance so the next read
+            # picks up the pruned state.
+            try:
+                from app.services.dashboard import invalidate_dashboard_caches
+                invalidate_dashboard_caches()
+            except Exception:
+                pass
+
+    def scheduled_post_match() -> None:
+        """P4-D: Automatically run post-match scoring for finished matches.
+
+        Checks if any matches transitioned to 'final' since the last run.
+        If so, triggers the post_match workflow (recompute + score) so the
+        model self-corrects without manual intervention. Runs every 30 min.
+        """
+        from app.workflows import service as workflow_service
+
+        status = workflow_service.get_workflow_status()
+        post_match_status = (status.get("button_states") or {}).get("post_match") or {}
+        if not post_match_status.get("enabled"):
+            return  # no finished matches to score, or a workflow is running
+
+        run_id = workflow_service.run_post_match_workflow(
+            since_hours=6,
+            trigger_source="auto_scheduler",
+        )
+        if run_id > 0:
+            logger.info("scheduled_post_match started workflow run_id=%s", run_id)
+        else:
+            logger.info("scheduled_post_match skipped: workflow lock unavailable")
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -314,6 +356,18 @@ def create_app(start_background: bool = True) -> FastAPI:
                 max_instances=1,
                 coalesce=True,
                 next_run_time=datetime.now(timezone.utc) + timedelta(minutes=5),
+            )
+            # P4-D: automatic post-match scoring so the model self-corrects
+            # without manual button clicks. Runs every 30 min; the function
+            # itself short-circuits when there are no finished matches to score.
+            scheduler.add_job(
+                scheduled_post_match,
+                "interval",
+                minutes=30,
+                id="world-cup-post-match",
+                max_instances=1,
+                coalesce=True,
+                next_run_time=datetime.now(timezone.utc) + timedelta(minutes=10),
             )
             scheduler.start()
         yield

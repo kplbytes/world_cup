@@ -44,6 +44,11 @@ class ModelConfig:
     profile_adjust_attack_defense: bool = False
     profile_adjust_form: bool = False
     fifa_rank_weight: float = 0.15
+    # Dixon-Coles low-score correction parameter.
+    # Negative rho boosts 0-0 and 1-1 (negative scoring correlation), which
+    # is typical for football where draws are more common than pure Poisson
+    # predicts. Default -0.02 is a mild correction.
+    dixon_coles_rho: float = -0.02
 
 
 # Singleton cache
@@ -96,6 +101,7 @@ def load_configs(path: Path | None = None) -> dict[str, ModelConfig]:
             profile_adjust_attack_defense=bool(merged.get("profile_adjust_attack_defense", False)),
             profile_adjust_form=bool(merged.get("profile_adjust_form", False)),
             fifa_rank_weight=float(merged.get("fifa_rank_weight", 0.15)),
+            dixon_coles_rho=float(merged.get("dixon_coles_rho", -0.02)),
         )
 
     if path is None:

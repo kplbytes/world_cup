@@ -476,6 +476,85 @@ h3 { font-weight: 600; }
   margin-bottom: 8px;
 }
 
+/* P4-B: context tags */
+.context-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.context-tag {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 159, 10, 0.15);
+  color: var(--amber, #ff9f0a);
+  white-space: nowrap;
+}
+
+/* P4-A: sparks section */
+.sparks-section {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(175, 82, 222, 0.08);
+  border: 1px solid rgba(175, 82, 222, 0.2);
+}
+.sparks-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-purple, #af52de);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+.sparks-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.sparks-list li {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  padding: 4px 0 4px 16px;
+  position: relative;
+}
+.sparks-list li::before {
+  content: "✦";
+  position: absolute;
+  left: 0;
+  color: var(--accent-purple, #af52de);
+}
+
+/* P4-C: head-to-head */
+.h2h-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.h2h-stat {
+  font-size: var(--text-sm);
+  padding: 2px 10px;
+  border-radius: 8px;
+  background: rgba(0, 122, 255, 0.08);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.h2h-list li {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: var(--text-sm);
+}
+.h2h-date { color: var(--text-secondary); min-width: 80px; }
+.h2h-comp { flex: 1; color: var(--text-secondary); }
+.h2h-score { font-weight: 700; min-width: 40px; }
+.h2h-result { font-weight: 600; min-width: 24px; }
+
 /* ═══════════════════════════════════════════════════════
    Probability Bars
    ═══════════════════════════════════════════════════════ */
