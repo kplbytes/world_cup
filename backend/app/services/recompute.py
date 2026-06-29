@@ -1143,6 +1143,8 @@ def _compute_provider_agreement(
     a meaningful agreement score (caller falls back to count-based heuristic).
     """
     # Collect per-match prediction vectors from market snapshots.
+    # Order by fetched_at DESC so the latest snapshot per match is first;
+    # we use setdefault to keep only the first (latest) row per match.
     market_rows = session.execute(
         select(
             MarketSnapshot.match_id,
@@ -1151,15 +1153,18 @@ def _compute_provider_agreement(
             MarketSnapshot.away_probability,
         )
         .where(MarketSnapshot.provider == "sporttery")
+        .order_by(MarketSnapshot.fetched_at.desc())
     ).all()
     market_by_match: dict[str, tuple[float, float, float]] = {}
     for row in market_rows:
         mid, h, d, a = row
         if h is None or d is None or a is None:
             continue
-        market_by_match[mid] = (float(h), float(d), float(a))
+        market_by_match.setdefault(mid, (float(h), float(d), float(a)))
 
     # Collect per-match AI prediction vectors (use latest per match).
+    # Order by created_at DESC so the most recent prediction per match is
+    # first; setdefault ensures deterministic "latest wins" behavior.
     ai_rows = session.execute(
         select(
             AIPrediction.match_id,
@@ -1170,14 +1175,14 @@ def _compute_provider_agreement(
         .where(AIPrediction.parsed_home_win.is_not(None))
         .where(AIPrediction.parsed_draw.is_not(None))
         .where(AIPrediction.parsed_away_win.is_not(None))
+        .order_by(AIPrediction.created_at.desc())
     ).all()
     ai_by_match: dict[str, tuple[float, float, float]] = {}
     for row in ai_rows:
         mid, h, d, a = row
         if h is None or d is None or a is None:
             continue
-        # Last writer wins — most recent AI prediction per match wins.
-        ai_by_match[mid] = (float(h), float(d), float(a))
+        ai_by_match.setdefault(mid, (float(h), float(d), float(a)))
 
     if not market_by_match and not ai_by_match:
         return None

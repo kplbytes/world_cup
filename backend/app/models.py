@@ -98,6 +98,9 @@ class HistoricalMatch(Base):
 
 class TeamProfileMatchHistory(Base):
     __tablename__ = "team_profile_match_history"
+    __table_args__ = (
+        Index("ix_team_profile_match_history_team_opponent", "team_id", "opponent_team_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     team_id: Mapped[str] = mapped_column(ForeignKey("teams.id"), index=True)

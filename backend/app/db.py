@@ -435,6 +435,21 @@ def _upgrade_schema(engine: Engine) -> None:
                         logger.warning(f"Unique index creation skipped for {table_name}: {e}")
                 conn.execute(text("PRAGMA user_version = 10"))
 
+            if version < 11:
+                logger.info("Upgrading database schema to version 11 (composite index for head-to-head queries)...")
+                # R4: composite index for _safe_head_to_head queries that filter
+                # by (team_id, opponent_team_id). Without this, SQLite must scan
+                # the full team_id index and then refilter by opponent_team_id.
+                tpmh_exists = conn.scalar(text(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='team_profile_match_history'"
+                ))
+                if tpmh_exists:
+                    conn.execute(text(
+                        "CREATE INDEX IF NOT EXISTS ix_team_profile_match_history_team_opponent "
+                        "ON team_profile_match_history(team_id, opponent_team_id)"
+                    ))
+                conn.execute(text("PRAGMA user_version = 11"))
+
         except Exception as e:
             logger.error(f"Failed to upgrade database schema: {e}")
             raise

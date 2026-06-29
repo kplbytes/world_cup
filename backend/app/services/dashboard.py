@@ -34,9 +34,6 @@ from app.services.scoring import score_predictions
 
 from typing import Any
 
-import math
-
-
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -1362,19 +1359,31 @@ def _safe_head_to_head(session, home_team_id: str | None, away_team_id: str | No
         hl = sum(1 for r in home_h2h if r.result == "loss")
         home_gf = sum(r.goals_for for r in home_h2h) if home_h2h else 0
         home_ga = sum(r.goals_against for r in home_h2h) if home_h2h else 0
-        recent = [
-            {
+
+        # Build recent_matches list, normalizing all rows to the current
+        # match's home-team perspective. For rows from away_h2h (where the
+        # stored team_id is the away team), we swap goals_for/goals_against
+        # and flip the result so the UI can render consistently.
+        # home_team_id / away_team_id always reflect the CURRENT match's
+        # teams (not the historical match's home/away), since we normalize
+        # goals and results to the current match's home-team perspective.
+        _result_flip = {"win": "loss", "loss": "win", "draw": "draw"}
+        recent = []
+        for r in sorted(all_rows, key=lambda x: x.match_date, reverse=True)[:5]:
+            is_home_perspective = r.team_id == home_team_id
+            gf = r.goals_for if is_home_perspective else r.goals_against
+            ga = r.goals_against if is_home_perspective else r.goals_for
+            result = r.result if is_home_perspective else _result_flip.get(r.result, r.result)
+            recent.append({
                 "date": r.match_date.isoformat() if r.match_date else None,
                 "competition": r.competition,
-                "home_team_id": home_team_id if r.team_id == home_team_id else away_team_id,
-                "away_team_id": away_team_id if r.team_id == home_team_id else home_team_id,
-                "goals_for": r.goals_for,
-                "goals_against": r.goals_against,
-                "result": r.result,
+                "home_team_id": home_team_id,
+                "away_team_id": away_team_id,
+                "goals_for": gf,
+                "goals_against": ga,
+                "result": result,
                 "is_world_cup": r.is_world_cup,
-            }
-            for r in sorted(all_rows, key=lambda x: x.match_date, reverse=True)[:5]
-        ]
+            })
         return {
             "total_matches": total,
             "home_wins": hw,

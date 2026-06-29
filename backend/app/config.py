@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     workflow_default_limit: int = 10
     workflow_default_lock_window_hours: int = 24
 
+    # Data retention for time-bound auxiliary tables (match_intelligence,
+    # auto_adjustments, etc.) pruned by _prune_old_revisions / scheduled_maintenance.
+    aux_data_retention_days: int = 90
+
     @field_validator("database_path")
     @classmethod
     def resolve_database_path(cls, value: Path) -> Path:
